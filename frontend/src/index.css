@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    --background: 176 55% 35%;
+    --foreground: 0 0% 100%;
+
+    --card: 180 60% 22%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 180 60% 22%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 174 70% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 180 55% 28%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 180 50% 30%;
+    --muted-foreground: 180 30% 75%;
+
+    --accent: 174 70% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 180 50% 30%;
+    --input: 185 36.43% 22.04% / 72%; /* Updated with your color */
+    --ring: 174 70% 42%;
+
+    --radius: 0.5rem;
+
+    /* Custom CMS colors */
+    --cms-bg: 176 55% 35%;
+    --cms-sidebar: 185 50% 10%;
+    --cms-card: 185 45% 14%;
+    --cms-card-hover: 180 55% 26%;
+    --cms-accent: 174 70% 42%;
+    --cms-accent-light: 174 60% 50%;
+    --cms-success: 145 70% 45%;
+    --cms-warning: 35 90% 55%;
+    --cms-orange: 25 95% 55%;
+    --cms-table-header: 185 50% 12%;
+    --cms-table-row: 185 45% 16%;
+    --cms-table-row-alt: 185 40% 18%;
+    --cms-input-bg: 185 36.43% 22.04% / 72%; /* Updated with your color */
+
+    --sidebar-background: 185 50% 10%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 174 70% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 174 65% 35%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 180 50% 30%;
+    --sidebar-ring: 174 70% 42%;
+  }
+
+  .dark {
+    --background: 176 55% 35%;
+    --foreground: 0 0% 100%;
+    --card: 180 60% 22%;
+    --card-foreground: 0 0% 100%;
+    --popover: 180 60% 22%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 174 70% 42%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 180 55% 28%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 180 50% 30%;
+    --muted-foreground: 180 30% 75%;
+    --accent: 174 70% 42%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 180 50% 30%;
+    --input: 185 36.43% 22.04% / 72%; /* Updated with your color */
+    --ring: 174 70% 42%;
+    --sidebar-background: 180 65% 18%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 174 70% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 180 55% 26%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 180 50% 30%;
+    --sidebar-ring: 174 70% 42%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* Apply the custom color to all input fields */
+  input, textarea, select {
+    background-color: hsl(var(--input)) !important;
+  }
+
+  /* For specific input types */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  textarea,
+  select {
+    background-color: hsl(var(--input)) !important;
+  }
+
+  /* Ensure date inputs and other specific types */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(2);
+  }
+
+  input[type="date"]::-webkit-datetime-edit {
+    color: hsl(var(--foreground));
+  }
+
+  /* For any custom classes using cms-input-bg */
+  .cms-input-bg {
+    background-color: hsl(var(--cms-input-bg)) !important;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--cms-sidebar));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--cms-accent));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--cms-accent-light));
+}
+
+/* You can also create a specific CSS class for this color */
+.input-bg-custom {
+  background-color: hsl(185deg 36.43% 22.04% / 72%) !important;
+}

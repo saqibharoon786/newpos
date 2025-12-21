@@ -1,0 +1,372 @@
+import { useState, useRef } from "react";
+import { Save, ChevronDown, Upload, Plus, X } from "lucide-react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { toast } from "sonner";
+
+interface AddCustomerDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (data: CustomerFormData) => void;
+}
+
+export interface CustomerFormData {
+  customerName: string;
+  customerId: string;
+  phoneNo: string;
+  email: string;
+  cnicNo: string;
+  registrationDate: string;
+  address: string;
+  province: string;
+  city: string;
+  photo: string | null;
+  documents: string[];
+}
+
+const provinces = [
+  "Punjab",
+  "Sindh",
+  "Khyber Pakhtunkhwa",
+  "Balochistan",
+  "Islamabad Capital Territory",
+  "Gilgit-Baltistan",
+  "Azad Kashmir",
+];
+
+const cities: Record<string, string[]> = {
+  "Punjab": ["Lahore", "Faisalabad", "Rawalpindi", "Multan", "Gujranwala"],
+  "Sindh": ["Karachi", "Hyderabad", "Sukkur", "Larkana"],
+  "Khyber Pakhtunkhwa": ["Peshawar", "Mardan", "Abbottabad", "Swat"],
+  "Balochistan": ["Quetta", "Gwadar", "Turbat"],
+  "Islamabad Capital Territory": ["Islamabad"],
+  "Gilgit-Baltistan": ["Gilgit", "Skardu"],
+  "Azad Kashmir": ["Muzaffarabad", "Mirpur"],
+};
+
+export function AddCustomerDialog({ open, onOpenChange, onSave }: AddCustomerDialogProps) {
+  const [formData, setFormData] = useState<CustomerFormData>({
+    customerName: "",
+    customerId: "",
+    phoneNo: "",
+    email: "",
+    cnicNo: "",
+    registrationDate: "",
+    address: "",
+    province: "",
+    city: "",
+    photo: null,
+    documents: [],
+  });
+
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => {
+      const updated = { ...prev, [name]: value };
+      // Reset city when province changes
+      if (name === "province") {
+        updated.city = "";
+      }
+      return updated;
+    });
+  };
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 1024 * 1024) {
+        toast.error("Photo must be less than 1MB");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({ ...prev, photo: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      Array.from(files).forEach(file => {
+        if (file.size > 1.5 * 1024 * 1024) {
+          toast.error(`${file.name} exceeds 1.5MB limit`);
+          return;
+        }
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setFormData(prev => ({
+            ...prev,
+            documents: [...prev.documents, reader.result as string],
+          }));
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  };
+
+  const removeDocument = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      documents: prev.documents.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleSubmit = () => {
+    if (!formData.customerName || !formData.phoneNo) {
+      toast.error("Please fill in required fields");
+      return;
+    }
+    onSave(formData);
+    onOpenChange(false);
+    setFormData({
+      customerName: "",
+      customerId: "",
+      phoneNo: "",
+      email: "",
+      cnicNo: "",
+      registrationDate: "",
+      address: "",
+      province: "",
+      city: "",
+      photo: null,
+      documents: [],
+    });
+    toast.success("Customer added successfully!");
+  };
+
+  const availableCities = formData.province ? cities[formData.province] || [] : [];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="bg-background border-border max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto p-0">
+        {/* Breadcrumb Header */}
+        <div className="bg-cms-sidebar px-4 sm:px-6 py-3 border-b border-border">
+          <p className="text-xs text-muted-foreground">Customers/ Add Customer</p>
+        </div>
+
+        <div className="p-4 sm:p-6 bg-background">
+          <div className="mb-6">
+            <h1 className="text-lg sm:text-xl font-bold text-foreground">Add New Customer</h1>
+            <p className="text-sm text-muted-foreground">Enter the details for Customer</p>
+          </div>
+
+          {/* Photo Upload */}
+          <div className="mb-6">
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <div 
+                  onClick={() => photoInputRef.current?.click()}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-cms-input-bg border-2 border-dashed border-border flex items-center justify-center cursor-pointer hover:border-primary transition-colors overflow-hidden"
+                >
+                  {formData.photo ? (
+                    <img src={formData.photo} alt="Customer" className="w-full h-full object-cover" />
+                  ) : (
+                    <Plus className="w-5 h-5 text-primary" />
+                  )}
+                </div>
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  onChange={handlePhotoUpload}
+                  className="hidden"
+                />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">Upload Photo</p>
+                <p className="text-xs text-muted-foreground">PNG,JPG up to 1MB</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Personal Information Section */}
+          <div className="mb-6">
+            <h3 className="text-sm sm:text-base font-semibold text-primary mb-4">Personal Information</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Customer Name</label>
+                <input
+                  type="text"
+                  name="customerName"
+                  placeholder="e.g Lina"
+                  value={formData.customerName}
+                  onChange={handleInputChange}
+                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Customer ID</label>
+                <input
+                  type="text"
+                  name="customerId"
+                  placeholder="e.g 494933"
+                  value={formData.customerId}
+                  onChange={handleInputChange}
+                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Phone No.</label>
+                <input
+                  type="text"
+                  name="phoneNo"
+                  placeholder="e.g 494933"
+                  value={formData.phoneNo}
+                  onChange={handleInputChange}
+                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Email Address</label>
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="e.g georgia.young@example.com"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">CNIC No.</label>
+                <input
+                  type="text"
+                  name="cnicNo"
+                  placeholder="e.g 17301-98273-4"
+                  value={formData.cnicNo}
+                  onChange={handleInputChange}
+                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Registration Date</label>
+                <input
+                  type="date"
+                  name="registrationDate"
+                  value={formData.registrationDate}
+                  onChange={handleInputChange}
+                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Additional Details Section */}
+          <div className="mb-6">
+            <h3 className="text-sm sm:text-base font-semibold text-primary mb-4">Additional Details</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Address</label>
+                <input
+                  type="text"
+                  name="address"
+                  placeholder="e.g Lahore"
+                  value={formData.address}
+                  onChange={handleInputChange}
+                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Province</label>
+                <div className="relative">
+                  <select
+                    name="province"
+                    value={formData.province}
+                    onChange={handleInputChange}
+                    className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">Select Province</option>
+                    {provinces.map(province => (
+                      <option key={province} value={province}>{province}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">City</label>
+                <div className="relative">
+                  <select
+                    name="city"
+                    value={formData.city}
+                    onChange={handleInputChange}
+                    disabled={!formData.province}
+                    className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                  >
+                    <option value="">Select City</option>
+                    {availableCities.map(city => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Upload Documents Section */}
+          <div className="mb-6">
+            <h3 className="text-sm sm:text-base font-semibold text-primary mb-4">Upload Documents</h3>
+            <div
+              onClick={() => docInputRef.current?.click()}
+              className="border-2 border-dashed border-border rounded-lg p-6 sm:p-8 text-center cursor-pointer hover:border-primary transition-colors"
+            >
+              <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">Click to upload or drag and drop</p>
+              <p className="text-xs text-muted-foreground mt-1">SVG, PNG, JPEG (MAX 1.5MB)</p>
+            </div>
+            <input
+              ref={docInputRef}
+              type="file"
+              accept="image/svg+xml,image/png,image/jpeg"
+              multiple
+              onChange={handleDocUpload}
+              className="hidden"
+            />
+            
+            {/* Document Preview */}
+            {formData.documents.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-3">
+                {formData.documents.map((doc, index) => (
+                  <div key={index} className="relative w-16 h-16 sm:w-20 sm:h-20">
+                    <img src={doc} alt={`Document ${index + 1}`} className="w-full h-full object-cover rounded-lg" />
+                    <button
+                      onClick={() => removeDocument(index)}
+                      className="absolute -top-2 -right-2 w-5 h-5 bg-destructive rounded-full flex items-center justify-center"
+                    >
+                      <X className="w-3 h-3 text-destructive-foreground" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-border">
+            <button
+              onClick={() => onOpenChange(false)}
+              className="px-5 py-2.5 bg-cms-input-bg hover:bg-muted border border-border text-foreground rounded-md text-sm font-medium transition-colors order-2 sm:order-1"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors order-1 sm:order-2"
+            >
+              <Save className="w-4 h-4" />
+              Save
+            </button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
