@@ -4,12 +4,17 @@ import { PurchaseDetailsView } from "./PurchaseDetailsView";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
 
-// Configure axios
-const API_BASE_URL = "http://localhost:5000/api/purchases";
+// Configure axios with environment variable
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
+// Create axios instance with base URL
 const api = axios.create({
-  baseURL: "http://localhost:5000",
+  baseURL: API_BASE_URL,
   timeout: 10000,
 });
+
+// API endpoints
+const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
 
 interface Purchase {
   _id: string;
@@ -81,6 +86,32 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(null);
 
+  // Helper function to construct image URL
+  const getImageUrl = (imagePath: string | undefined): string | null => {
+    if (!imagePath) return null;
+    
+    // If it's already a full URL
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+      return imagePath;
+    }
+    
+    // Remove leading slash if present for consistency
+    const cleanPath = imagePath.startsWith('/') ? imagePath.slice(1) : imagePath;
+    
+    // If it starts with uploads
+    if (cleanPath.startsWith('uploads/')) {
+      return `${API_BASE_URL}/${cleanPath}`;
+    }
+    
+    // If it's just a filename without path
+    if (!cleanPath.includes('/')) {
+      return `${API_BASE_URL}/uploads/${cleanPath}`;
+    }
+    
+    // Default case - assume it's relative to API base URL
+    return `${API_BASE_URL}/${cleanPath}`;
+  };
+
   // Populate form when editing
   useEffect(() => {
     if (open) {
@@ -121,7 +152,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         setSelectedVehicleColor(editData.vehicleColor || "#FFFFFF");
         
         if (editData.vehicleImage) {
-          const imageUrl = `http://localhost:5000${editData.vehicleImage}`;
+          const imageUrl = getImageUrl(editData.vehicleImage);
           setImagePreview(imageUrl);
           setOriginalImageUrl(imageUrl);
         } else {
@@ -229,14 +260,24 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       if (isEdit && editData && editData._id) {
         // UPDATE request using PUT
         response = await api.put(
-          `${API_BASE_URL}/${editData._id}`,
-          formDataToSend
+          `${PURCHASES_API_URL}/${editData._id}`,
+          formDataToSend,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          }
         );
       } else {
         // CREATE request using POST
         response = await api.post(
-          `${API_BASE_URL}/add`,
-          formDataToSend
+          `${PURCHASES_API_URL}/add`,
+          formDataToSend,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          }
         );
       }
       
@@ -282,7 +323,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       } else if (error.request) {
         toast({
           title: "Error",
-          description: "Network error. Please check if the backend server is running.",
+          description: `Network error. Please check if the backend server is running at ${API_BASE_URL}.`,
           variant: "destructive",
         });
       } else {
@@ -688,6 +729,19 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
               )}
             </button>
           </div>
+
+          {/* Debug Info (Development only) */}
+          {import.meta.env.DEV && (
+            <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
+              <h4 className="text-xs font-semibold text-gray-700 mb-1">Debug Information</h4>
+              <p className="text-xs text-gray-600 mb-0.5">
+                API Base URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{API_BASE_URL}</code>
+              </p>
+              <p className="text-xs text-gray-600">
+                Purchase Endpoint: <code className="bg-gray-100 px-1 py-0.5 rounded">{PURCHASES_API_URL}</code>
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -715,7 +769,7 @@ export function POPView() {
     try {
       setLoading(true);
       setError(null);
-      const response = await api.get(`${API_BASE_URL}/get-all`);
+      const response = await api.get(`${PURCHASES_API_URL}/get-all`);
       
       if (response.data.success) {
         setPurchases(response.data.data || []);
@@ -748,7 +802,7 @@ export function POPView() {
   const handleDeletePurchase = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this purchase?')) {
       try {
-        await api.delete(`${API_BASE_URL}/${id}`);
+        await api.delete(`${PURCHASES_API_URL}/${id}`);
         await fetchPurchases();
         toast({
           title: "Success",
@@ -1090,6 +1144,27 @@ export function POPView() {
         isEdit={isEditMode}
         editData={selectedPurchaseForEdit}
       />
+
+      {/* Debug Info (Development only) */}
+      {import.meta.env.DEV && (
+        <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+          <h4 className="text-sm font-semibold text-gray-700 mb-2">Debug Information</h4>
+          <div className="space-y-2">
+            <p className="text-xs text-gray-600 mb-0.5">
+              API Base URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{API_BASE_URL}</code>
+            </p>
+            <p className="text-xs text-gray-600 mb-0.5">
+              Purchase Endpoint: <code className="bg-gray-100 px-1 py-0.5 rounded">{PURCHASES_API_URL}</code>
+            </p>
+            <p className="text-xs text-gray-600">
+              Total Purchases: {purchases.length}
+            </p>
+            <p className="text-xs text-gray-600">
+              Environment: {import.meta.env.MODE}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,12 +3,15 @@ import { Pencil, Printer, Trash2, Circle, Scale, Palette, Building2, Award, Indi
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
 
-// Configure axios
-const API_BASE_URL = "http://localhost:5000/api/purchases";
+// Configure axios using environment variable
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 const api = axios.create({
-  baseURL: "http://localhost:5000",
+  baseURL: API_BASE_URL,
   timeout: 10000,
 });
+
+// Update the purchases endpoint
+const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
 
 interface Purchase {
   _id: string;
@@ -36,7 +39,7 @@ interface PurchaseDetailsViewProps {
   onBack: () => void;
 }
 
-// Helper function to get correct image URL
+// Helper function to get correct image URL using environment variable
 const getImageUrl = (imagePath: string | undefined): string | null => {
   if (!imagePath) return null;
   
@@ -47,18 +50,21 @@ const getImageUrl = (imagePath: string | undefined): string | null => {
     return imagePath;
   }
   
-  // If it starts with /uploads
-  if (imagePath.startsWith('/uploads')) {
-    return `http://localhost:5000${imagePath}`;
+  // Remove leading slash if present for consistency
+  const cleanPath = imagePath.startsWith('/') ? imagePath.slice(1) : imagePath;
+  
+  // If it starts with uploads
+  if (cleanPath.startsWith('uploads/')) {
+    return `${API_BASE_URL}/${cleanPath}`;
   }
   
   // If it's just a filename without path
-  if (!imagePath.includes('/')) {
-    return `http://localhost:5000/uploads/${imagePath}`;
+  if (!cleanPath.includes('/')) {
+    return `${API_BASE_URL}/uploads/${cleanPath}`;
   }
   
-  // Default case
-  return `http://localhost:5000${imagePath}`;
+  // Default case - assume it's relative to API base URL
+  return `${API_BASE_URL}/${cleanPath}`;
 };
 
 export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewProps) {
@@ -81,7 +87,7 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
       setError(null);
       setImageError(false);
       
-      const response = await api.get(`${API_BASE_URL}/${purchaseId}`);
+      const response = await api.get(`/api/purchases/${purchaseId}`);
       
       if (response.data.success) {
         setPurchase(response.data.data);
@@ -123,7 +129,7 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
     if (window.confirm('Are you sure you want to delete this purchase? This action cannot be undone.')) {
       try {
         setDeleting(true);
-        await api.delete(`${API_BASE_URL}/${purchaseId}`);
+        await api.delete(`/api/purchases/${purchaseId}`);
         
         toast({
           title: "Success",
@@ -498,6 +504,7 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
           <div className="space-y-2">
             <p className="text-xs text-gray-600">Original image path: <code className="bg-gray-100 px-1 py-0.5 rounded">{purchase.vehicleImage}</code></p>
             <p className="text-xs text-gray-600">Constructed URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{imageUrl}</code></p>
+            <p className="text-xs text-gray-600">API Base URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{API_BASE_URL}</code></p>
             <button
               onClick={() => window.open(imageUrl || '', '_blank')}
               className="text-xs text-blue-500 hover:text-blue-600 underline"

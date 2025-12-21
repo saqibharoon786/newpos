@@ -1,16 +1,16 @@
-
-
 import type React from "react"
 
 import { useState } from "react"
 import { Save, Upload, Calendar, Clock } from "lucide-react"
 import axios from "axios"
 
-// Configure axios with correct API endpoints
-const API_BASE_URL = "http://localhost:5000/api/purchases"
+// Configure axios with environment variable
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000"
 
+// Use the environment variable to construct API endpoints
+const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`
 const API_ENDPOINTS = {
-  ADD: `${API_BASE_URL}/add`,
+  ADD: `${PURCHASES_API_URL}/add`,
 }
 
 const colorOptions = [
@@ -139,7 +139,11 @@ export default function AddPurchasePage() {
         formDataToSend.append("vehicleImage", formData.vehicleImage)
       }
 
-      const response = await axios.post(API_ENDPOINTS.ADD, formDataToSend)
+      const response = await axios.post(API_ENDPOINTS.ADD, formDataToSend, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      })
 
       if (response.data.success) {
         alert("Purchase added successfully!")
@@ -163,7 +167,7 @@ export default function AddPurchasePage() {
           alert(`Error: ${errorMessage}`)
         }
       } else if (error.request) {
-        alert("Network error. Please check if the backend server is running on port 5000.")
+        alert(`Network error. Please check if the backend server is running at ${API_BASE_URL}.`)
       } else {
         alert("Error: " + error.message)
       }
@@ -527,6 +531,22 @@ export default function AddPurchasePage() {
             )}
           </button>
         </div>
+
+        {/* Debug Info (Development only) */}
+        {/* {import.meta.env.DEV && (
+          <div className="mt-8 p-4 bg-teal-900/50 border border-teal-700 rounded-md">
+            <h4 className="text-sm font-semibold text-white mb-2">Debug Information</h4>
+            <p className="text-xs text-white/80 mb-1">
+              API Base URL: <code className="bg-teal-800 px-1 py-0.5 rounded">{API_BASE_URL}</code>
+            </p>
+            <p className="text-xs text-white/80">
+              Add Endpoint: <code className="bg-teal-800 px-1 py-0.5 rounded">{API_ENDPOINTS.ADD}</code>
+            </p>
+            <p className="text-xs text-white/80 mt-2">
+              Environment: {import.meta.env.MODE}
+            </p>
+          </div>
+        )} */}
       </div>
     </div>
   )

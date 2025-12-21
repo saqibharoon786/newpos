@@ -3,25 +3,27 @@ import { Save, Upload, Calendar, Edit, Trash2, Eye, X, Loader2, ChevronDown } fr
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import axios from "axios";
 
-// Configure axios with correct API endpoints
-const API_BASE_URL = "http://localhost:5000/api/purchases";
-const SALES_API_URL = "http://localhost:5000/api/sales";
+// Configure axios with environment variable
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
-// Create axios instance with defaults
+// Create axios instance with environment variable as base URL
 const api = axios.create({
-  baseURL: "http://localhost:5000",
+  baseURL: API_BASE_URL,
   timeout: 10000,
 });
 
-// Define endpoints
+// Define endpoints using environment variable
+const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
+const SALES_API_URL = `${API_BASE_URL}/api/sales`;
+
 const API_ENDPOINTS = {
-  ADD: `${API_BASE_URL}/add`,
-  GET_ALL: `${API_BASE_URL}/get-all`,
-  GET_ONE: (id: string) => `${API_BASE_URL}/${id}`,
-  UPDATE: (id: string) => `${API_BASE_URL}/${id}`,
-  DELETE: (id: string) => `${API_BASE_URL}/${id}`,
+  GET_ALL: PURCHASES_API_URL + "/get-all",
+  GET_ONE: (id: string) => `${PURCHASES_API_URL}/${id}`,
+  UPDATE: (id: string) => `${PURCHASES_API_URL}/${id}`,
+  DELETE: (id: string) => `${PURCHASES_API_URL}/${id}`,
   ADD_SALE: `${SALES_API_URL}/add-sale`,
   UPDATE_SALE: (id: string) => `${SALES_API_URL}/${id}`,
+  GET_SALES: `${SALES_API_URL}/get-all`,
 };
 
 interface Purchase {
@@ -377,7 +379,7 @@ export function AddSaleDialog({
         }
       } else if (error.request) {
         console.error('Error request:', error.request);
-        alert('Network error. Please check if the backend server is running on port 5000.');
+        alert(`Network error. Please check if the backend server is running at ${API_BASE_URL}.`);
       } else {
         alert('Error: ' + error.message);
       }
@@ -823,6 +825,25 @@ export function AddSaleDialog({
               )}
             </button>
           </div>
+
+          {/* Debug Info (Development only) */}
+          {import.meta.env.DEV && (
+            <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
+              <h4 className="text-xs font-semibold text-gray-700 mb-1">Debug Information</h4>
+              <p className="text-xs text-gray-600 mb-0.5">
+                API Base URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{API_BASE_URL}</code>
+              </p>
+              <p className="text-xs text-gray-600 mb-0.5">
+                Purchases API: <code className="bg-gray-100 px-1 py-0.5 rounded">{PURCHASES_API_URL}</code>
+              </p>
+              <p className="text-xs text-gray-600 mb-0.5">
+                Sales API: <code className="bg-gray-100 px-1 py-0.5 rounded">{SALES_API_URL}</code>
+              </p>
+              <p className="text-xs text-gray-600">
+                Environment: {import.meta.env.MODE}
+              </p>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
@@ -832,17 +853,6 @@ export function AddSaleDialog({
 // Add the missing import for Clock
 import { Clock } from "lucide-react";
 
-// Main Purchase Management Component remains the same...
-export function PurchaseManagement() {
-  // ... existing code remains the same
-  return (
-    <div className="min-h-screen bg-background p-6">
-      {/* ... existing code remains the same */}
-    </div>
-  );
-}
-
-// App Component
-export default function App() {
-  return <PurchaseManagement />;
-}
+// Note: The main Purchase Management Component would need similar updates
+// export function PurchaseManagement() { ... }
+// export default function App() { ... }

@@ -5,12 +5,17 @@ import { SaleDetailsView } from "./SaleDetailsView";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
 
-// Configure axios
-const API_BASE_URL = "http://localhost:5000/api/sales";
+// Configure axios with environment variable
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
+// Create axios instance with environment variable as base URL
 const api = axios.create({
-  baseURL: "http://localhost:5000",
+  baseURL: API_BASE_URL,
   timeout: 10000,
 });
+
+// Define endpoints using environment variable
+const SALES_API_URL = `${API_BASE_URL}/api/sales`;
 
 interface Sale {
   _id: string;
@@ -68,7 +73,7 @@ export function POSView() {
     try {
       setLoading(true);
       setError(null);
-      const response = await api.get(API_BASE_URL);
+      const response = await api.get(SALES_API_URL);
       
       if (response.data.success) {
         setSales(response.data.data || []);
@@ -106,7 +111,7 @@ export function POSView() {
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this sale?')) {
       try {
-        await api.delete(`${API_BASE_URL}/${id}`);
+        await api.delete(`${SALES_API_URL}/${id}`);
         await fetchSales();
         toast({
           title: "Success",
@@ -441,6 +446,27 @@ export function POSView() {
         isEdit={isEditMode}
         editData={selectedSale}
       />
+
+      {/* Debug Info (Development only) */}
+      {import.meta.env.DEV && (
+        <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+          <h4 className="text-sm font-semibold text-gray-700 mb-2">Debug Information</h4>
+          <div className="space-y-2">
+            <p className="text-xs text-gray-600 mb-0.5">
+              API Base URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{API_BASE_URL}</code>
+            </p>
+            <p className="text-xs text-gray-600 mb-0.5">
+              Sales API: <code className="bg-gray-100 px-1 py-0.5 rounded">{SALES_API_URL}</code>
+            </p>
+            <p className="text-xs text-gray-600">
+              Total Sales: {sales.length}
+            </p>
+            <p className="text-xs text-gray-600">
+              Environment: {import.meta.env.MODE}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

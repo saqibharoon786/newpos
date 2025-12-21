@@ -3,13 +3,18 @@ import { Pencil, Printer, Trash2, Circle, Scale, Palette, Building2, Award, Indi
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
 
-// Configure axios
-const API_BASE_URL = "http://localhost:5000/api/sales";
-const PURCHASE_API_URL = "http://localhost:5000/api/purchases";
+// Configure axios with environment variable
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
+// Create axios instance with environment variable as base URL
 const api = axios.create({
-  baseURL: "http://localhost:5000",
+  baseURL: API_BASE_URL,
   timeout: 10000,
 });
+
+// Define endpoints using environment variable
+const SALES_API_URL = `${API_BASE_URL}/api/sales`;
+const PURCHASE_API_URL = `${API_BASE_URL}/api/purchases`;
 
 interface Sale {
   _id: string;
@@ -85,7 +90,8 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
   // Debug: Log what we're trying to fetch
   useEffect(() => {
     console.log('Fetching sale details for ID:', saleId);
-    console.log('API URL:', `${API_BASE_URL}/${saleId}`);
+    console.log('API URL:', `${SALES_API_URL}/${saleId}`);
+    console.log('API Base URL:', API_BASE_URL);
   }, [saleId]);
 
   const fetchSaleDetails = async () => {
@@ -94,9 +100,9 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
       setError(null);
       setImageError(false);
       
-      console.log('Making API request to:', `${API_BASE_URL}/${saleId}`);
+      console.log('Making API request to:', `${SALES_API_URL}/${saleId}`);
       
-      const response = await api.get(`${API_BASE_URL}/${saleId}`);
+      const response = await api.get(`${SALES_API_URL}/${saleId}`);
       
       console.log('API Response:', response.data);
       
@@ -148,7 +154,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
       setLoadingPurchase(true);
       console.log('Fetching related purchase:', purchaseId);
       
-      const response = await axios.get(`${PURCHASE_API_URL}/${purchaseId}`);
+      const response = await api.get(`${PURCHASE_API_URL}/${purchaseId}`);
       
       if (response.data.success) {
         console.log('Related purchase data:', response.data.data);
@@ -170,6 +176,32 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
     }
   };
 
+  // Helper function to get image URL
+  const getImageUrl = (imagePath: string | undefined): string | null => {
+    if (!imagePath) return null;
+    
+    // If it's already a full URL
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+      return imagePath;
+    }
+    
+    // Remove leading slash if present for consistency
+    const cleanPath = imagePath.startsWith('/') ? imagePath.slice(1) : imagePath;
+    
+    // If it starts with uploads
+    if (cleanPath.startsWith('uploads/')) {
+      return `${API_BASE_URL}/${cleanPath}`;
+    }
+    
+    // If it's just a filename without path
+    if (!cleanPath.includes('/')) {
+      return `${API_BASE_URL}/uploads/${cleanPath}`;
+    }
+    
+    // Default case - assume it's relative to API base URL
+    return `${API_BASE_URL}/${cleanPath}`;
+  };
+
   // Get all vehicle data from sale (including nested vehicleDetails)
   const getVehicleDataFromSale = () => {
     if (!sale) return null;
@@ -185,7 +217,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
         driverName: sale.vehicleDetails.driverName,
         vehicleColor: sale.vehicleDetails.vehicleColor,
         deliveryDate: sale.vehicleDetails.deliveryDate,
-        vehicleImage: sale.vehicleDetails.vehicleImage
+        vehicleImage: sale.vehicleDetails.vehicleImage ? getImageUrl(sale.vehicleDetails.vehicleImage) : null
       };
     }
     
@@ -197,7 +229,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
       driverName: sale.driverName,
       vehicleColor: sale.vehicleColor,
       deliveryDate: sale.deliveryDate,
-      vehicleImage: sale.vehicleImage
+      vehicleImage: sale.vehicleImage ? getImageUrl(sale.vehicleImage) : null
     };
     
     const hasDirectData = Object.values(directVehicleData).some(val => val);
@@ -238,7 +270,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
         driverName: relatedPurchase.driverName,
         vehicleColor: relatedPurchase.vehicleColor,
         deliveryDate: relatedPurchase.deliveryDate,
-        vehicleImage: relatedPurchase.vehicleImage
+        vehicleImage: relatedPurchase.vehicleImage ? getImageUrl(relatedPurchase.vehicleImage) : null
       };
     }
     
@@ -266,7 +298,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
     if (window.confirm('Are you sure you want to delete this sale? This action cannot be undone.')) {
       try {
         setDeleting(true);
-        await api.delete(`${API_BASE_URL}/${saleId}`);
+        await api.delete(`${SALES_API_URL}/${saleId}`);
         
         toast({
           title: "Success",
@@ -858,6 +890,9 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
           <p className="text-xs text-gray-600">Vehicle Name: <code className="bg-gray-100 px-1 py-0.5 rounded">{vehicleData?.vehicleName || 'null'}</code></p>
           <p className="text-xs text-gray-600">Vehicle Number: <code className="bg-gray-100 px-1 py-0.5 rounded">{vehicleData?.vehicleNumber || 'null'}</code></p>
           <p className="text-xs text-gray-600">Driver Name: <code className="bg-gray-100 px-1 py-0.5 rounded">{vehicleData?.driverName || 'null'}</code></p>
+          <p className="text-xs text-gray-600">API Base URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{API_BASE_URL}</code></p>
+          <p className="text-xs text-gray-600">Sales API: <code className="bg-gray-100 px-1 py-0.5 rounded">{SALES_API_URL}</code></p>
+          <p className="text-xs text-gray-600">Purchase API: <code className="bg-gray-100 px-1 py-0.5 rounded">{PURCHASE_API_URL}</code></p>
           <button
             onClick={() => {
               console.log('=== FULL SALE DATA ===');
@@ -866,6 +901,10 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
               console.log(vehicleData);
               console.log('=== RELATED PURCHASE ===');
               console.log(relatedPurchase);
+              console.log('=== API CONFIGURATION ===');
+              console.log('API Base URL:', API_BASE_URL);
+              console.log('Sales API URL:', SALES_API_URL);
+              console.log('Purchase API URL:', PURCHASE_API_URL);
             }}
             className="text-xs text-blue-500 hover:text-blue-600 underline"
           >
