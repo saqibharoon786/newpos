@@ -4,7 +4,17 @@ import { AddExpenseDialog } from "./AddExpenseDialog";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
 
-const API_BASE_URL = "http://localhost:5000/api";
+// Configure axios with environment variable
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
+// Create axios instance with base URL
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 10000,
+});
+
+// API endpoints
+const EXPENSES_API_URL = `${API_BASE_URL}/api/expenses`;
 
 interface ExpenseItem {
   _id: string;
@@ -316,7 +326,7 @@ export function RoznamchaView() {
   const fetchExpenses = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/expenses/get-all`);
+      const response = await api.get(`${EXPENSES_API_URL}/get-all`);
       if (response.data.success) {
         const fetchedExpenses = response.data.data;
         
@@ -345,7 +355,7 @@ export function RoznamchaView() {
   // Fetch statistics
   const fetchStats = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/expenses/stats`);
+      const response = await api.get(`${EXPENSES_API_URL}/stats`);
       if (response.data.success) {
         setStats(response.data.data);
       }
@@ -389,7 +399,7 @@ export function RoznamchaView() {
         });
         
         // Make API call in background
-        response = await axios.put(`${API_BASE_URL}/expenses/${editExpense._id}`, expenseData);
+        response = await api.put(`${EXPENSES_API_URL}/${editExpense._id}`, expenseData);
         
         if (response.data.success) {
           // Update with server data (in case server modified something)
@@ -440,7 +450,7 @@ export function RoznamchaView() {
         });
         
         // Make API call in background
-        response = await axios.post(`${API_BASE_URL}/expenses/create-expense`, expenseData);
+        response = await api.post(`${EXPENSES_API_URL}/create-expense`, expenseData);
         
         if (response.data.success) {
           // Replace temporary expense with real one from server
@@ -468,7 +478,7 @@ export function RoznamchaView() {
       if (editExpense) {
         // Refetch the original data for this expense
         try {
-          const originalResponse = await axios.get(`${API_BASE_URL}/expenses/${editExpense._id}`);
+          const originalResponse = await api.get(`${EXPENSES_API_URL}/${editExpense._id}`);
           if (originalResponse.data.success) {
             setExpenses(prev => 
               prev.map(expense => 
@@ -515,7 +525,7 @@ export function RoznamchaView() {
     setExpenses(prev => prev.filter(expense => expense._id !== id));
     
     try {
-      await axios.delete(`${API_BASE_URL}/expenses/${id}`);
+      await api.delete(`${EXPENSES_API_URL}/${id}`);
       
       toast({
         title: "Success",
@@ -554,7 +564,7 @@ export function RoznamchaView() {
   // Handle view expense
   const handleViewExpense = async (id: string) => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/expenses/${id}`);
+      const response = await api.get(`${EXPENSES_API_URL}/${id}`);
       if (response.data.success) {
         setViewExpense(response.data.data);
       }
@@ -581,7 +591,7 @@ export function RoznamchaView() {
     setViewExpense(null);
   };
 
-  // Calculate statistics from local data (always up-to-date)
+  // Calculate daily statistics from local data
   const calculateTodayExpense = () => {
     const today = new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
     return expenses
@@ -599,14 +609,190 @@ export function RoznamchaView() {
       .reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
   };
 
+  // Calculate weekly statistics
+  const calculateWeeklyExpense = () => {
+    const today = new Date();
+    const firstDayOfWeek = new Date(today);
+    firstDayOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
+    const lastDayOfWeek = new Date(today);
+    lastDayOfWeek.setDate(today.getDate() + (6 - today.getDay())); // Saturday
+    
+    return expenses
+      .filter(expense => {
+        const expenseDate = new Date(expense.date);
+        return expenseDate >= firstDayOfWeek && expenseDate <= lastDayOfWeek;
+      })
+      .reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
+  };
+
+  const calculateLastWeekExpense = () => {
+    const today = new Date();
+    const firstDayOfLastWeek = new Date(today);
+    firstDayOfLastWeek.setDate(today.getDate() - today.getDay() - 7); // Sunday of last week
+    const lastDayOfLastWeek = new Date(today);
+    lastDayOfLastWeek.setDate(today.getDate() - today.getDay() - 1); // Saturday of last week
+    
+    return expenses
+      .filter(expense => {
+        const expenseDate = new Date(expense.date);
+        return expenseDate >= firstDayOfLastWeek && expenseDate <= lastDayOfLastWeek;
+      })
+      .reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
+  };
+
+  // Calculate monthly statistics
+  const calculateMonthlyExpense = () => {
+    const today = new Date();
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    
+    return expenses
+      .filter(expense => {
+        const expenseDate = new Date(expense.date);
+        return expenseDate >= firstDayOfMonth && expenseDate <= lastDayOfMonth;
+      })
+      .reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
+  };
+
+  const calculateLastMonthExpense = () => {
+    const today = new Date();
+    const firstDayOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const lastDayOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+    
+    return expenses
+      .filter(expense => {
+        const expenseDate = new Date(expense.date);
+        return expenseDate >= firstDayOfLastMonth && expenseDate <= lastDayOfLastMonth;
+      })
+      .reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
+  };
+
+  // Calculate average based on active tab
+  const calculateAvgExpense = () => {
+    switch (activeTab) {
+      case "Daily":
+        return calculateTotalExpenses() / Math.max(new Set(expenses.map(e => e.date)).size, 1);
+      case "Weekly":
+        return calculateMonthlyExpense() / 4.33; // Average weeks in a month
+      case "Monthly":
+        return calculateMonthlyExpense();
+      default:
+        return 0;
+    }
+  };
+
   const calculateTotalExpenses = () => {
     return expenses.reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
   };
 
-  const calculateAvgDailyExpense = () => {
-    const total = calculateTotalExpenses();
-    const uniqueDays = new Set(expenses.map(e => e.date)).size;
-    return uniqueDays > 0 ? total / uniqueDays : 0;
+  // Filter expenses based on active tab
+  const getFilteredExpensesByTab = (expensesList: ExpenseItem[]) => {
+    const today = new Date();
+    
+    switch (activeTab) {
+      case "Daily":
+        const todayStr = today.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
+        return expensesList.filter(expense => expense.date === todayStr);
+      
+      case "Weekly":
+        const firstDayOfWeek = new Date(today);
+        firstDayOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
+        const lastDayOfWeek = new Date(today);
+        lastDayOfWeek.setDate(today.getDate() + (6 - today.getDay())); // Saturday
+        
+        return expensesList.filter(expense => {
+          const expenseDate = new Date(expense.date);
+          return expenseDate >= firstDayOfWeek && expenseDate <= lastDayOfWeek;
+        });
+      
+      case "Monthly":
+        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        
+        return expensesList.filter(expense => {
+          const expenseDate = new Date(expense.date);
+          return expenseDate >= firstDayOfMonth && expenseDate <= lastDayOfMonth;
+        });
+      
+      default:
+        return expensesList;
+    }
+  };
+
+  // Get current period stats based on active tab
+  const getCurrentPeriodStats = () => {
+    switch (activeTab) {
+      case "Daily":
+        return {
+          current: calculateTodayExpense(),
+          previous: calculateYesterdayExpense(),
+          avg: calculateAvgExpense()
+        };
+      case "Weekly":
+        return {
+          current: calculateWeeklyExpense(),
+          previous: calculateLastWeekExpense(),
+          avg: calculateAvgExpense()
+        };
+      case "Monthly":
+        return {
+          current: calculateMonthlyExpense(),
+          previous: calculateLastMonthExpense(),
+          avg: calculateAvgExpense()
+        };
+      default:
+        return {
+          current: 0,
+          previous: 0,
+          avg: 0
+        };
+    }
+  };
+
+  // Get period label based on active tab
+  const getPeriodLabel = () => {
+    switch (activeTab) {
+      case "Daily":
+        return "Today's";
+      case "Weekly":
+        return "This Week's";
+      case "Monthly":
+        return "This Month's";
+      default:
+        return "Today's";
+    }
+  };
+
+  const getPreviousPeriodLabel = () => {
+    switch (activeTab) {
+      case "Daily":
+        return "Yesterday's";
+      case "Weekly":
+        return "Last Week's";
+      case "Monthly":
+        return "Last Month's";
+      default:
+        return "Yesterday's";
+    }
+  };
+
+  // Get period display date
+  const getPeriodDisplay = () => {
+    const today = new Date();
+    switch (activeTab) {
+      case "Daily":
+        return today.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+      case "Weekly":
+        const firstDay = new Date(today);
+        firstDay.setDate(today.getDate() - today.getDay());
+        const lastDay = new Date(today);
+        lastDay.setDate(today.getDate() + (6 - today.getDay()));
+        return `${firstDay.getDate()} ${firstDay.toLocaleDateString('en-US', { month: 'short' })} - ${lastDay.getDate()} ${lastDay.toLocaleDateString('en-US', { month: 'short' })}`;
+      case "Monthly":
+        return today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      default:
+        return today.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+    }
   };
 
   // Initial data fetch
@@ -615,7 +801,16 @@ export function RoznamchaView() {
     fetchStats();
   }, []);
 
-  const filteredExpenses = expenses.filter(expense => {
+  // Update period filter when tab changes
+  useEffect(() => {
+    setFilters(prev => ({
+      ...prev,
+      period: getPeriodDisplay()
+    }));
+  }, [activeTab]);
+
+  // Filter expenses based on search, filters, and active tab
+  const baseFilteredExpenses = expenses.filter(expense => {
     const searchMatch = searchTerm === "" ||
       expense.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
       expense.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -628,9 +823,11 @@ export function RoznamchaView() {
     return searchMatch && purposeMatch && personMatch && usageMatch;
   });
 
-  const todayExpense = calculateTodayExpense();
-  const yesterdayExpense = calculateYesterdayExpense();
-  const avgDailyExpense = calculateAvgDailyExpense();
+  // Apply tab-based filtering
+  const filteredExpenses = getFilteredExpensesByTab(baseFilteredExpenses);
+
+  // Get current period stats
+  const currentStats = getCurrentPeriodStats();
 
   return (
     <>
@@ -677,7 +874,7 @@ export function RoznamchaView() {
           <div className="flex items-center gap-3">
             <button className="bg-cms-card border border-border rounded-lg px-4 py-2.5 text-sm text-foreground flex items-center gap-2">
               <Calendar className="w-4 h-4" />
-              Period: {filters.period}
+              Period: {getPeriodDisplay()}
               <ChevronDown className="w-4 h-4" />
             </button>
             <select
@@ -724,19 +921,23 @@ export function RoznamchaView() {
           </div>
         </div>
 
-        {/* Stats Cards - Updated INSTANTLY */}
+        {/* Stats Cards - Updated based on active tab */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="bg-cms-card rounded-xl p-4">
-            <p className="text-sm text-muted-foreground mb-1">Today's Expense</p>
-            <p className="text-2xl font-bold text-foreground">Rs. {todayExpense.toLocaleString()}</p>
+            <p className="text-sm text-muted-foreground mb-1">{getPeriodLabel()} Expense</p>
+            <p className="text-2xl font-bold text-foreground">Rs. {currentStats.current.toLocaleString()}</p>
           </div>
           <div className="bg-cms-card rounded-xl p-4">
-            <p className="text-sm text-muted-foreground mb-1">Yesterday's Expense</p>
-            <p className="text-2xl font-bold text-foreground">Rs. {yesterdayExpense.toLocaleString()}</p>
+            <p className="text-sm text-muted-foreground mb-1">{getPreviousPeriodLabel()} Expense</p>
+            <p className="text-2xl font-bold text-foreground">Rs. {currentStats.previous.toLocaleString()}</p>
           </div>
           <div className="bg-cms-card rounded-xl p-4">
-            <p className="text-sm text-muted-foreground mb-1">Avg. Daily Expense</p>
-            <p className="text-2xl font-bold text-foreground">Rs. {avgDailyExpense.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+            <p className="text-sm text-muted-foreground mb-1">Avg. {activeTab === "Monthly" ? "Monthly" : activeTab} Expense</p>
+            <p className="text-2xl font-bold text-foreground">
+              Rs. {currentStats.avg.toLocaleString(undefined, { 
+                maximumFractionDigits: activeTab === "Monthly" ? 0 : 0 
+              })}
+            </p>
           </div>
         </div>
 
@@ -760,7 +961,7 @@ export function RoznamchaView() {
             </div>
           ) : filteredExpenses.length === 0 ? (
             <div className="p-8 text-center">
-              <p className="text-muted-foreground">No expenses found</p>
+              <p className="text-muted-foreground">No {activeTab.toLowerCase()} expenses found</p>
               <button
                 onClick={() => setDialogOpen(true)}
                 className="mt-2 px-4 py-2 bg-primary text-white rounded-md text-sm"
@@ -779,6 +980,8 @@ export function RoznamchaView() {
                   </p>
                 </div>
               )}
+              
+              {/* Active Tab Indicator - REMOVED as per request */}
               
               <table className="w-full">
                 <thead>
@@ -810,9 +1013,7 @@ export function RoznamchaView() {
                           <div className="flex items-center gap-2">
                             <div>
                               <p className="font-medium">{expense.subject}</p>
-                              <p className="text-xs text-muted-foreground truncate max-w-xs">
-                                {expense.description}
-                              </p>
+                              {/* Description removed as per request */}
                             </div>
                             {isOptimistic && (
                               <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-yellow-600"></div>
@@ -833,9 +1034,12 @@ export function RoznamchaView() {
                         </td>
                         <td className="px-4 py-3 text-sm text-foreground">{expense.personResponsible}</td>
                         <td className="px-4 py-3 text-sm text-foreground">
-                          <div>
-                            <p>{expense.date}</p>
-                            <p className="text-xs text-muted-foreground">{expense.time}</p>
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4 text-muted-foreground" />
+                            <div>
+                              <p>{expense.date}</p>
+                              <p className="text-xs text-muted-foreground">{expense.time}</p>
+                            </div>
                           </div>
                         </td>
                         <td className="px-4 py-3">

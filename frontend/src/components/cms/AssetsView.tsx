@@ -25,7 +25,9 @@ interface AssetItem {
   updatedAt: string;
 }
 
-const API_BASE_URL = "http://localhost:5000/api/assets";
+// ✅ Use environment variable for API base URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const ASSETS_API_URL = `${API_BASE_URL}/api/assets`;
 
 export function AssetsView() {
   const [data, setData] = useState<AssetItem[]>([]);
@@ -44,11 +46,12 @@ export function AssetsView() {
     totalValue: 0,
   });
 
+  // ✅ Updated to use ASSETS_API_URL
   // Fetch all assets
   const fetchAssets = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/get-all`);
+      const response = await fetch(`${ASSETS_API_URL}/get-all`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -71,10 +74,11 @@ export function AssetsView() {
     }
   };
 
+  // ✅ Updated to use ASSETS_API_URL
   // Fetch statistics
   const fetchStats = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/stats`);
+      const response = await fetch(`${ASSETS_API_URL}/stats`);
       if (!response.ok) return;
       
       const result = await response.json();
@@ -104,32 +108,44 @@ export function AssetsView() {
     try {
       setAdding(true);
       
-      // Format purchase price properly
-      let purchasePriceValue = undefined;
-      if (assetData.purchasePrice) {
-        const cleanedPrice = assetData.purchasePrice.replace(/,/g, '').trim();
-        purchasePriceValue = cleanedPrice ? parseFloat(cleanedPrice) : undefined;
+      console.log("📤 Received asset data:", assetData);
+      console.log("🔍 purchasePrice type:", typeof assetData.purchasePrice);
+      console.log("🔍 purchasePrice value:", assetData.purchasePrice);
+
+      // ✅ SIMPLIFIED FIX: Check if purchasePrice is a string before using .replace()
+      let purchasePriceValue = null;
+      if (assetData.purchasePrice !== null && assetData.purchasePrice !== undefined && assetData.purchasePrice !== "") {
+        if (typeof assetData.purchasePrice === 'number') {
+          purchasePriceValue = assetData.purchasePrice;
+        } else if (typeof assetData.purchasePrice === 'string') {
+          // ✅ SAFE: Only call .replace() if it's definitely a string
+          const cleanedPrice = assetData.purchasePrice.replace(/,/g, '').trim();
+          if (cleanedPrice && !isNaN(parseFloat(cleanedPrice))) {
+            purchasePriceValue = parseFloat(cleanedPrice);
+          }
+        }
       }
 
       const formattedData = {
         assetName: assetData.assetName,
         category: assetData.category,
         quantity: parseInt(assetData.quantity) || 1,
-        sizeModel: assetData.sizeModel,
+        sizeModel: assetData.sizeModel || null,
         condition: assetData.condition,
-        description: assetData.description,
+        description: assetData.description || null,
         department: assetData.department,
-        assignedTo: assetData.assignedTo,
+        assignedTo: assetData.assignedTo || null,
         purchasePrice: purchasePriceValue,
-        purchaseFrom: assetData.purchaseFrom,
-        invoiceNo: assetData.invoiceNo,
+        purchaseFrom: assetData.purchaseFrom || null,
+        invoiceNo: assetData.invoiceNo || null,
         date: assetData.date || new Date().toISOString().split('T')[0],
         time: assetData.time || new Date().toLocaleTimeString('en-US', { hour12: false })
       };
 
-      console.log("📤 Sending new asset data:", formattedData);
+      console.log("📤 Sending formatted data:", formattedData);
 
-      const response = await fetch(`${API_BASE_URL}/create-assets`, {
+      // ✅ Use ASSETS_API_URL
+      const response = await fetch(`${ASSETS_API_URL}/create-assets`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -139,7 +155,6 @@ export function AssetsView() {
 
       console.log("📥 Add response status:", response.status);
       
-      // Try to get response text first
       const responseText = await response.text();
       console.log("📥 Add response text:", responseText);
       
@@ -157,17 +172,13 @@ export function AssetsView() {
           description: `${result.data.assetName} has been added successfully.`,
         });
         
-        // ✅ FIX: Immediately update the UI by adding to local state
         if (result.data) {
           setData(prev => [result.data, ...prev]);
         }
         
-        // ✅ FIX: Also refresh from server to ensure consistency
         await fetchAssets();
-        
         setDialogOpen(false);
       } else {
-        // Show detailed error from backend
         const errorMsg = result.error || result.message || "Failed to create asset";
         console.error("❌ Backend error:", result);
         throw new Error(errorMsg);
@@ -213,7 +224,7 @@ export function AssetsView() {
     }));
   };
 
-  // Update asset - FIXED VERSION
+  // ✅ Updated to use ASSETS_API_URL
   const handleUpdateAsset = async () => {
     if (!editingAsset) return;
     
@@ -223,21 +234,25 @@ export function AssetsView() {
       console.log("📤 Updating asset ID:", editingAsset._id);
       console.log("📦 Update data:", editForm);
       
-      // Format purchase price properly for update
       const updateData = { ...editForm };
       
-      // Handle purchase price formatting
-      if (typeof updateData.purchasePrice === 'string') {
-        const cleanedPrice = updateData.purchasePrice.replace(/,/g, '').trim();
-        updateData.purchasePrice = cleanedPrice ? parseFloat(cleanedPrice) : undefined;
+      // ✅ FIXED: Check type before calling .replace()
+      if (updateData.purchasePrice !== undefined) {
+        if (typeof updateData.purchasePrice === 'string') {
+          const cleanedPrice = updateData.purchasePrice.replace(/,/g, '').trim();
+          updateData.purchasePrice = cleanedPrice ? parseFloat(cleanedPrice) : null;
+        } else if (typeof updateData.purchasePrice === 'number') {
+          // Already a number, keep as is
+          updateData.purchasePrice = updateData.purchasePrice;
+        }
       }
       
-      // Handle quantity conversion
       if (typeof updateData.quantity === 'string') {
         updateData.quantity = parseInt(updateData.quantity) || 1;
       }
 
-      const response = await fetch(`${API_BASE_URL}/${editingAsset._id}`, {
+      // ✅ Use ASSETS_API_URL
+      const response = await fetch(`${ASSETS_API_URL}/${editingAsset._id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -247,7 +262,6 @@ export function AssetsView() {
 
       console.log("📥 Update response status:", response.status);
       
-      // Get response text first
       const responseText = await response.text();
       console.log("📥 Update response text:", responseText);
       
@@ -265,7 +279,6 @@ export function AssetsView() {
           description: "Asset updated successfully",
         });
         
-        // ✅ Update local data immediately
         setData(prev => prev.map(item => 
           item._id === editingAsset._id ? { ...item, ...result.data } : item
         ));
@@ -274,7 +287,6 @@ export function AssetsView() {
         setEditingAsset(null);
         setEditForm({});
       } else {
-        // Show detailed error
         const errorMsg = result.error || result.message || "Failed to update asset";
         console.error("❌ Update backend error:", result);
         throw new Error(errorMsg);
@@ -291,12 +303,13 @@ export function AssetsView() {
     }
   };
 
-  // Delete asset
+  // ✅ Updated to use ASSETS_API_URL
   const handleDeleteAsset = async (id: string, assetName: string) => {
     if (!confirm(`Are you sure you want to delete "${assetName}"?`)) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/${id}`, {
+      // ✅ Use ASSETS_API_URL
+      const response = await fetch(`${ASSETS_API_URL}/${id}`, {
         method: 'DELETE',
       });
 
@@ -308,9 +321,8 @@ export function AssetsView() {
           description: `${assetName} has been deleted.`,
         });
         
-        // Update local data
         setData(prev => prev.filter(item => item._id !== id));
-        await fetchStats(); // Refresh stats
+        await fetchStats();
       } else {
         throw new Error(result.error || "Failed to delete asset");
       }
@@ -675,13 +687,12 @@ export function AssetsView() {
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1.5">Purchase Price</label>
                   <input
-                    type="number"
+                    type="text" // Changed from number to text for safer handling
                     name="purchasePrice"
                     placeholder="70000"
                     value={editForm.purchasePrice || ''}
                     onChange={handleEditFormChange}
                     className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    step="0.01"
                   />
                 </div>
                 <div>

@@ -21,28 +21,56 @@ exports.createAsset = async (req, res) => {
       time
     } = req.body;
 
+    console.log('📥 Received asset data:', req.body); // DEBUG LOG
+
+    // Basic validation
+    if (!assetName || !category || !condition || !department) {
+      return res.status(400).json({
+        success: false,
+        error: 'Required fields: assetName, category, condition, department'
+      });
+    }
+
     // Parse date and time if provided
     let purchaseDate = new Date();
     if (date) {
       purchaseDate = new Date(date);
     }
 
-    // Create asset object
+    // FIXED: Properly handle purchasePrice
+    let parsedPurchasePrice = null;
+    if (purchasePrice && purchasePrice !== "" && purchasePrice !== null) {
+      try {
+        // Remove commas and convert to number
+        const cleanPrice = String(purchasePrice).replace(/,/g, '').trim();
+        if (cleanPrice && !isNaN(cleanPrice)) {
+          parsedPurchasePrice = parseFloat(cleanPrice);
+        }
+      } catch (e) {
+        console.log('Warning: Could not parse purchasePrice:', purchasePrice);
+        parsedPurchasePrice = null;
+      }
+    }
+
+    // Create asset object - SIMPLIFIED
     const assetData = {
-      assetName,
-      category,
-      quantity: parseInt(quantity),
-      sizeModel,
-      condition,
-      description,
-      department,
-      assignedTo,
-      purchasePrice: purchasePrice ? parseFloat(purchasePrice.replace(/,/g, '')) : undefined,
-      purchaseFrom,
-      invoiceNo,
+      assetName: String(assetName).trim(),
+      category: String(category).trim(),
+      quantity: parseInt(quantity) || 1,
+      sizeModel: sizeModel ? String(sizeModel).trim() : null,
+      condition: String(condition).trim(),
+      description: description ? String(description).trim() : null,
+      department: String(department).trim(),
+      assignedTo: assignedTo ? String(assignedTo).trim() : null,
+      purchasePrice: parsedPurchasePrice, // Can be null
+      purchaseFrom: purchaseFrom ? String(purchaseFrom).trim() : null,
+      invoiceNo: invoiceNo ? String(invoiceNo).trim() : null,
       purchaseDate,
-      purchaseTime: time
+      purchaseTime: time || null,
+      status: 'Active'
     };
+
+    console.log('📤 Creating asset with data:', assetData); // DEBUG LOG
 
     // Set createdBy from authenticated user
     if (req.user) {
@@ -57,10 +85,11 @@ exports.createAsset = async (req, res) => {
       message: 'Asset created successfully'
     });
   } catch (error) {
-    console.error('Error creating asset:', error);
+    console.error('❌ Error creating asset:', error);
     
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(val => val.message);
+      console.error('Validation errors:', messages);
       return res.status(400).json({
         success: false,
         error: messages.join(', ')
@@ -69,7 +98,7 @@ exports.createAsset = async (req, res) => {
     
     res.status(500).json({
       success: false,
-      error: 'Server error'
+      error: 'Server error: ' + error.message
     });
   }
 };
@@ -79,49 +108,11 @@ exports.createAsset = async (req, res) => {
 // @access  Private
 exports.getAllAssets = async (req, res) => {
   try {
-    const {
-      page = 1,
-      limit = 10,
-      category,
-      department,
-      condition,
-      status,
-      search
-    } = req.query;
-
-    // Build query
-    const query = {};
-
-    if (category) query.category = category;
-    if (department) query.department = department;
-    if (condition) query.condition = condition;
-    if (status) query.status = status;
-
-    // Search functionality
-    if (search) {
-      query.$or = [
-        { assetName: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-        { invoiceNo: { $regex: search, $options: 'i' } }
-      ];
-    }
-
-    // Execute query with pagination
-    const assets = await Asset.find(query)
-      .populate('createdBy', 'name email')
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-
-    // Get total count for pagination
-    const total = await Asset.countDocuments(query);
+    const assets = await Asset.find().sort({ createdAt: -1 });
 
     res.status(200).json({
       success: true,
       count: assets.length,
-      total,
-      totalPages: Math.ceil(total / limit),
-      currentPage: parseInt(page),
       data: assets
     });
   } catch (error) {
@@ -133,12 +124,36 @@ exports.getAllAssets = async (req, res) => {
   }
 };
 
+// SIMPLIFIED VERSION - Remove all complex features for now
+// @desc    Get all assets simple
+// @route   GET /api/assets/get-all
+// @access  Private
+exports.getAllAssetsSimple = async (req, res) => {
+  try {
+    const assets = await Asset.find()
+      .select('-__v')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      data: assets
+    });
+  } catch (error) {
+    console.error('Error fetching assets:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
 // @desc    Get single asset by ID
 // @route   GET /api/assets/:id
 // @access  Private
 exports.getAssetById = async (req, res) => {
   try {
-    const asset = await Asset.findById(req.params.id).populate('createdBy', 'name email');
+    const asset = await Asset.findById(req.params.id);
 
     if (!asset) {
       return res.status(404).json({
@@ -173,22 +188,8 @@ exports.getAssetById = async (req, res) => {
 // @access  Private
 exports.updateAsset = async (req, res) => {
   try {
-    const {
-      assetName,
-      category,
-      quantity,
-      sizeModel,
-      condition,
-      description,
-      department,
-      assignedTo,
-      purchasePrice,
-      purchaseFrom,
-      invoiceNo,
-      date,
-      time,
-      status
-    } = req.body;
+    console.log('📥 Update request for ID:', req.params.id);
+    console.log('📥 Update data:', req.body);
 
     let asset = await Asset.findById(req.params.id);
 
@@ -200,34 +201,38 @@ exports.updateAsset = async (req, res) => {
     }
 
     // Prepare update data
-    const updateData = {
-      assetName,
-      category,
-      quantity: quantity ? parseInt(quantity) : asset.quantity,
-      sizeModel,
-      condition,
-      description,
-      department,
-      assignedTo,
-      purchasePrice: purchasePrice ? parseFloat(purchasePrice.replace(/,/g, '')) : asset.purchasePrice,
-      purchaseFrom,
-      invoiceNo,
-      status
-    };
+    const updateData = { ...req.body };
 
-    // Update date if provided
-    if (date) {
-      updateData.purchaseDate = new Date(date);
+    // Handle purchasePrice conversion if present
+    if (updateData.purchasePrice !== undefined) {
+      if (updateData.purchasePrice && updateData.purchasePrice !== "" && updateData.purchasePrice !== null) {
+        try {
+          const cleanPrice = String(updateData.purchasePrice).replace(/,/g, '').trim();
+          if (cleanPrice && !isNaN(cleanPrice)) {
+            updateData.purchasePrice = parseFloat(cleanPrice);
+          } else {
+            updateData.purchasePrice = null;
+          }
+        } catch (e) {
+          updateData.purchasePrice = null;
+        }
+      } else {
+        updateData.purchasePrice = null;
+      }
     }
-    if (time) {
-      updateData.purchaseTime = time;
+
+    // Handle quantity conversion
+    if (updateData.quantity !== undefined) {
+      updateData.quantity = parseInt(updateData.quantity) || 1;
     }
+
+    console.log('📤 Final update data:', updateData);
 
     asset = await Asset.findByIdAndUpdate(
       req.params.id,
       updateData,
       { new: true, runValidators: true }
-    ).populate('createdBy', 'name email');
+    );
 
     res.status(200).json({
       success: true,
@@ -235,7 +240,7 @@ exports.updateAsset = async (req, res) => {
       message: 'Asset updated successfully'
     });
   } catch (error) {
-    console.error('Error updating asset:', error);
+    console.error('❌ Error updating asset:', error);
     
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(val => val.message);
@@ -247,7 +252,7 @@ exports.updateAsset = async (req, res) => {
     
     res.status(500).json({
       success: false,
-      error: 'Server error'
+      error: error.message
     });
   }
 };
@@ -300,58 +305,22 @@ exports.getAssetStats = async (req, res) => {
         $group: {
           _id: null,
           totalAssets: { $sum: 1 },
-          totalValue: { $sum: { $ifNull: ['$purchasePrice', 0] } },
-          avgValue: { $avg: '$purchasePrice' }
+          totalValue: { $sum: { $ifNull: ['$purchasePrice', 0] } }
         }
       },
       {
         $project: {
           _id: 0,
           totalAssets: 1,
-          totalValue: 1,
-          avgValue: { $round: ['$avgValue', 2] }
+          totalValue: 1
         }
       }
-    ]);
-
-    const categoryStats = await Asset.aggregate([
-      {
-        $group: {
-          _id: '$category',
-          count: { $sum: 1 },
-          totalValue: { $sum: { $ifNull: ['$purchasePrice', 0] } }
-        }
-      },
-      { $sort: { count: -1 } }
-    ]);
-
-    const conditionStats = await Asset.aggregate([
-      {
-        $group: {
-          _id: '$condition',
-          count: { $sum: 1 }
-        }
-      },
-      { $sort: { count: -1 } }
-    ]);
-
-    const departmentStats = await Asset.aggregate([
-      {
-        $group: {
-          _id: '$department',
-          count: { $sum: 1 }
-        }
-      },
-      { $sort: { count: -1 } }
     ]);
 
     res.status(200).json({
       success: true,
       data: {
-        overview: stats[0] || { totalAssets: 0, totalValue: 0, avgValue: 0 },
-        byCategory: categoryStats,
-        byCondition: conditionStats,
-        byDepartment: departmentStats
+        overview: stats[0] || { totalAssets: 0, totalValue: 0 }
       }
     });
   } catch (error) {

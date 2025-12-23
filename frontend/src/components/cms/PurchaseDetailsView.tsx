@@ -43,8 +43,6 @@ interface PurchaseDetailsViewProps {
 const getImageUrl = (imagePath: string | undefined): string | null => {
   if (!imagePath) return null;
   
-  console.log('Original image path:', imagePath);
-  
   // If it's already a full URL
   if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
     return imagePath;
@@ -91,12 +89,6 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
       
       if (response.data.success) {
         setPurchase(response.data.data);
-        
-        // Log the image path for debugging
-        if (response.data.data?.vehicleImage) {
-          console.log('Image path from API:', response.data.data.vehicleImage);
-          console.log('Constructed URL:', getImageUrl(response.data.data.vehicleImage));
-        }
       } else {
         throw new Error(response.data.message || 'Failed to fetch purchase details');
       }
@@ -441,19 +433,12 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
         
         {imageUrl ? (
           <div>
-            <div className="mb-3">
-              <p className="text-xs text-muted-foreground">Image URL:</p>
-              <p className="text-xs font-mono bg-cms-card-hover p-2 rounded border border-border break-all">
-                {imageUrl}
-              </p>
-            </div>
             <div className="rounded-xl overflow-hidden border border-border">
               <img 
                 src={imageUrl}
                 alt={`${purchase.vehicleName} vehicle`} 
                 className="w-full h-64 object-cover"
-                onError={(e) => {
-                  console.error('Image failed to load:', imageUrl);
+                onError={() => {
                   setImageError(true);
                 }}
               />
@@ -461,10 +446,7 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
             {imageError && (
               <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-sm text-yellow-600">
-                  Could not load image. Check if the file exists in the uploads directory.
-                </p>
-                <p className="text-xs text-yellow-500 mt-1">
-                  Expected path: {purchase.vehicleImage}
+                  Could not load image. Please check the image file.
                 </p>
               </div>
             )}
@@ -496,24 +478,6 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
           </div>
         </div>
       </div>
-
-      {/* Debug Info (visible only in development) */}
-      {process.env.NODE_ENV === 'development' && purchase.vehicleImage && (
-        <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-          <h4 className="text-sm font-semibold text-gray-700 mb-2">Debug Information</h4>
-          <div className="space-y-2">
-            <p className="text-xs text-gray-600">Original image path: <code className="bg-gray-100 px-1 py-0.5 rounded">{purchase.vehicleImage}</code></p>
-            <p className="text-xs text-gray-600">Constructed URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{imageUrl}</code></p>
-            <p className="text-xs text-gray-600">API Base URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{API_BASE_URL}</code></p>
-            <button
-              onClick={() => window.open(imageUrl || '', '_blank')}
-              className="text-xs text-blue-500 hover:text-blue-600 underline"
-            >
-              Open image in new tab
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Print Styles */}
       <style media="print">

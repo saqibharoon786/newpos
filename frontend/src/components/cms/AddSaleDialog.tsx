@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Save, Upload, Calendar, Edit, Trash2, Eye, X, Loader2, ChevronDown } from "lucide-react";
+import { Save, Upload, Calendar, Edit, Trash2, Eye, X, Loader2, ChevronDown, Clock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import axios from "axios";
 
@@ -131,8 +131,6 @@ export function AddSaleDialog({
       fetchMaterials();
       
       if (isEdit && editData) {
-        console.log('Loading edit data for sale:', editData);
-        
         // Format dates for input
         const formatDateForInput = (dateString: string) => {
           if (!dateString) return "";
@@ -140,7 +138,6 @@ export function AddSaleDialog({
             const date = new Date(dateString);
             return date.toISOString().split('T')[0];
           } catch (error) {
-            console.error('Error formatting date:', dateString, error);
             return "";
           }
         };
@@ -155,7 +152,6 @@ export function AddSaleDialog({
               minute: '2-digit' 
             });
           } catch (error) {
-            console.error('Error formatting time:', dateString, error);
             return "";
           }
         };
@@ -330,8 +326,6 @@ export function AddSaleDialog({
         finalAmount: calculateFinalAmount(),
       };
 
-      console.log('Submitting sale data:', saleData);
-
       let response;
       if (isEdit && editData && editData._id) {
         // UPDATE request using PUT to /api/sales/:id
@@ -347,8 +341,6 @@ export function AddSaleDialog({
         );
       }
       
-      console.log('API Response:', response.data);
-      
       if (response.data.success) {
         onSave();
         onOpenChange(false);
@@ -363,9 +355,6 @@ export function AddSaleDialog({
       
       // Detailed error handling
       if (error.response) {
-        console.error('Error response:', error.response);
-        console.error('Error data:', error.response.data);
-        
         const errorMessage = error.response.data?.message || 'Failed to save sale';
         const errors = error.response.data?.errors;
         
@@ -378,7 +367,6 @@ export function AddSaleDialog({
           alert(`Error: ${errorMessage}`);
         }
       } else if (error.request) {
-        console.error('Error request:', error.request);
         alert(`Network error. Please check if the backend server is running at ${API_BASE_URL}.`);
       } else {
         alert('Error: ' + error.message);
@@ -825,33 +813,11 @@ export function AddSaleDialog({
               )}
             </button>
           </div>
-
-          {/* Debug Info (Development only) */}
-          {import.meta.env.DEV && (
-            <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
-              <h4 className="text-xs font-semibold text-gray-700 mb-1">Debug Information</h4>
-              <p className="text-xs text-gray-600 mb-0.5">
-                API Base URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{API_BASE_URL}</code>
-              </p>
-              <p className="text-xs text-gray-600 mb-0.5">
-                Purchases API: <code className="bg-gray-100 px-1 py-0.5 rounded">{PURCHASES_API_URL}</code>
-              </p>
-              <p className="text-xs text-gray-600 mb-0.5">
-                Sales API: <code className="bg-gray-100 px-1 py-0.5 rounded">{SALES_API_URL}</code>
-              </p>
-              <p className="text-xs text-gray-600">
-                Environment: {import.meta.env.MODE}
-              </p>
-            </div>
-          )}
         </div>
       </DialogContent>
     </Dialog>
   );
 }
-
-// Add the missing import for Clock
-import { Clock } from "lucide-react";
 
 // Note: The main Purchase Management Component would need similar updates
 // export function PurchaseManagement() { ... }

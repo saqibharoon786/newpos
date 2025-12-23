@@ -1,7 +1,9 @@
-import { CMSDashboard } from "@/components/cms/CMSDashboard";
+import Login from "@/components/cms/Login"
+
 
 const Index = () => {
-  return <CMSDashboard />;
+
+  return <Login />;
 };
 
 export default Index;

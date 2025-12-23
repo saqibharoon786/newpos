@@ -77,8 +77,8 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [relatedPurchase, setRelatedPurchase] = useState<any>(null);
-  const [loadingPurchase, setLoadingPurchase] = useState(false);
+  const [vehicleData, setVehicleData] = useState<any>(null);
+  const [loadingVehicle, setLoadingVehicle] = useState(false);
 
   // Fetch sale details by ID
   useEffect(() => {
@@ -87,57 +87,27 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
     }
   }, [saleId]);
 
-  // Debug: Log what we're trying to fetch
-  useEffect(() => {
-    console.log('Fetching sale details for ID:', saleId);
-    console.log('API URL:', `${SALES_API_URL}/${saleId}`);
-    console.log('API Base URL:', API_BASE_URL);
-  }, [saleId]);
-
   const fetchSaleDetails = async () => {
     try {
       setLoading(true);
       setError(null);
       setImageError(false);
-      
-      console.log('Making API request to:', `${SALES_API_URL}/${saleId}`);
+      setVehicleData(null);
       
       const response = await api.get(`${SALES_API_URL}/${saleId}`);
       
-      console.log('API Response:', response.data);
-      
       if (response.data.success) {
         const saleData = response.data.data;
-        console.log('Sale data received:', saleData);
-        
-        // Log ALL properties of the sale object to see what's available
-        console.log('All sale properties:');
-        Object.keys(saleData).forEach(key => {
-          console.log(`${key}:`, saleData[key]);
-        });
-        
-        // Log vehicle-related properties specifically
-        console.log('Vehicle-related properties:');
-        const vehicleKeys = [
-          'vehicleName', 'vehicleType', 'vehicleNumber', 'driverName', 
-          'vehicleColor', 'deliveryDate', 'vehicleImage', 'vehicleDetails'
-        ];
-        vehicleKeys.forEach(key => {
-          console.log(`${key}:`, saleData[key]);
-        });
-        
         setSale(saleData);
         
-        // Check if we have vehicle data in the sale
-        const hasVehicleInSale = vehicleKeys.some(key => saleData[key]);
-        console.log('Has vehicle data in sale:', hasVehicleInSale);
+        // Try to find vehicle data for this sale
+        await findVehicleData(saleData);
         
       } else {
         throw new Error(response.data.message || 'Failed to fetch sale details');
       }
     } catch (error: any) {
       console.error('Error fetching sale details:', error);
-      console.error('Error response:', error.response);
       setError(error.response?.data?.message || error.message || 'Failed to load sale details');
       toast({
         title: "Error",
@@ -149,30 +119,93 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
     }
   };
 
-  const fetchRelatedPurchase = async (purchaseId: string) => {
+  // Function to find vehicle data for the sale
+  const findVehicleData = async (saleData: Sale) => {
     try {
-      setLoadingPurchase(true);
-      console.log('Fetching related purchase:', purchaseId);
+      setLoadingVehicle(true);
       
-      const response = await api.get(`${PURCHASE_API_URL}/${purchaseId}`);
-      
-      if (response.data.success) {
-        console.log('Related purchase data:', response.data.data);
-        setRelatedPurchase(response.data.data);
-        
-        // Log purchase vehicle data
-        const purchase = response.data.data;
-        console.log('Purchase vehicle data:', {
-          vehicleName: purchase.vehicleName,
-          vehicleNumber: purchase.vehicleNumber,
-          driverName: purchase.driverName,
-          vehicleColor: purchase.vehicleColor
+      // Method 1: Check if sale has direct vehicle data
+      if (saleData.vehicleName || saleData.vehicleNumber || saleData.driverName) {
+        setVehicleData({
+          source: 'sale',
+          vehicleName: saleData.vehicleName,
+          vehicleType: saleData.vehicleType,
+          vehicleNumber: saleData.vehicleNumber,
+          driverName: saleData.driverName,
+          vehicleColor: saleData.vehicleColor,
+          deliveryDate: saleData.deliveryDate,
+          vehicleImage: saleData.vehicleImage
         });
+        return;
       }
+      
+      // Method 2: Check if sale has nested vehicleDetails
+      if (saleData.vehicleDetails && typeof saleData.vehicleDetails === 'object') {
+        setVehicleData({
+          source: 'sale-vehicleDetails',
+          ...saleData.vehicleDetails
+        });
+        return;
+      }
+      
+      // Method 3: Check if sale has purchaseId to get vehicle from purchase
+      if (saleData.purchaseId) {
+        try {
+          const purchaseResponse = await api.get(`${PURCHASE_API_URL}/${saleData.purchaseId}`);
+          if (purchaseResponse.data.success) {
+            const purchase = purchaseResponse.data.data;
+            setVehicleData({
+              source: 'purchase',
+              vehicleName: purchase.vehicleName,
+              vehicleType: purchase.vehicleType,
+              vehicleNumber: purchase.vehicleNumber,
+              driverName: purchase.driverName,
+              vehicleColor: purchase.vehicleColor,
+              deliveryDate: purchase.deliveryDate,
+              vehicleImage: purchase.vehicleImage
+            });
+            return;
+          }
+        } catch (purchaseError) {
+          console.error('Error fetching purchase:', purchaseError);
+        }
+      }
+      
+      // Method 4: Search purchases by material name to find matching vehicle
+      try {
+        const purchasesResponse = await api.get(`${PURCHASE_API_URL}/get-all`);
+        if (purchasesResponse.data.success) {
+          const purchases = purchasesResponse.data.data || [];
+          const matchingPurchase = purchases.find((p: any) => 
+            p.materialName === saleData.materialName
+          );
+          
+          if (matchingPurchase) {
+            setVehicleData({
+              source: 'material-match',
+              vehicleName: matchingPurchase.vehicleName,
+              vehicleType: matchingPurchase.vehicleType,
+              vehicleNumber: matchingPurchase.vehicleNumber,
+              driverName: matchingPurchase.driverName,
+              vehicleColor: matchingPurchase.vehicleColor,
+              deliveryDate: matchingPurchase.deliveryDate,
+              vehicleImage: matchingPurchase.vehicleImage
+            });
+            return;
+          }
+        }
+      } catch (searchError) {
+        console.error('Error searching purchases:', searchError);
+      }
+      
+      // No vehicle data found
+      setVehicleData(null);
+      
     } catch (error) {
-      console.error('Error fetching related purchase:', error);
+      console.error('Error finding vehicle data:', error);
+      setVehicleData(null);
     } finally {
-      setLoadingPurchase(false);
+      setLoadingVehicle(false);
     }
   };
 
@@ -200,87 +233,6 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
     
     // Default case - assume it's relative to API base URL
     return `${API_BASE_URL}/${cleanPath}`;
-  };
-
-  // Get all vehicle data from sale (including nested vehicleDetails)
-  const getVehicleDataFromSale = () => {
-    if (!sale) return null;
-    
-    // Check if vehicle data is in nested vehicleDetails object
-    if (sale.vehicleDetails && typeof sale.vehicleDetails === 'object') {
-      console.log('Found vehicle data in vehicleDetails object:', sale.vehicleDetails);
-      return {
-        source: 'sale-vehicleDetails',
-        vehicleName: sale.vehicleDetails.vehicleName,
-        vehicleType: sale.vehicleDetails.vehicleType,
-        vehicleNumber: sale.vehicleDetails.vehicleNumber,
-        driverName: sale.vehicleDetails.driverName,
-        vehicleColor: sale.vehicleDetails.vehicleColor,
-        deliveryDate: sale.vehicleDetails.deliveryDate,
-        vehicleImage: sale.vehicleDetails.vehicleImage ? getImageUrl(sale.vehicleDetails.vehicleImage) : null
-      };
-    }
-    
-    // Check if vehicle data is in direct properties
-    const directVehicleData = {
-      vehicleName: sale.vehicleName,
-      vehicleType: sale.vehicleType,
-      vehicleNumber: sale.vehicleNumber,
-      driverName: sale.driverName,
-      vehicleColor: sale.vehicleColor,
-      deliveryDate: sale.deliveryDate,
-      vehicleImage: sale.vehicleImage ? getImageUrl(sale.vehicleImage) : null
-    };
-    
-    const hasDirectData = Object.values(directVehicleData).some(val => val);
-    if (hasDirectData) {
-      console.log('Found vehicle data in direct properties:', directVehicleData);
-      return {
-        source: 'sale-direct',
-        ...directVehicleData
-      };
-    }
-    
-    return null;
-  };
-
-  // Check if we have any vehicle data from any source
-  const getVehicleData = () => {
-    if (!sale) return null;
-    
-    // First, check if sale has vehicle data
-    const saleVehicleData = getVehicleDataFromSale();
-    if (saleVehicleData) {
-      return saleVehicleData;
-    }
-    
-    // If no sale vehicle data, check related purchase
-    if (relatedPurchase) {
-      console.log('Using vehicle data from related purchase:', {
-        vehicleName: relatedPurchase.vehicleName,
-        vehicleNumber: relatedPurchase.vehicleNumber,
-        driverName: relatedPurchase.driverName
-      });
-      
-      return {
-        source: 'purchase',
-        vehicleName: relatedPurchase.vehicleName,
-        vehicleType: relatedPurchase.vehicleType,
-        vehicleNumber: relatedPurchase.vehicleNumber,
-        driverName: relatedPurchase.driverName,
-        vehicleColor: relatedPurchase.vehicleColor,
-        deliveryDate: relatedPurchase.deliveryDate,
-        vehicleImage: relatedPurchase.vehicleImage ? getImageUrl(relatedPurchase.vehicleImage) : null
-      };
-    }
-    
-    return null;
-  };
-
-  // Check if we have any vehicle data
-  const hasVehicleData = () => {
-    const vehicleData = getVehicleData();
-    return vehicleData !== null;
   };
 
   const handleEdit = () => {
@@ -378,8 +330,8 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
   };
 
   // Get the image URL
-  const vehicleData = getVehicleData();
-  const imageUrl = vehicleData?.vehicleImage;
+  const imageUrl = vehicleData?.vehicleImage ? getImageUrl(vehicleData.vehicleImage) : null;
+  const hasVehicleData = vehicleData !== null;
 
   if (loading) {
     return (
@@ -439,7 +391,6 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
   }
 
   const profit = calculateProfit();
-  const vehicleExists = hasVehicleData();
 
   return (
     <div className="flex-1 p-6 overflow-auto animate-fade-in">
@@ -472,7 +423,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
             <span className={`text-xs px-3 py-1 rounded-full ${profit.amount >= 0 ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
               Profit: {profit.amount >= 0 ? '+' : ''}{formatCurrency(profit.amount.toString())}
             </span>
-            {vehicleExists && (
+            {hasVehicleData && (
               <span className="text-xs bg-blue-500/10 text-blue-600 px-3 py-1 rounded-full flex items-center gap-1">
                 <Car className="w-3 h-3" />
                 Vehicle: {vehicleData?.vehicleNumber || vehicleData?.vehicleName || 'Assigned'}
@@ -650,7 +601,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
       </div>
 
       {/* Vehicle Details - Only show if vehicle data exists */}
-      {vehicleExists ? (
+      {hasVehicleData ? (
         <div className="bg-cms-card rounded-xl p-5 border border-border mb-6">
           <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
             <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
@@ -661,6 +612,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
               <span className="text-xs bg-blue-500/10 text-blue-600 px-2 py-1 rounded">
                 {vehicleData?.source === 'purchase' ? 'From Linked Purchase' : 
                  vehicleData?.source === 'sale-vehicleDetails' ? 'From Sale (Nested)' : 
+                 vehicleData?.source === 'material-match' ? 'From Material Match' :
                  'From Sale (Direct)'}
               </span>
               {vehicleData?.source === 'purchase' && sale.purchaseId && (
@@ -747,8 +699,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                   src={imageUrl}
                   alt={`${vehicleData?.vehicleName || 'Vehicle'}`} 
                   className="w-full h-48 object-cover"
-                  onError={(e) => {
-                    console.error('Image failed to load:', imageUrl);
+                  onError={() => {
                     setImageError(true);
                   }}
                 />
@@ -756,7 +707,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
               {imageError && (
                 <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                   <p className="text-sm text-yellow-600">
-                    Could not load vehicle image. Check if the file exists in the uploads directory.
+                    Could not load vehicle image.
                   </p>
                 </div>
               )}
@@ -782,14 +733,6 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                 This sale does not have vehicle details assigned. 
                 {sale.purchaseId ? ' The linked purchase might not have vehicle data.' : ' You can add vehicle details when editing the sale.'}
               </p>
-              <div className="mt-2 text-xs text-yellow-500">
-                <p>Vehicle data sources checked:</p>
-                <ul className="list-disc list-inside ml-2">
-                  <li>Direct sale properties (vehicleName, vehicleNumber, etc.)</li>
-                  <li>Nested vehicleDetails object</li>
-                  <li>Linked purchase (ID: {sale.purchaseId || 'none'})</li>
-                </ul>
-              </div>
             </div>
           </div>
         </div>
@@ -874,48 +817,6 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
             <label className="text-xs text-muted-foreground">Database ID</label>
             <p className="text-sm text-foreground mt-1 font-mono">{sale._id}</p>
           </div>
-        </div>
-      </div>
-
-      {/* Debug Panel - Always visible for now to help debug */}
-      <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-        <h4 className="text-sm font-semibold text-gray-700 mb-2">Debug Information</h4>
-        <div className="space-y-2">
-          <p className="text-xs text-gray-600">Sale ID: <code className="bg-gray-100 px-1 py-0.5 rounded">{saleId}</code></p>
-          <p className="text-xs text-gray-600">Purchase ID: <code className="bg-gray-100 px-1 py-0.5 rounded">{sale.purchaseId || 'null'}</code></p>
-          <p className="text-xs text-gray-600">Invoice No: <code className="bg-gray-100 px-1 py-0.5 rounded">{sale.invoiceNo || 'null'}</code></p>
-          <p className="text-xs text-gray-600">Material: <code className="bg-gray-100 px-1 py-0.5 rounded">{sale.materialName || 'null'}</code></p>
-          <p className="text-xs text-gray-600">Vehicle Exists: <code className="bg-gray-100 px-1 py-0.5 rounded">{vehicleExists ? 'true' : 'false'}</code></p>
-          <p className="text-xs text-gray-600">Vehicle Data Source: <code className="bg-gray-100 px-1 py-0.5 rounded">{vehicleData?.source || 'none'}</code></p>
-          <p className="text-xs text-gray-600">Vehicle Name: <code className="bg-gray-100 px-1 py-0.5 rounded">{vehicleData?.vehicleName || 'null'}</code></p>
-          <p className="text-xs text-gray-600">Vehicle Number: <code className="bg-gray-100 px-1 py-0.5 rounded">{vehicleData?.vehicleNumber || 'null'}</code></p>
-          <p className="text-xs text-gray-600">Driver Name: <code className="bg-gray-100 px-1 py-0.5 rounded">{vehicleData?.driverName || 'null'}</code></p>
-          <p className="text-xs text-gray-600">API Base URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{API_BASE_URL}</code></p>
-          <p className="text-xs text-gray-600">Sales API: <code className="bg-gray-100 px-1 py-0.5 rounded">{SALES_API_URL}</code></p>
-          <p className="text-xs text-gray-600">Purchase API: <code className="bg-gray-100 px-1 py-0.5 rounded">{PURCHASE_API_URL}</code></p>
-          <button
-            onClick={() => {
-              console.log('=== FULL SALE DATA ===');
-              console.log(sale);
-              console.log('=== VEHICLE DATA ===');
-              console.log(vehicleData);
-              console.log('=== RELATED PURCHASE ===');
-              console.log(relatedPurchase);
-              console.log('=== API CONFIGURATION ===');
-              console.log('API Base URL:', API_BASE_URL);
-              console.log('Sales API URL:', SALES_API_URL);
-              console.log('Purchase API URL:', PURCHASE_API_URL);
-            }}
-            className="text-xs text-blue-500 hover:text-blue-600 underline"
-          >
-            Log all data to console
-          </button>
-          <button
-            onClick={fetchSaleDetails}
-            className="text-xs text-green-500 hover:text-green-600 underline ml-4"
-          >
-            Refresh Data
-          </button>
         </div>
       </div>
 

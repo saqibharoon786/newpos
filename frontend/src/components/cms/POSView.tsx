@@ -16,6 +16,7 @@ const api = axios.create({
 
 // Define endpoints using environment variable
 const SALES_API_URL = `${API_BASE_URL}/api/sales`;
+const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
 
 interface Sale {
   _id: string;
@@ -39,7 +40,7 @@ interface Sale {
   buyerCompany: string;
   finalAmount: string;
   
-  // Vehicle Details
+  // Vehicle Details - These might be populated from purchase
   vehicleName?: string;
   vehicleType?: string;
   vehicleNumber?: string;
@@ -47,6 +48,9 @@ interface Sale {
   vehicleColor?: string;
   deliveryDate?: string;
   vehicleImage?: string;
+  
+  // Purchase Reference (if linked)
+  purchaseId?: string;
   
   createdAt: string;
   updatedAt: string;
@@ -73,12 +77,51 @@ export function POSView() {
     try {
       setLoading(true);
       setError(null);
-      const response = await api.get(SALES_API_URL);
       
-      if (response.data.success) {
-        setSales(response.data.data || []);
+      // Fetch sales data
+      const salesResponse = await api.get(SALES_API_URL);
+      
+      if (salesResponse.data.success) {
+        let salesData = salesResponse.data.data || [];
+        
+        // If sales don't have vehicle details, try to fetch from purchases
+        if (salesData.length > 0 && !salesData[0].vehicleNumber) {
+          // Fetch purchases to get vehicle details
+          const purchasesResponse = await api.get(`${PURCHASES_API_URL}/get-all`);
+          
+          if (purchasesResponse.data.success) {
+            const purchases = purchasesResponse.data.data || [];
+            
+            // Create a map of material name to purchase (for linking)
+            const purchaseMap = new Map();
+            purchases.forEach((purchase: any) => {
+              purchaseMap.set(purchase.materialName, purchase);
+            });
+            
+            // Enrich sales data with vehicle details from purchases
+            salesData = salesData.map((sale: Sale) => {
+              const purchase = purchaseMap.get(sale.materialName);
+              if (purchase) {
+                return {
+                  ...sale,
+                  vehicleName: purchase.vehicleName || '',
+                  vehicleType: purchase.vehicleType || '',
+                  vehicleNumber: purchase.vehicleNumber || '',
+                  driverName: purchase.driverName || '',
+                  vehicleColor: purchase.vehicleColor || '',
+                  deliveryDate: purchase.deliveryDate || '',
+                  vehicleImage: purchase.vehicleImage || '',
+                  purchaseId: purchase._id
+                };
+              }
+              return sale;
+            });
+          }
+        }
+        
+        setSales(salesData);
       } else {
-        throw new Error(response.data.message || 'Failed to fetch sales');
+        throw new Error(salesResponse.data.message || 'Failed to fetch sales');
       }
     } catch (error: any) {
       console.error('Error fetching sales:', error);
@@ -88,6 +131,46 @@ export function POSView() {
         description: "Failed to load sales. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Alternative: Fetch enriched sales data (if your backend supports it)
+  const fetchEnrichedSales = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Try to fetch sales with vehicle details included
+      // Modify this endpoint according to your backend
+      const response = await api.get(`${SALES_API_URL}/with-vehicles`);
+      
+      if (response.data.success) {
+        setSales(response.data.data || []);
+      } else {
+        // Fallback to regular sales fetch
+        const regularResponse = await api.get(SALES_API_URL);
+        if (regularResponse.data.success) {
+          setSales(regularResponse.data.data || []);
+        } else {
+          throw new Error(regularResponse.data.message || 'Failed to fetch sales');
+        }
+      }
+    } catch (error: any) {
+      console.error('Error fetching enriched sales:', error);
+      // Fallback to regular fetch
+      const regularResponse = await api.get(SALES_API_URL);
+      if (regularResponse.data.success) {
+        setSales(regularResponse.data.data || []);
+      } else {
+        setError(error.response?.data?.message || error.message || 'Failed to fetch sales');
+        toast({
+          title: "Error",
+          description: "Failed to load sales. Please try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -135,13 +218,18 @@ export function POSView() {
   };
 
   // Filter sales based on search term
-  const filteredSales = sales.filter(sale =>
-    sale.materialName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    sale.supplierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    sale.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    sale.buyerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (sale.vehicleNumber && sale.vehicleNumber.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredSales = sales.filter(sale => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      sale.materialName.toLowerCase().includes(searchLower) ||
+      sale.supplierName.toLowerCase().includes(searchLower) ||
+      sale.invoiceNo.toLowerCase().includes(searchLower) ||
+      sale.buyerName.toLowerCase().includes(searchLower) ||
+      (sale.vehicleNumber && sale.vehicleNumber.toLowerCase().includes(searchLower)) ||
+      (sale.buyerPhone && sale.buyerPhone.toLowerCase().includes(searchLower)) ||
+      (sale.buyerEmail && sale.buyerEmail.toLowerCase().includes(searchLower))
+    );
+  });
 
   // Format date
   const formatDate = (dateString: string) => {
@@ -172,6 +260,20 @@ export function POSView() {
     } catch (error) {
       return `₹${amount}`;
     }
+  };
+
+  // Get vehicle number display - safe handling
+  const getVehicleNumber = (sale: Sale) => {
+    if (sale.vehicleNumber && sale.vehicleNumber.trim() !== '') {
+      return sale.vehicleNumber;
+    }
+    
+    // Try to get from other vehicle fields or show default
+    if (sale.vehicleName || sale.driverName) {
+      return 'Vehicle Assigned';
+    }
+    
+    return 'N/A';
   };
 
   // Pagination
@@ -338,7 +440,9 @@ export function POSView() {
                     <td className="px-4 py-3 text-sm text-foreground">{sale.invoiceNo || 'N/A'}</td>
                     <td className="px-4 py-3 text-sm text-foreground">{sale.buyerName || 'N/A'}</td>
                     <td className="px-4 py-3 text-sm text-foreground">{formatCurrency(sale.finalAmount || sale.sellingPrice)}</td>
-                    <td className="px-4 py-3 text-sm text-foreground">{sale.vehicleNumber || 'N/A'}</td>
+                    <td className="px-4 py-3 text-sm text-foreground">
+                      {getVehicleNumber(sale)}
+                    </td>
                     <td className="px-4 py-3 text-sm text-primary">{formatDate(sale.purchaseDate || sale.createdAt)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -446,27 +550,6 @@ export function POSView() {
         isEdit={isEditMode}
         editData={selectedSale}
       />
-
-      {/* Debug Info (Development only) */}
-      {import.meta.env.DEV && (
-        <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-          <h4 className="text-sm font-semibold text-gray-700 mb-2">Debug Information</h4>
-          <div className="space-y-2">
-            <p className="text-xs text-gray-600 mb-0.5">
-              API Base URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{API_BASE_URL}</code>
-            </p>
-            <p className="text-xs text-gray-600 mb-0.5">
-              Sales API: <code className="bg-gray-100 px-1 py-0.5 rounded">{SALES_API_URL}</code>
-            </p>
-            <p className="text-xs text-gray-600">
-              Total Sales: {sales.length}
-            </p>
-            <p className="text-xs text-gray-600">
-              Environment: {import.meta.env.MODE}
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

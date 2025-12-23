@@ -73,14 +73,13 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     vehicleType: "",
     vehicleNumber: "",
     driverName: "",
-    vehicleColor: "#FFFFFF",
+    vehicleColor: "",
     deliveryDate: "",
     receiptNo: "",
     vehicleImage: null as File | null,
   });
 
   const [selectedMaterialColor, setSelectedMaterialColor] = useState("#FFFFFF");
-  const [selectedVehicleColor, setSelectedVehicleColor] = useState("#FFFFFF");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -142,14 +141,13 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           vehicleType: editData.vehicleType || "",
           vehicleNumber: editData.vehicleNumber || "",
           driverName: editData.driverName || "",
-          vehicleColor: editData.vehicleColor || "#FFFFFF",
+          vehicleColor: editData.vehicleColor || "",
           deliveryDate: deliveryDate || "",
           receiptNo: editData.receiptNo || "",
           vehicleImage: null,
         });
         
         setSelectedMaterialColor(editData.materialColor || "#FFFFFF");
-        setSelectedVehicleColor(editData.vehicleColor || "#FFFFFF");
         
         if (editData.vehicleImage) {
           const imageUrl = getImageUrl(editData.vehicleImage);
@@ -178,6 +176,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     if (!formData.vehicleType.trim()) newErrors.vehicleType = "Vehicle type is required";
     if (!formData.vehicleNumber.trim()) newErrors.vehicleNumber = "Vehicle number is required";
     if (!formData.driverName.trim()) newErrors.driverName = "Driver name is required";
+    if (!formData.vehicleColor.trim()) newErrors.vehicleColor = "Vehicle color is required";
     if (!formData.deliveryDate) newErrors.deliveryDate = "Delivery date is required";
     if (!formData.receiptNo.trim()) newErrors.receiptNo = "Receipt number is required";
     
@@ -241,7 +240,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         vehicleType: formData.vehicleType,
         vehicleNumber: formData.vehicleNumber,
         driverName: formData.driverName,
-        vehicleColor: selectedVehicleColor,
+        vehicleColor: formData.vehicleColor,
         deliveryDate: formData.deliveryDate,
         receiptNo: formData.receiptNo,
       };
@@ -351,13 +350,12 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       vehicleType: "",
       vehicleNumber: "",
       driverName: "",
-      vehicleColor: "#FFFFFF",
+      vehicleColor: "",
       deliveryDate: "",
       receiptNo: "",
       vehicleImage: null,
     });
     setSelectedMaterialColor("#FFFFFF");
-    setSelectedVehicleColor("#FFFFFF");
     setImagePreview(null);
     setOriginalImageUrl(null);
     setErrors({});
@@ -614,25 +612,17 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Vehicle Color *</label>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-3">
-                    {colorOptions.map((color) => (
-                      <label key={color.value} className="flex items-center gap-1.5 cursor-pointer">
-                        <div className="relative flex items-center">
-                          <input
-                            type="radio"
-                            name="vehicleColor"
-                            value={color.value}
-                            checked={selectedVehicleColor === color.value}
-                            onChange={() => setSelectedVehicleColor(color.value)}
-                            className="sr-only"
-                          />
-                          <div className={`w-5 h-5 rounded-full ${color.color} border-2 ${selectedVehicleColor === color.value ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' : 'border-border'}`} />
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
+                <input
+                  type="text"
+                  name="vehicleColor"
+                  placeholder="e.g Black, Pink, Metallic Red, Dark Blue, etc."
+                  value={formData.vehicleColor}
+                  onChange={handleInputChange}
+                  className={`w-full bg-cms-card border ${errors.vehicleColor ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                />
+                {errors.vehicleColor && (
+                  <p className="text-xs text-red-500 mt-1">{errors.vehicleColor}</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Delivery Date *</label>
@@ -729,19 +719,6 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
               )}
             </button>
           </div>
-
-          {/* Debug Info (Development only) */}
-          {import.meta.env.DEV && (
-            <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
-              <h4 className="text-xs font-semibold text-gray-700 mb-1">Debug Information</h4>
-              <p className="text-xs text-gray-600 mb-0.5">
-                API Base URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{API_BASE_URL}</code>
-              </p>
-              <p className="text-xs text-gray-600">
-                Purchase Endpoint: <code className="bg-gray-100 px-1 py-0.5 rounded">{PURCHASES_API_URL}</code>
-              </p>
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -1144,27 +1121,6 @@ export function POPView() {
         isEdit={isEditMode}
         editData={selectedPurchaseForEdit}
       />
-
-      {/* Debug Info (Development only) */}
-      {import.meta.env.DEV && (
-        <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-          <h4 className="text-sm font-semibold text-gray-700 mb-2">Debug Information</h4>
-          <div className="space-y-2">
-            <p className="text-xs text-gray-600 mb-0.5">
-              API Base URL: <code className="bg-gray-100 px-1 py-0.5 rounded">{API_BASE_URL}</code>
-            </p>
-            <p className="text-xs text-gray-600 mb-0.5">
-              Purchase Endpoint: <code className="bg-gray-100 px-1 py-0.5 rounded">{PURCHASES_API_URL}</code>
-            </p>
-            <p className="text-xs text-gray-600">
-              Total Purchases: {purchases.length}
-            </p>
-            <p className="text-xs text-gray-600">
-              Environment: {import.meta.env.MODE}
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
