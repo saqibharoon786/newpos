@@ -414,23 +414,23 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
           <h1 className="text-2xl font-bold text-foreground">Sale Record Details</h1>
           <p className="text-sm text-muted-foreground">Complete details for sale invoice #{sale.invoiceNo}</p>
           <div className="flex items-center gap-4 mt-2">
-            <span className="text-xs bg-primary/10 text-primary px-3 py-1 rounded-full">
+            <span className="text-xs bg-primary/10 text-foreground px-3 py-1 rounded-full border border-border">
               Invoice: {sale.invoiceNo}
             </span>
-            <span className="text-xs bg-green-500/10 text-green-600 px-3 py-1 rounded-full">
+            <span className="text-xs bg-cms-sidebar text-foreground px-3 py-1 rounded-full border border-border">
               Sale Date: {formatDate(sale.purchaseDate)}
             </span>
-            <span className={`text-xs px-3 py-1 rounded-full ${profit.amount >= 0 ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
+            <span className={`text-xs px-3 py-1 rounded-full border border-border ${profit.amount >= 0 ? 'bg-green-500/10 text-foreground' : 'bg-red-500/10 text-foreground'}`}>
               Profit: {profit.amount >= 0 ? '+' : ''}{formatCurrency(profit.amount.toString())}
             </span>
             {hasVehicleData && (
-              <span className="text-xs bg-blue-500/10 text-blue-600 px-3 py-1 rounded-full flex items-center gap-1">
+              <span className="text-xs bg-cms-sidebar text-foreground px-3 py-1 rounded-full border border-border flex items-center gap-1">
                 <Car className="w-3 h-3" />
                 Vehicle: {vehicleData?.vehicleNumber || vehicleData?.vehicleName || 'Assigned'}
               </span>
             )}
             {sale.purchaseId && (
-              <span className="text-xs bg-purple-500/10 text-purple-600 px-3 py-1 rounded-full">
+              <span className="text-xs bg-cms-sidebar text-foreground px-3 py-1 rounded-full border border-border">
                 Linked to Purchase
               </span>
             )}
@@ -454,7 +454,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
           <button
             onClick={handleDelete}
             disabled={deleting}
-            className="px-4 py-2 bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-destructive hover:bg-destructive/90 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {deleting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -484,7 +484,14 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                 <Scale className="w-4 h-4" />
                 <span className="text-sm">Weight</span>
               </div>
-              <span className="text-sm text-foreground">{sale.weight || '0'} {sale.unit || 'kg'}</span>
+              <span className="text-sm text-foreground">{sale.weight || '0'}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 text-muted-foreground">
+                <Circle className="w-4 h-4" />
+                <span className="text-sm">Units</span>
+              </div>
+              <span className="text-sm text-foreground">{sale.unit || '0'} units</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
@@ -580,14 +587,14 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
             </div>
             <div className="pt-3 border-t border-border">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`w-4 h-4 rounded-full flex items-center justify-center ${profit.amount >= 0 ? 'bg-green-500/20 text-green-600' : 'bg-red-500/20 text-red-600'}`}>
+                <div className="flex items-center gap-3 text-foreground">
+                  <div className={`w-4 h-4 rounded-full flex items-center justify-center ${profit.amount >= 0 ? 'bg-green-500/20 text-foreground' : 'bg-red-500/20 text-foreground'}`}>
                     {profit.amount >= 0 ? '↑' : '↓'}
                   </div>
                   <span className="text-sm">Profit/Loss</span>
                 </div>
                 <div className="text-right">
-                  <p className={`text-sm font-semibold ${profit.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <p className={`text-sm font-semibold ${profit.amount >= 0 ? 'text-foreground' : 'text-foreground'}`}>
                     {profit.amount >= 0 ? '+' : ''}{formatCurrency(profit.amount.toString())}
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -609,14 +616,14 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
               Vehicle Details
             </h3>
             <div className="flex items-center gap-2">
-              <span className="text-xs bg-blue-500/10 text-blue-600 px-2 py-1 rounded">
+              <span className="text-xs bg-cms-sidebar text-foreground px-2 py-1 rounded border border-border">
                 {vehicleData?.source === 'purchase' ? 'From Linked Purchase' : 
                  vehicleData?.source === 'sale-vehicleDetails' ? 'From Sale (Nested)' : 
                  vehicleData?.source === 'material-match' ? 'From Material Match' :
                  'From Sale (Direct)'}
               </span>
               {vehicleData?.source === 'purchase' && sale.purchaseId && (
-                <span className="text-xs bg-purple-500/10 text-purple-600 px-2 py-1 rounded">
+                <span className="text-xs bg-cms-sidebar text-foreground px-2 py-1 rounded border border-border">
                   Purchase ID: {sale.purchaseId.substring(0, 8)}...
                 </span>
               )}

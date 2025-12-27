@@ -8,6 +8,9 @@ interface AddCustomerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCustomerAdded?: () => void;
+  onCustomerUpdated?: () => void;
+  customerToEdit?: CustomerFormData | null;
+  isEditMode?: boolean;
 }
 
 export interface CustomerFormData {
@@ -22,10 +25,15 @@ export interface CustomerFormData {
   city: string;
   photo: string | null;
   documents: string[];
+  _id?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-// Base URL - Update this if your backend is on a different port
-const API_BASE_URL = "http://localhost:5000/api/customers";
+// Get base URL from environment and append /api/customers
+const BACKEND_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const API_BASE_URL = `${BACKEND_URL}/api/customers`;
 
 const provinces = [
   "Punjab",
@@ -50,7 +58,10 @@ const cities: Record<string, string[]> = {
 export function AddCustomerDialog({ 
   open, 
   onOpenChange, 
-  onCustomerAdded 
+  onCustomerAdded,
+  onCustomerUpdated,
+  customerToEdit,
+  isEditMode = false
 }: AddCustomerDialogProps) {
   const [formData, setFormData] = useState<CustomerFormData>({
     customerName: "",
@@ -71,6 +82,28 @@ export function AddCustomerDialog({
   const photoInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
 
+  // Initialize form with edit data when in edit mode
+  useEffect(() => {
+    if (isEditMode && customerToEdit) {
+      setFormData({
+        customerName: customerToEdit.customerName || "",
+        customerId: customerToEdit.customerId || "",
+        phoneNo: customerToEdit.phoneNo || "",
+        email: customerToEdit.email || "",
+        cnicNo: customerToEdit.cnicNo || "",
+        registrationDate: customerToEdit.registrationDate || new Date().toISOString().split('T')[0],
+        address: customerToEdit.address || "",
+        province: customerToEdit.province || "",
+        city: customerToEdit.city || "",
+        photo: customerToEdit.photo || null,
+        documents: customerToEdit.documents || [],
+      });
+    } else if (!open) {
+      // Reset form when dialog closes (not in edit mode)
+      resetForm();
+    }
+  }, [customerToEdit, isEditMode, open]);
+
   // Check backend connection when dialog opens
   useEffect(() => {
     if (open) {
@@ -80,17 +113,14 @@ export function AddCustomerDialog({
 
   const checkBackendConnection = async () => {
     try {
-      const response = await axios.get("http://localhost:5000/api/health");
+      const response = await axios.get(`${BACKEND_URL}/api/health`);
       if (response.data.status === "OK") {
         setBackendStatus("connected");
-        console.log("✅ Backend connected:", response.data);
       } else {
         setBackendStatus("disconnected");
-        console.warn("⚠️ Backend health check failed");
       }
     } catch (error) {
       setBackendStatus("disconnected");
-      console.error("❌ Backend connection failed:", error);
     }
   };
 
@@ -108,13 +138,16 @@ export function AddCustomerDialog({
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 1024 * 1024) {
-        toast.error("Photo must be less than 1MB");
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Photo must be less than 5MB");
         return;
       }
       const reader = new FileReader();
       reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, photo: reader.result as string }));
+        setFormData(prev => ({ 
+          ...prev, 
+          photo: reader.result as string 
+        }));
       };
       reader.readAsDataURL(file);
     }
@@ -198,9 +231,8 @@ export function AddCustomerDialog({
   };
 
   const handleSubmit = async () => {
-    // Show backend status warning
     if (backendStatus === "disconnected") {
-      toast.error("Cannot connect to server. Please make sure backend is running on port 5000.");
+      toast.error("Cannot connect to server. Please make sure backend is running.");
       return;
     }
     
@@ -211,7 +243,6 @@ export function AddCustomerDialog({
     setIsSubmitting(true);
     
     try {
-      // Prepare the data for backend
       const requestData = {
         customerName: formData.customerName.trim(),
         phoneNo: formData.phoneNo.trim(),
@@ -225,49 +256,57 @@ export function AddCustomerDialog({
         documents: formData.documents
       };
 
-      console.log("📤 Sending data to:", `${API_BASE_URL}/create-customers`);
-      console.log("📦 Request data:", JSON.stringify(requestData, null, 2));
+      let url = `${API_BASE_URL}/create-customers`;
+      let method: 'post' | 'put' = 'post';
 
-      // Make the API call
-      const response = await axios.post(
-        `${API_BASE_URL}/create-customers`,
+      if (isEditMode && customerToEdit?._id) {
+        url = `${API_BASE_URL}/${customerToEdit._id}`;
+        method = 'put';
+      }
+
+      console.log("📤 Sending to:", url);
+      console.log("📦 Method:", method);
+      console.log("📦 Data:", requestData);
+
+      const response = await axios[method](
+        url,
         requestData,
         {
           headers: {
             'Content-Type': 'application/json',
           },
-          timeout: 10000, // 10 second timeout
+          timeout: 10000,
         }
       );
       
       console.log("✅ Backend response:", response.data);
       
       if (response.data.success) {
-        toast.success(response.data.message || "Customer added successfully!");
+        toast.success(response.data.message || 
+          (isEditMode ? "Customer updated successfully!" : "Customer added successfully!"));
         
-        // Reset form
-        resetForm();
+        if (!isEditMode) {
+          resetForm();
+        }
         
-        // Close dialog
         onOpenChange(false);
         
-        // Notify parent component
-        if (onCustomerAdded) {
+        if (isEditMode && onCustomerUpdated) {
+          onCustomerUpdated();
+        } else if (!isEditMode && onCustomerAdded) {
           onCustomerAdded();
         }
       } else {
-        toast.error(response.data.message || "Failed to add customer");
+        toast.error(response.data.message || "Failed to save customer");
       }
     } catch (error: any) {
-      console.error("❌ Error adding customer:", error);
+      console.error("❌ Error saving customer:", error);
       
-      // Detailed error handling
       if (error.code === 'ECONNREFUSED') {
-        toast.error("Cannot connect to backend server. Please check if it's running on port 5000.");
+        toast.error(`Cannot connect to backend server at ${BACKEND_URL}. Please check if it's running.`);
       } else if (error.code === 'ERR_NETWORK') {
         toast.error("Network error. Please check your connection.");
       } else if (error.response) {
-        // Server responded with error status
         const status = error.response.status;
         const errorData = error.response.data;
         
@@ -277,14 +316,13 @@ export function AddCustomerDialog({
           toast.error(
             <div>
               <p>API endpoint not found (404)</p>
-              <p className="text-xs">Tried: {API_BASE_URL}/create-customers</p>
+              <p className="text-xs">Tried: {error.config?.url}</p>
               <p className="text-xs">Please check your backend routes</p>
             </div>
           );
         } else if (status === 400) {
           toast.error(errorData.message || "Validation failed. Please check your input.");
           
-          // Highlight specific validation errors
           if (errorData.message?.includes("Phone number")) {
             toast.error("This phone number is already registered");
           } else if (errorData.message?.includes("CNIC")) {
@@ -295,14 +333,12 @@ export function AddCustomerDialog({
         } else if (status === 500) {
           toast.error("Server error. Please try again later.");
         } else {
-          toast.error(errorData.message || `Error ${status}: Failed to add customer`);
+          toast.error(errorData.message || `Error ${status}: Failed to save customer`);
         }
       } else if (error.request) {
-        // Request was made but no response
         console.error("No response received:", error.request);
-        toast.error("No response from server. Backend might be down.");
+        toast.error(`No response from server at ${BACKEND_URL}. Backend might be down.`);
       } else {
-        // Something else happened
         toast.error("An unexpected error occurred");
       }
     } finally {
@@ -314,7 +350,9 @@ export function AddCustomerDialog({
 
   const handleDialogClose = (open: boolean) => {
     if (!open && !isSubmitting) {
-      resetForm();
+      if (!isEditMode) {
+        resetForm();
+      }
     }
     onOpenChange(open);
   };
@@ -322,49 +360,56 @@ export function AddCustomerDialog({
   return (
     <Dialog open={open} onOpenChange={handleDialogClose}>
       <DialogContent className="bg-background border-border max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto p-0">
-        {/* Hidden accessibility titles */}
-        <DialogTitle className="sr-only">Add New Customer</DialogTitle>
+        <DialogTitle className="sr-only">
+          {isEditMode ? "Edit Customer" : "Add New Customer"}
+        </DialogTitle>
         <DialogDescription className="sr-only">
-          Form to add a new customer with personal information, contact details, and document upload
+          {isEditMode 
+            ? "Form to edit customer information" 
+            : "Form to add a new customer with personal information, contact details, and document upload"}
         </DialogDescription>
-        
-        {/* Backend Connection Status */}
-        <div className={`px-4 py-2 text-xs font-medium ${
-          backendStatus === "connected" 
-            ? "bg-green-500/10 text-green-600" 
-            : backendStatus === "disconnected" 
-            ? "bg-red-500/10 text-red-600" 
-            : "bg-yellow-500/10 text-yellow-600"
-        }`}>
-          {backendStatus === "connected" ? (
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              Connected to backend server
-            </span>
-          ) : backendStatus === "disconnected" ? (
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-              Backend server not connected
-            </span>
-          ) : (
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
-              Checking backend connection...
-            </span>
-          )}
-        </div>
 
-        {/* Breadcrumb Header */}
-        <div className="bg-cms-sidebar px-4 sm:px-6 py-3 border-b border-border">
-          <p className="text-xs text-muted-foreground">Customers/ Add Customer</p>
-        </div>
-
-        <div className="p-4 sm:p-6 bg-background">
-          <div className="mb-6">
-            <h1 className="text-lg sm:text-xl font-bold text-foreground">Add New Customer</h1>
-            <p className="text-sm text-muted-foreground">Enter the details for Customer</p>
+        {/* Transparent Header Section */}
+        <div className="sticky top-0 z-10 backdrop-blur-sm bg-background/80 border-b border-border/50 px-6 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h1 className="text-lg sm:text-xl font-bold text-foreground">
+                {isEditMode ? "Edit Customer" : "Add New Customer"}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {isEditMode 
+                  ? "Update the details for the customer" 
+                  : "Enter the details for Customer"}
+              </p>
+            </div>
+            
+            {/* Backend Status Indicator (minimal) */}
+            <div className={`flex items-center gap-2 text-xs px-2 py-1 rounded-full ${
+              backendStatus === "connected" 
+                ? "bg-green-500/10 text-green-600" 
+                : backendStatus === "disconnected" 
+                ? "bg-red-500/10 text-red-600" 
+                : "bg-yellow-500/10 text-yellow-600"
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${
+                backendStatus === "connected" 
+                  ? "bg-green-500" 
+                  : backendStatus === "disconnected" 
+                  ? "bg-red-500" 
+                  : "bg-yellow-500 animate-pulse"
+              }`}></span>
+              <span>
+                {backendStatus === "connected" 
+                  ? "Connected" 
+                  : backendStatus === "disconnected" 
+                  ? "Disconnected" 
+                  : "Connecting..."}
+              </span>
+            </div>
           </div>
+        </div>
 
+        <div className="p-6 bg-background">
           {/* Photo Upload */}
           <div className="mb-6">
             <div className="flex items-center gap-4">
@@ -379,7 +424,11 @@ export function AddCustomerDialog({
                     <img 
                       src={formData.photo} 
                       alt="Customer" 
-                      className="w-full h-full object-cover" 
+                      className="w-full h-full object-cover rounded-full" 
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                      }}
                     />
                   ) : (
                     <Plus className="w-5 h-5 text-primary" />
@@ -388,15 +437,24 @@ export function AddCustomerDialog({
                 <input
                   ref={photoInputRef}
                   type="file"
-                  accept="image/png,image/jpeg"
+                  accept="image/png,image/jpeg,image/jpg"
                   onChange={handlePhotoUpload}
                   className="hidden"
                   disabled={isSubmitting}
                 />
+                {formData.photo && (
+                  <button
+                    onClick={() => setFormData(prev => ({ ...prev, photo: null }))}
+                    className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-600 transition-colors"
+                    type="button"
+                  >
+                    <X className="w-3 h-3 text-white" />
+                  </button>
+                )}
               </div>
               <div>
                 <p className="text-sm font-medium text-foreground">Upload Photo</p>
-                <p className="text-xs text-muted-foreground">PNG,JPG up to 1MB</p>
+                <p className="text-xs text-muted-foreground">PNG,JPG up to 5MB</p>
               </div>
             </div>
           </div>
@@ -412,7 +470,7 @@ export function AddCustomerDialog({
                 <input
                   type="text"
                   name="customerName"
-                  placeholder="e.g Lina"
+                  placeholder="e.g Sarah Ali"
                   value={formData.customerName}
                   onChange={handleInputChange}
                   className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -458,7 +516,7 @@ export function AddCustomerDialog({
                 <input
                   type="email"
                   name="email"
-                  placeholder="e.g georgia.young@example.com"
+                  placeholder="e.g sarah.ali@example.com"
                   value={formData.email}
                   onChange={handleInputChange}
                   className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -470,7 +528,7 @@ export function AddCustomerDialog({
                 <input
                   type="text"
                   name="cnicNo"
-                  placeholder="e.g 17301-98273-4"
+                  placeholder="e.g 12345-6789012-3"
                   value={formData.cnicNo}
                   onChange={handleInputChange}
                   className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -501,7 +559,7 @@ export function AddCustomerDialog({
                 <input
                   type="text"
                   name="address"
-                  placeholder="e.g Lahore"
+                  placeholder="e.g 123 Main Street, Gulberg"
                   value={formData.address}
                   onChange={handleInputChange}
                   className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -558,12 +616,12 @@ export function AddCustomerDialog({
             >
               <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">Click to upload or drag and drop</p>
-              <p className="text-xs text-muted-foreground mt-1">SVG, PNG, JPEG (MAX 1.5MB)</p>
+              <p className="text-xs text-muted-foreground mt-1">PNG, JPG, JPEG (MAX 1.5MB)</p>
             </div>
             <input
               ref={docInputRef}
               type="file"
-              accept="image/svg+xml,image/png,image/jpeg"
+              accept="image/png,image/jpeg,image/jpg"
               multiple
               onChange={handleDocUpload}
               className="hidden"
@@ -582,7 +640,11 @@ export function AddCustomerDialog({
                       <img 
                         src={doc} 
                         alt={`Document ${index + 1}`} 
-                        className="w-full h-full object-cover rounded-lg border border-border" 
+                        className="w-full h-full object-cover rounded-lg border border-border"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23f0f0f0'/%3E%3Ctext x='50' y='50' text-anchor='middle' dy='.3em' font-size='10' fill='%23999'%3EDoc%3C/text%3E%3C/svg%3E";
+                        }}
                       />
                       <button
                         onClick={() => !isSubmitting && removeDocument(index)}
@@ -623,39 +685,16 @@ export function AddCustomerDialog({
               {isSubmitting ? (
                 <>
                   <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin"></div>
-                  Saving...
+                  {isEditMode ? "Updating..." : "Saving..."}
                 </>
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  Save Customer
+                  {isEditMode ? "Update Customer" : "Save Customer"}
                 </>
               )}
             </button>
           </div>
-
-          {/* Debug Info (only in development) */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-4 p-3 bg-muted/30 rounded-md border border-border">
-              <p className="text-xs font-medium text-muted-foreground mb-2">Debug Info:</p>
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">
-                  Backend URL: <code className="bg-muted px-1 py-0.5 rounded">{API_BASE_URL}/create-customers</code>
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Backend Status: <span className={`px-2 py-0.5 rounded text-xs ${
-                    backendStatus === "connected" 
-                      ? "bg-green-500/20 text-green-600" 
-                      : backendStatus === "disconnected" 
-                      ? "bg-red-500/20 text-red-600" 
-                      : "bg-yellow-500/20 text-yellow-600"
-                  }`}>
-                    {backendStatus}
-                  </span>
-                </p>
-              </div>
-            </div>
-          )}
         </div>
       </DialogContent>
     </Dialog>

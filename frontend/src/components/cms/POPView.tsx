@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, X } from "lucide-react";
+import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X } from "lucide-react";
 import { PurchaseDetailsView } from "./PurchaseDetailsView";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
@@ -24,6 +24,7 @@ interface Purchase {
   weight: string;
   quality: string;
   purchaseDate: string;
+  purchaseTime?: string;
   materialColor: string;
   vehicleName: string;
   vehicleType: string;
@@ -31,6 +32,7 @@ interface Purchase {
   driverName: string;
   vehicleColor: string;
   deliveryDate: string;
+  deliveryTime?: string;
   receiptNo: string;
   vehicleImage: string;
   createdAt: string;
@@ -61,6 +63,12 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     return today.toISOString().split('T')[0];
   };
 
+  // Helper function to get current time in HH:MM format
+  const getCurrentTime = () => {
+    const now = new Date();
+    return now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+  };
+
   const [formData, setFormData] = useState({
     materialName: "",
     vendor: "",
@@ -68,6 +76,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     weight: "",
     quality: "PP750", // Default to PP750
     purchaseDate: getTodayDate(), // Default to today's date
+    purchaseTime: getCurrentTime(), // Default to current time
     materialColor: "#FFFFFF",
     vehicleName: "",
     vehicleType: "",
@@ -75,6 +84,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     driverName: "",
     vehicleColor: "",
     deliveryDate: "",
+    deliveryTime: "09:00", // Default delivery time
     receiptNo: "",
     vehicleImage: null as File | null,
   });
@@ -126,8 +136,21 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           }
         };
 
+        // Extract time from date string (HH:MM format)
+        const extractTimeFromDate = (dateString: string) => {
+          if (!dateString) return getCurrentTime();
+          try {
+            const date = new Date(dateString);
+            return date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+          } catch (error) {
+            return getCurrentTime();
+          }
+        };
+
         const purchaseDate = formatDateForInput(editData.purchaseDate);
         const deliveryDate = formatDateForInput(editData.deliveryDate);
+        const purchaseTime = editData.purchaseTime || extractTimeFromDate(editData.purchaseDate);
+        const deliveryTime = editData.deliveryTime || extractTimeFromDate(editData.deliveryDate);
         
         setFormData({
           materialName: editData.materialName || "",
@@ -136,6 +159,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           weight: editData.weight || "",
           quality: editData.quality || "PP750",
           purchaseDate: purchaseDate || getTodayDate(),
+          purchaseTime: purchaseTime,
           materialColor: editData.materialColor || "#FFFFFF",
           vehicleName: editData.vehicleName || "",
           vehicleType: editData.vehicleType || "",
@@ -143,6 +167,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           driverName: editData.driverName || "",
           vehicleColor: editData.vehicleColor || "",
           deliveryDate: deliveryDate || "",
+          deliveryTime: deliveryTime,
           receiptNo: editData.receiptNo || "",
           vehicleImage: null,
         });
@@ -172,12 +197,14 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     if (!formData.weight || parseFloat(formData.weight) <= 0) newErrors.weight = "Valid weight is required";
     if (!formData.quality) newErrors.quality = "Quality is required";
     if (!formData.purchaseDate) newErrors.purchaseDate = "Purchase date is required";
+    if (!formData.purchaseTime) newErrors.purchaseTime = "Purchase time is required";
     if (!formData.vehicleName.trim()) newErrors.vehicleName = "Vehicle name is required";
     if (!formData.vehicleType.trim()) newErrors.vehicleType = "Vehicle type is required";
     if (!formData.vehicleNumber.trim()) newErrors.vehicleNumber = "Vehicle number is required";
     if (!formData.driverName.trim()) newErrors.driverName = "Driver name is required";
     if (!formData.vehicleColor.trim()) newErrors.vehicleColor = "Vehicle color is required";
     if (!formData.deliveryDate) newErrors.deliveryDate = "Delivery date is required";
+    if (!formData.deliveryTime) newErrors.deliveryTime = "Delivery time is required";
     if (!formData.receiptNo.trim()) newErrors.receiptNo = "Receipt number is required";
     
     setErrors(newErrors);
@@ -228,20 +255,24 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     try {
       const formDataToSend = new FormData();
       
+      // Combine date and time for purchase and delivery
+      const purchaseDateTime = `${formData.purchaseDate}T${formData.purchaseTime}:00`;
+      const deliveryDateTime = `${formData.deliveryDate}T${formData.deliveryTime}:00`;
+
       const fields = {
         materialName: formData.materialName,
         vendor: formData.vendor,
         price: formData.price,
         weight: formData.weight,
         quality: formData.quality,
-        purchaseDate: formData.purchaseDate,
+        purchaseDate: purchaseDateTime,
         materialColor: selectedMaterialColor,
         vehicleName: formData.vehicleName,
         vehicleType: formData.vehicleType,
         vehicleNumber: formData.vehicleNumber,
         driverName: formData.driverName,
         vehicleColor: formData.vehicleColor,
-        deliveryDate: formData.deliveryDate,
+        deliveryDate: deliveryDateTime,
         receiptNo: formData.receiptNo,
       };
 
@@ -345,6 +376,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       weight: "",
       quality: "PP750",
       purchaseDate: getTodayDate(),
+      purchaseTime: getCurrentTime(),
       materialColor: "#FFFFFF",
       vehicleName: "",
       vehicleType: "",
@@ -352,6 +384,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       driverName: "",
       vehicleColor: "",
       deliveryDate: "",
+      deliveryTime: "09:00",
       receiptNo: "",
       vehicleImage: null,
     });
@@ -506,19 +539,31 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                 )}
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Purchase Date *</label>
-                <div className="relative">
-                  <input
-                    type="date"
-                    name="purchaseDate"
-                    value={formData.purchaseDate}
-                    onChange={handleInputChange}
-                    className={`w-full bg-cms-card border ${errors.purchaseDate ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-                  />
-                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <label className="block text-xs text-muted-foreground mb-1.5">Purchase Date & Time *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="relative">
+                    <input
+                      type="date"
+                      name="purchaseDate"
+                      value={formData.purchaseDate}
+                      onChange={handleInputChange}
+                      className={`w-full bg-cms-card border ${errors.purchaseDate ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                    />
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="time"
+                      name="purchaseTime"
+                      value={formData.purchaseTime}
+                      onChange={handleInputChange}
+                      className={`w-full bg-cms-card border ${errors.purchaseTime ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                    />
+                  </div>
                 </div>
-                {errors.purchaseDate && (
-                  <p className="text-xs text-red-500 mt-1">{errors.purchaseDate}</p>
+                {(errors.purchaseDate || errors.purchaseTime) && (
+                  <p className="text-xs text-red-500 mt-1">
+                    {errors.purchaseDate || errors.purchaseTime}
+                  </p>
                 )}
               </div>
             </div>
@@ -625,19 +670,31 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                 )}
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Delivery Date *</label>
-                <div className="relative">
-                  <input
-                    type="date"
-                    name="deliveryDate"
-                    value={formData.deliveryDate}
-                    onChange={handleInputChange}
-                    className={`w-full bg-cms-card border ${errors.deliveryDate ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-                  />
-                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <label className="block text-xs text-muted-foreground mb-1.5">Delivery Date & Time *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="relative">
+                    <input
+                      type="date"
+                      name="deliveryDate"
+                      value={formData.deliveryDate}
+                      onChange={handleInputChange}
+                      className={`w-full bg-cms-card border ${errors.deliveryDate ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                    />
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="time"
+                      name="deliveryTime"
+                      value={formData.deliveryTime}
+                      onChange={handleInputChange}
+                      className={`w-full bg-cms-card border ${errors.deliveryTime ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                    />
+                  </div>
                 </div>
-                {errors.deliveryDate && (
-                  <p className="text-xs text-red-500 mt-1">{errors.deliveryDate}</p>
+                {(errors.deliveryDate || errors.deliveryTime) && (
+                  <p className="text-xs text-red-500 mt-1">
+                    {errors.deliveryDate || errors.deliveryTime}
+                  </p>
                 )}
               </div>
             </div>
@@ -815,8 +872,25 @@ export function POPView() {
     purchase.receiptNo.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Format date
-  const formatDate = (dateString: string) => {
+  // Format date and time for display
+  const formatDateTime = (dateString: string) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      return dateString;
+    }
+  };
+
+  // Format created at date
+  const formatCreatedAt = (dateString: string) => {
     if (!dateString) return 'N/A';
     try {
       const date = new Date(dateString);
@@ -1014,7 +1088,7 @@ export function POPView() {
                     <td className="px-4 py-3 text-sm text-foreground">{formatCurrency(purchase.price)}</td>
                     <td className="px-4 py-3 text-sm text-foreground">{purchase.vendor || 'N/A'}</td>
                     <td className="px-4 py-3 text-sm text-foreground">{purchase.vehicleNumber || 'N/A'}</td>
-                    <td className="px-4 py-3 text-sm text-primary">{formatDate(purchase.purchaseDate || purchase.createdAt)}</td>
+                    <td className="px-4 py-3 text-sm text-primary">{formatDateTime(purchase.purchaseDate || purchase.createdAt)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <button 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Save, Upload, Calendar, Edit, Trash2, Eye, X, Loader2, ChevronDown, Clock } from "lucide-react";
+import { Save, Upload, Calendar, Edit, Trash2, Eye, Loader2, ChevronDown, Clock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import axios from "axios";
 
@@ -421,12 +421,6 @@ export function AddSaleDialog({
           <p className="text-xs text-muted-foreground">
             Point Of Sale / {isEdit ? 'Edit Sale' : 'Add Sale'}
           </p>
-          <button
-            onClick={handleClose}
-            className="p-1 hover:bg-cms-input-bg rounded-md transition-colors"
-          >
-            <X className="w-4 h-4 text-muted-foreground" />
-          </button>
         </div>
 
         <div className="p-6 bg-background">

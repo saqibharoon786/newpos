@@ -21,7 +21,9 @@ interface AssetItem {
   updatedAt: string;
 }
 
-const API_BASE_URL = "http://localhost:5000/api/assets";
+// Get base URL from environment and append /api/assets
+const BACKEND_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const API_BASE_URL = `${BACKEND_URL}/api/assets`;
 
 interface AssetDetailsViewProps {
   onBack: () => void;
@@ -81,6 +83,7 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
 
   useEffect(() => {
     console.log("🎯 AssetDetailsView mounted with assetId:", assetId);
+    console.log("🌐 Using API Base URL:", API_BASE_URL);
     
     if (assetId) {
       fetchAssetDetails();
@@ -146,6 +149,7 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
   // Quick test button
   const testApiManually = () => {
     console.log("🧪 Manual API test for assetId:", assetId);
+    console.log("🌐 Testing URL:", `${API_BASE_URL}/${assetId}`);
     if (assetId) {
       fetch(`${API_BASE_URL}/${assetId}`)
         .then(res => {
@@ -157,9 +161,15 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
           console.log("Manual test - Data:", data);
           if (data.success) {
             setAsset(data.data);
+            setError(null);
+          } else {
+            setError(data.error || "API returned an error");
           }
         })
-        .catch(err => console.error("Manual test - Error:", err));
+        .catch(err => {
+          console.error("Manual test - Error:", err);
+          setError(err.message || "Failed to connect to server");
+        });
     }
   };
 
@@ -178,9 +188,11 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
           <p className="text-sm text-muted-foreground mb-4">
             Fetching data for asset ID: {assetId?.substring(0, 12)}...
           </p>
-          <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
+          <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg max-w-lg">
+            <p className="font-medium mb-1">API Debug Information:</p>
+            <p>Backend URL: {BACKEND_URL}</p>
             <p>API Endpoint: {API_BASE_URL}/{assetId}</p>
-            <p>Check browser console (F12) for debugging info</p>
+            <p className="mt-2">Check browser console (F12) for detailed logs</p>
           </div>
           <button
             onClick={testApiManually}
@@ -209,34 +221,45 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
               {error || "The asset could not be loaded."}
             </p>
             <p className="text-sm text-red-600 mb-2">Asset ID: {assetId}</p>
+            <div className="text-xs text-gray-700 bg-gray-100 p-3 rounded mb-4">
+              <p className="font-medium mb-1">API Information:</p>
+              <p>Backend: {BACKEND_URL}</p>
+              <p>Endpoint: {API_BASE_URL}/{assetId}</p>
+            </div>
             <div className="space-y-2 text-sm text-red-600 text-left mb-6">
-              <p>Possible issues:</p>
+              <p className="font-medium">Possible issues:</p>
               <ul className="list-disc pl-5">
-                <li>Backend server not running</li>
-                <li>Incorrect asset ID</li>
+                <li>Backend server not running at {BACKEND_URL}</li>
+                <li>Incorrect asset ID format</li>
                 <li>Network connection issue</li>
                 <li>API endpoint not found</li>
+                <li>CORS configuration issues</li>
               </ul>
             </div>
-            <div className="flex justify-center gap-3">
+            <div className="flex justify-center gap-3 flex-wrap">
               <button
                 onClick={onBack}
-                className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90"
+                className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90 text-sm"
               >
                 Back to Assets List
               </button>
               <button
                 onClick={fetchAssetDetails}
-                className="px-4 py-2 bg-secondary text-foreground rounded hover:bg-secondary/90 border"
+                className="px-4 py-2 bg-secondary text-foreground rounded hover:bg-secondary/90 border text-sm"
               >
                 Try Again
               </button>
               <button
                 onClick={testApiManually}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
               >
                 Debug API
               </button>
+            </div>
+            <div className="mt-4 pt-4 border-t border-red-200">
+              <p className="text-xs text-red-600">
+                Tip: Make sure your backend server is running at {BACKEND_URL}
+              </p>
             </div>
           </div>
         </div>
@@ -279,7 +302,7 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
       </div>
 
       {/* Details Cards */}
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         {/* Price Details */}
         <div className="bg-cms-card rounded-xl p-5">
           <h3 className="text-base font-semibold text-foreground mb-4 pb-3 border-b border-border">Price Details</h3>
@@ -289,7 +312,7 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
                 <IndianRupee className="w-4 h-4" />
                 <span className="text-sm">Purchase Price</span>
               </div>
-              <span className="text-sm text-foreground">
+              <span className="text-sm text-foreground font-medium">
                 {asset.purchasePrice ? `Rs. ${asset.purchasePrice.toLocaleString()}` : 'N/A'}
               </span>
             </div>
@@ -305,7 +328,7 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
                 <FileText className="w-4 h-4" />
                 <span className="text-sm">Invoice No.</span>
               </div>
-              <span className="text-sm text-foreground">{asset.invoiceNo || 'N/A'}</span>
+              <span className="text-sm text-foreground font-medium">{asset.invoiceNo || 'N/A'}</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
@@ -328,7 +351,7 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
                 <Package className="w-4 h-4" />
                 <span className="text-sm">Asset Name</span>
               </div>
-              <span className="text-sm text-foreground">{asset.assetName}</span>
+              <span className="text-sm text-foreground font-medium">{asset.assetName}</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
@@ -342,7 +365,7 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
                 <Box className="w-4 h-4" />
                 <span className="text-sm">Quantity</span>
               </div>
-              <span className="text-sm text-foreground">{asset.quantity}</span>
+              <span className="text-sm text-foreground font-medium">{asset.quantity}</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
@@ -385,14 +408,14 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
               <Building className="w-4 h-4" />
               <span className="text-sm">Department</span>
             </div>
-            <span className="text-sm text-foreground">{asset.department}</span>
+            <span className="text-sm text-foreground font-medium">{asset.department}</span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 text-muted-foreground">
               <User className="w-4 h-4" />
               <span className="text-sm">Assigned To</span>
             </div>
-            <span className="text-sm text-foreground">{asset.assignedTo}</span>
+            <span className="text-sm text-foreground font-medium">{asset.assignedTo}</span>
           </div>
         </div>
       </div>

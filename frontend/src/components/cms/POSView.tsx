@@ -262,6 +262,13 @@ export function POSView() {
     }
   };
 
+  // Format weight with unit
+  const formatWeightWithUnit = (sale: Sale) => {
+    const weight = sale.weight || '0';
+    const unit = sale.unit || '0';
+    return `${weight} (${unit} units)`;
+  };
+
   // Get vehicle number display - safe handling
   const getVehicleNumber = (sale: Sale) => {
     if (sale.vehicleNumber && sale.vehicleNumber.trim() !== '') {
@@ -335,13 +342,13 @@ export function POSView() {
         <div className="bg-cms-card rounded-lg p-4 border border-border">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">Total Weight Sold</p>
+              <p className="text-sm text-muted-foreground">Total Units Sold</p>
               <p className="text-2xl font-semibold text-foreground">
-                {sales.reduce((total, s) => total + (parseFloat(s.weight) || 0), 0).toLocaleString()} kg
+                {sales.reduce((total, s) => total + (parseInt(s.unit) || 0), 0).toLocaleString()} units
               </p>
             </div>
             <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
-              <div className="text-blue-500 text-lg font-bold">Σ</div>
+              <div className="text-blue-500 text-lg font-bold">#</div>
             </div>
           </div>
         </div>
@@ -416,6 +423,7 @@ export function POSView() {
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Invoice No.</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Buyer</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight & Units</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Amount</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>
@@ -434,12 +442,37 @@ export function POSView() {
                           className="w-3 h-3 rounded-full border border-border"
                           style={{ backgroundColor: sale.materialColor || '#FFFFFF' }}
                         />
-                        <span className="text-sm text-foreground">{sale.materialName || 'N/A'}</span>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-foreground">{sale.materialName || 'N/A'}</span>
+                          <span className="text-xs text-muted-foreground">{sale.supplierName || ''}</span>
+                        </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-foreground">{sale.invoiceNo || 'N/A'}</td>
-                    <td className="px-4 py-3 text-sm text-foreground">{sale.buyerName || 'N/A'}</td>
-                    <td className="px-4 py-3 text-sm text-foreground">{formatCurrency(sale.finalAmount || sale.sellingPrice)}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-sm font-medium text-foreground">{sale.invoiceNo || 'N/A'}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-foreground">{sale.buyerName || 'N/A'}</span>
+                        {sale.buyerPhone && (
+                          <span className="text-xs text-muted-foreground">{sale.buyerPhone}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-foreground">{sale.weight || '0'}</span>
+                        <span className="text-xs text-muted-foreground">{sale.unit || '0'} units</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-foreground">{formatCurrency(sale.finalAmount || sale.sellingPrice)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ₹{parseFloat(sale.sellingPrice || '0').toLocaleString()} each
+                        </span>
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-sm text-foreground">
                       {getVehicleNumber(sale)}
                     </td>
