@@ -46,6 +46,17 @@ const colorOptions = [
   { name: "Blue", color: "bg-blue-600", value: "#2563EB" },
   { name: "Orange", color: "bg-orange-500", value: "#F97316" },
   { name: "Green", color: "bg-green-500", value: "#22C55E" },
+  { name: "Black", color: "bg-black", value: "#000000" }, // Added Black color
+];
+
+// Quality options
+const qualityOptions = [
+  { value: "PP750", label: "PP750" },
+  { value: "PP1000", label: "PP1000" },
+  { value: "HD", label: "HD" },
+  { value: "Natural", label: "Natural" },
+  { value: "Dodya", label: "Dodya" },
+  { value: "Pipe", label: "Pipe" },
 ];
 
 interface DialogProps {
@@ -463,7 +474,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                 )}
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Price (Rupees) *</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Price *</label>
                 <input
                   type="number"
                   name="price"
@@ -499,40 +510,28 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Quality *</label>
-                <div className="flex items-center gap-4 pt-2">
-                  {/* Only PP750 and PP1000 options */}
-                  <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                    <input
-                      type="radio"
-                      name="quality"
-                      value="PP750"
-                      checked={formData.quality === "PP750"}
-                      onChange={() => handleQualityChange("PP750")}
-                      className="sr-only"
-                    />
-                    <div className="w-4 h-4 border border-border bg-cms-card rounded flex items-center justify-center">
-                      {formData.quality === "PP750" && (
-                        <div className="w-2 h-2 bg-primary rounded-sm" />
-                      )}
-                    </div>
-                    PP750
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                    <input
-                      type="radio"
-                      name="quality"
-                      value="PP1000"
-                      checked={formData.quality === "PP1000"}
-                      onChange={() => handleQualityChange("PP1000")}
-                      className="sr-only"
-                    />
-                    <div className="w-4 h-4 border border-border bg-cms-card rounded flex items-center justify-center">
-                      {formData.quality === "PP1000" && (
-                        <div className="w-2 h-2 bg-primary rounded-sm" />
-                      )}
-                    </div>
-                    PP1000
-                  </label>
+                <div className="grid grid-cols-3 gap-2 pt-2">
+                  {qualityOptions.map((option) => (
+                    <label 
+                      key={option.value} 
+                      className="flex items-center gap-2 text-sm text-foreground cursor-pointer hover:bg-cms-card-hover px-2 py-1 rounded transition-colors"
+                    >
+                      <input
+                        type="radio"
+                        name="quality"
+                        value={option.value}
+                        checked={formData.quality === option.value}
+                        onChange={() => handleQualityChange(option.value)}
+                        className="sr-only"
+                      />
+                      <div className="w-4 h-4 border border-border bg-cms-card rounded flex items-center justify-center">
+                        {formData.quality === option.value && (
+                          <div className="w-2 h-2 bg-primary rounded-sm" />
+                        )}
+                      </div>
+                      {option.label}
+                    </label>
+                  ))}
                 </div>
                 {errors.quality && (
                   <p className="text-xs text-red-500 mt-1">{errors.quality}</p>
@@ -571,7 +570,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
             {/* Material Color */}
             <div className="mb-4">
               <label className="block text-xs text-muted-foreground mb-2">Material Color *</label>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 {colorOptions.map((color) => (
                   <label key={color.value} className="flex items-center gap-1.5 cursor-pointer">
                     <div className="relative flex items-center">
@@ -583,7 +582,13 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                         onChange={() => setSelectedMaterialColor(color.value)}
                         className="sr-only"
                       />
-                      <div className={`w-5 h-5 rounded-full ${color.color} border-2 ${selectedMaterialColor === color.value ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' : 'border-border'}`} />
+                      <div 
+                        className={`w-5 h-5 rounded-full ${color.color} border-2 ${
+                          selectedMaterialColor === color.value 
+                            ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' 
+                            : 'border-border'
+                        }`} 
+                      />
                     </div>
                     <span className="text-xs text-foreground">{color.name}</span>
                   </label>
@@ -906,17 +911,17 @@ export function POPView() {
     }
   };
 
-  // Format currency
+  // Format currency - REMOVED CURRENCY SYMBOL
   const formatCurrency = (amount: string) => {
     try {
       const numAmount = parseFloat(amount);
-      if (isNaN(numAmount)) return '₹0';
-      return `₹${numAmount.toLocaleString('en-IN', {
+      if (isNaN(numAmount)) return '0';
+      return numAmount.toLocaleString('en-IN', {
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
-      })}`;
+      });
     } catch (error) {
-      return `₹${amount}`;
+      return amount;
     }
   };
 
@@ -984,11 +989,11 @@ export function POPView() {
             <div>
               <p className="text-sm text-muted-foreground">Total Value</p>
               <p className="text-2xl font-semibold text-foreground">
-                ₹{purchases.reduce((total, p) => total + (parseFloat(p.price) || 0), 0).toLocaleString()}
+                {purchases.reduce((total, p) => total + (parseFloat(p.price) || 0), 0).toLocaleString()}
               </p>
             </div>
             <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
-              <span className="text-green-500 text-lg font-bold">₹</span>
+              <span className="text-green-500 text-lg font-bold">V</span>
             </div>
           </div>
         </div>

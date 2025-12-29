@@ -78,6 +78,7 @@ interface AddSaleDialogProps {
   editData?: Sale | null;
 }
 
+// Updated color options with Black
 const colorOptions = [
   { name: "White", color: "bg-white", value: "#FFFFFF" },
   { name: "Yellow", color: "bg-yellow-400", value: "#FACC15" },
@@ -85,6 +86,7 @@ const colorOptions = [
   { name: "Blue", color: "bg-blue-600", value: "#2563EB" },
   { name: "Orange", color: "bg-orange-500", value: "#F97316" },
   { name: "Green", color: "bg-green-500", value: "#22C55E" },
+  { name: "Black", color: "bg-black", value: "#000000" }, // Added Black color
 ];
 
 export function AddSaleDialog({ 
@@ -98,8 +100,8 @@ export function AddSaleDialog({
     materialName: "",
     supplierName: "",
     invoiceNo: "",
-    weight: "30KG",
-    unit: "2",
+    weight: "", // Changed from "30KG" to empty string
+    unit: "", // Changed from "2" to empty string
     purchaseDate: "",
     purchaseTime: "",
     branch: "",
@@ -117,13 +119,12 @@ export function AddSaleDialog({
   });
 
   const [selectedColor, setSelectedColor] = useState("#FFFFFF");
-  const [selectedWeight, setSelectedWeight] = useState("30KG");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [materials, setMaterials] = useState<Purchase[]>([]);
   const [loadingMaterials, setLoadingMaterials] = useState(false);
-  const weightOptions = ["30KG", "40KG", "50KG", "Other"];
-  const unitOptions = ["2", "5", "10", "15", "20"];
+  
+  // Removed weightOptions array and unitOptions array since we're using manual input
 
   // Fetch materials from purchases when dialog opens
   useEffect(() => {
@@ -163,8 +164,8 @@ export function AddSaleDialog({
           materialName: editData.materialName || "",
           supplierName: editData.supplierName || "",
           invoiceNo: editData.invoiceNo || "",
-          weight: editData.weight || "30KG",
-          unit: editData.unit || "2",
+          weight: editData.weight || "",
+          unit: editData.unit || "",
           purchaseDate: purchaseDate,
           purchaseTime: purchaseTime,
           branch: editData.branch || "",
@@ -182,7 +183,6 @@ export function AddSaleDialog({
         });
         
         setSelectedColor(editData.materialColor || "#FFFFFF");
-        setSelectedWeight(editData.weight || "30KG");
       } else {
         resetForm();
       }
@@ -212,6 +212,8 @@ export function AddSaleDialog({
     if (!formData.materialName.trim()) newErrors.materialName = "Material name is required";
     if (!formData.supplierName.trim()) newErrors.supplierName = "Supplier name is required";
     if (!formData.invoiceNo.trim()) newErrors.invoiceNo = "Invoice number is required";
+    if (!formData.weight.trim()) newErrors.weight = "Weight is required";
+    if (!formData.unit.trim()) newErrors.unit = "Unit is required";
     if (!formData.purchaseDate) newErrors.purchaseDate = "Purchase date is required";
     if (!formData.purchaseTime) newErrors.purchaseTime = "Purchase time is required";
     if (!formData.branch) newErrors.branch = "Branch is required";
@@ -231,11 +233,6 @@ export function AddSaleDialog({
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
-  };
-
-  const handleWeightSelect = (weight: string) => {
-    setSelectedWeight(weight);
-    setFormData(prev => ({ ...prev, weight }));
   };
 
   const handleMaterialSelect = (materialName: string) => {
@@ -308,7 +305,7 @@ export function AddSaleDialog({
         materialName: formData.materialName,
         supplierName: formData.supplierName,
         invoiceNo: formData.invoiceNo,
-        weight: selectedWeight,
+        weight: formData.weight,
         unit: formData.unit,
         purchaseDate: dateTime,
         branch: formData.branch,
@@ -381,8 +378,8 @@ export function AddSaleDialog({
       materialName: "",
       supplierName: "",
       invoiceNo: "",
-      weight: "30KG",
-      unit: "2",
+      weight: "",
+      unit: "",
       purchaseDate: "",
       purchaseTime: "",
       branch: "",
@@ -399,7 +396,6 @@ export function AddSaleDialog({
       buyerCompany: "",
     });
     setSelectedColor("#FFFFFF");
-    setSelectedWeight("30KG");
     setErrors({});
   };
 
@@ -497,43 +493,32 @@ export function AddSaleDialog({
 
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Weight</label>
-                <div className="flex gap-2 flex-wrap">
-                  {weightOptions.map((weight) => (
-                    <label key={weight} className={`flex items-center gap-2 border rounded-md px-3 py-2 cursor-pointer transition-colors ${selectedWeight === weight ? 'bg-primary/10 border-primary' : 'bg-cms-input-bg border-border'}`}>
-                      <input 
-                        type="radio" 
-                        name="weight"
-                        value={weight}
-                        checked={selectedWeight === weight}
-                        onChange={() => handleWeightSelect(weight)}
-                        className="sr-only"
-                      />
-                      <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedWeight === weight ? 'border-primary' : 'border-border'}`}>
-                        {selectedWeight === weight && (
-                          <div className="w-2 h-2 bg-primary rounded-sm" />
-                        )}
-                      </div>
-                      <span className="text-sm text-foreground">{weight}</span>
-                    </label>
-                  ))}
-                </div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Weight *</label>
+                <input
+                  type="text"
+                  name="weight"
+                  placeholder="e.g 30KG or 30 kg"
+                  value={formData.weight}
+                  onChange={handleInputChange}
+                  className={`w-full bg-cms-input-bg border ${errors.weight ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                />
+                {errors.weight && (
+                  <p className="text-xs text-red-500 mt-1">{errors.weight}</p>
+                )}
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Unit</label>
-                <div className="relative">
-                  <select
-                    name="unit"
-                    value={formData.unit}
-                    onChange={handleInputChange}
-                    className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    {unitOptions.map((unit) => (
-                      <option key={unit} value={unit}>{unit}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                </div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Unit *</label>
+                <input
+                  type="text"
+                  name="unit"
+                  placeholder="e.g 2"
+                  value={formData.unit}
+                  onChange={handleInputChange}
+                  className={`w-full bg-cms-input-bg border ${errors.unit ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                />
+                {errors.unit && (
+                  <p className="text-xs text-red-500 mt-1">{errors.unit}</p>
+                )}
               </div>
               <div>
                 <div className="flex flex-col gap-1.5">

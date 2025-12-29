@@ -1,3 +1,4 @@
+// CMSDashboard.tsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
@@ -7,6 +8,7 @@ import { POSView } from "./POSView";
 import { RoznamchaView } from "./RoznamchaView";
 import { AssetsView } from "./AssetsView";
 import CustomersView from "./CustomersView";
+import Employee from "./Employee";
 import { LogOut } from "lucide-react";
 
 const SUPER_ADMIN = {
@@ -87,17 +89,19 @@ export function CMSDashboard() {
         return <AssetsView />;
       case "customers":
         return <CustomersView />;
-      default:
-        return (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <h2 className="text-xl font-semibold text-foreground mb-2">
-                {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
-              </h2>
-              <p className="text-muted-foreground">This section is under development</p>
-            </div>
-          </div>
-        );
+      case "employees":
+        return <Employee />;
+      // default:
+      //   return (
+      //     <div className="flex-1 flex items-center justify-center">
+      //       <div className="text-center">
+      //         <h2 className="text-xl font-semibold text-foreground mb-2">
+      //           {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+      //         </h2>
+      //         <p className="text-muted-foreground">This section is under development</p>
+      //       </div>
+      //     </div>
+      //   );
     }
   };
 
@@ -139,8 +143,6 @@ export function CMSDashboard() {
         <main className="flex-1 overflow-auto bg-background p-6">
           {renderContent()}
         </main>
-
-        {/* Footer Removed */}
       </div>
     </div>
   );

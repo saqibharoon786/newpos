@@ -27,6 +27,8 @@ const posRoutes = require("./routes/pos.routes");
 const expenseRoutes = require("./routes/expense.route");
 const assetRoutes = require("./routes/assets.route");
 const customerRoutes = require("./routes/customer.route");
+const dashboardRoutes = require("./routes/dashboard.route");
+const employeeRoutes = require("./routes/employee.route");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -104,6 +106,8 @@ app.use("/api/sales", posRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/assets", assetRoutes);
 app.use("/api/customers", customerRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/employees", employeeRoutes);
 
 // Test route for file access
 app.get("/api/test-upload/:filename", (req, res) => {

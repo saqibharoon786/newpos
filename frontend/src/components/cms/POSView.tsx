@@ -248,17 +248,17 @@ export function POSView() {
     }
   };
 
-  // Format currency
+  // Format currency - REMOVED CURRENCY SYMBOL
   const formatCurrency = (amount: string) => {
     try {
       const numAmount = parseFloat(amount);
-      if (isNaN(numAmount)) return '₹0';
-      return `₹${numAmount.toLocaleString('en-IN', {
+      if (isNaN(numAmount)) return '0';
+      return numAmount.toLocaleString('en-IN', {
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
-      })}`;
+      });
     } catch (error) {
-      return `₹${amount}`;
+      return amount;
     }
   };
 
@@ -331,11 +331,11 @@ export function POSView() {
             <div>
               <p className="text-sm text-muted-foreground">Total Revenue</p>
               <p className="text-2xl font-semibold text-foreground">
-                ₹{sales.reduce((total, s) => total + (parseFloat(s.finalAmount || s.sellingPrice) || 0), 0).toLocaleString()}
+                {sales.reduce((total, s) => total + (parseFloat(s.finalAmount || s.sellingPrice) || 0), 0).toLocaleString()}
               </p>
             </div>
             <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
-              <span className="text-green-500 text-lg font-bold">₹</span>
+              <span className="text-green-500 text-lg font-bold">V</span>
             </div>
           </div>
         </div>
@@ -469,7 +469,7 @@ export function POSView() {
                       <div className="flex flex-col">
                         <span className="text-sm font-medium text-foreground">{formatCurrency(sale.finalAmount || sale.sellingPrice)}</span>
                         <span className="text-xs text-muted-foreground">
-                          ₹{parseFloat(sale.sellingPrice || '0').toLocaleString()} each
+                          {parseFloat(sale.sellingPrice || '0').toLocaleString()} each
                         </span>
                       </div>
                     </td>

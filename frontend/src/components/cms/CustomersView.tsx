@@ -22,7 +22,9 @@ interface Customer {
   updatedAt: string;
 }
 
-const API_BASE_URL = "http://localhost:5000/api/customers";
+// Use environment variable for API base URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const CUSTOMERS_API_URL = `${API_BASE_URL}/api/customers`;
 
 export default function CustomersView() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -34,14 +36,28 @@ export default function CustomersView() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
+  // Log API URL for debugging
+  useEffect(() => {
+    console.log("🌐 API Configuration:", {
+      VITE_API_BASE_URL: import.meta.env.VITE_API_BASE_URL,
+      API_BASE_URL,
+      CUSTOMERS_API_URL,
+      Mode: import.meta.env.MODE,
+    });
+  }, []);
+
   // Fetch customers from backend
   const fetchCustomers = async () => {
     try {
       setIsLoading(true);
-      console.log("📡 Fetching customers from:", `${API_BASE_URL}/getall-customers`);
+      const apiUrl = `${CUSTOMERS_API_URL}/getall-customers`;
+      console.log("📡 Fetching customers from:", apiUrl);
       
-      const response = await axios.get(`${API_BASE_URL}/getall-customers`, {
+      const response = await axios.get(apiUrl, {
         timeout: 10000,
+        headers: {
+          'Content-Type': 'application/json',
+        }
       });
       
       console.log("✅ Backend response:", response.data);
@@ -76,11 +92,11 @@ export default function CustomersView() {
       console.error("❌ Error fetching customers:", error);
       
       if (error.code === 'ECONNREFUSED') {
-        toast.error("Cannot connect to backend. Please make sure server is running on port 5000.");
+        toast.error(`Cannot connect to backend at ${API_BASE_URL}. Please make sure server is running.`);
       } else if (error.response) {
         toast.error(`Server error ${error.response.status}: ${error.response.data?.message || "Failed to load customers"}`);
       } else if (error.request) {
-        toast.error("No response from server. Backend might be down.");
+        toast.error(`No response from ${API_BASE_URL}. Backend might be down.`);
       } else {
         toast.error("Failed to load customers from server");
       }
@@ -139,7 +155,7 @@ export default function CustomersView() {
     }
 
     try {
-      const response = await axios.delete(`${API_BASE_URL}/${id}`);
+      const response = await axios.delete(`${CUSTOMERS_API_URL}/${id}`);
       
       if (response.data.success) {
         toast.success("Customer deleted successfully");
@@ -366,6 +382,7 @@ export default function CustomersView() {
         <div className="bg-cms-card rounded-xl p-8 text-center mb-6">
           <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-muted-foreground">Loading customers...</p>
+          <p className="text-xs text-muted-foreground mt-2">Connecting to {API_BASE_URL}</p>
         </div>
       )}
 

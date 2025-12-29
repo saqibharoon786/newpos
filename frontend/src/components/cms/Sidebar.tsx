@@ -13,7 +13,7 @@ const menuItems = [
   { id: "roznamcha", label: "Roznamcha", icon: BookOpen },
   { id: "assets", label: "Assets", icon: Package },
   { id: "customers", label: "Customers", icon: Users },
-  { id: "employees", label: "Employees", icon: UserCog },
+  { id: "employees", label: "Employee", icon: UserCog },
 ];
 
 export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
