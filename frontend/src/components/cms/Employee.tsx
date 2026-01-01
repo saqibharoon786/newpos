@@ -1,5 +1,6 @@
-// Employee.tsx - BACKEND COMPATIBLE VERSION
+// Employee.tsx - FIXED VERSION WITH NO REFRESH ISSUE
 import { useState, useRef, useEffect } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   Users,
   Search,
@@ -24,7 +25,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import axios from "axios";
 
 // ==================== API CONFIGURATION ====================
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const createAPI = () => {
   const instance = axios.create({
@@ -83,6 +84,10 @@ interface EmployeeType {
 }
 
 const Employee = () => {
+  // Router Hooks
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  
   // State Management
   const [employees, setEmployees] = useState<EmployeeType[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -150,23 +155,42 @@ const Employee = () => {
     fetchEmployeeStats();
   }, []);
 
+  // URL سے selected employee کا ID پڑھیں
+  useEffect(() => {
+    const employeeId = searchParams.get("view");
+    if (employeeId && employees.length > 0) {
+      const employee = employees.find(emp => emp._id === employeeId || emp.id === employeeId);
+      if (employee) {
+        setSelectedEmployee(employee);
+        setView("detail");
+      }
+    }
+  }, [employees, searchParams]);
+
   // ==================== API FUNCTIONS ====================
   const fetchEmployees = async () => {
     try {
       setIsLoading(true);
       const response = await API.get("/employees/get-all");
+      console.log("Backend response for get-all:", response.data); // Debug
+      
       if (response.data.success) {
         // Backend سے آنے والے ڈیٹا کو درست طریقے سے مپ کریں
-        const employeesData = (response.data.data || []).map((emp: any) => ({
-          ...emp,
-          id: emp._id, 
-        }));
+        const employeesData = (response.data.data || []).map((emp: any) => {
+          console.log("Employee from backend:", emp); // Debug each employee
+          return {
+            ...emp,
+          };
+        });
+        console.log("Mapped employees data:", employeesData); // Debug
         setEmployees(employeesData);
       } else {
+        console.warn("Backend returned success: false");
         setEmployees([]);
       }
     } catch (error: any) {
       console.error("Failed to load employees:", error);
+      console.error("Error response:", error.response); // Debug
       alert(`Failed to load employees: ${error.response?.data?.message || error.message}`);
       setEmployees([]);
     } finally {
@@ -223,25 +247,29 @@ const Employee = () => {
     }
   };
 
-  // UPDATE EMPLOYEE - BACKEND COMPATIBLE
+  // UPDATE EMPLOYEE - FIXED VERSION
   const updateEmployee = async (id: string, employeeData: any, photoFile?: File) => {
     try {
       setIsSubmitting(true);
       
       // Check if id is valid
-      if (!id || id === "undefined") {
+      if (!id || id === "undefined" || id === "") {
+        console.error("Invalid employee ID provided:", id);
         throw new Error("Invalid employee ID");
       }
       
       console.log("Updating employee with MongoDB _id:", id);
+      console.log("Data being sent:", employeeData);
       
       const formDataToSend = new FormData();
       
-      // Append all form data
+      // Append all form data EXCEPT _id (backend uses route param)
       Object.keys(employeeData).forEach(key => {
-        const value = employeeData[key];
-        if (value !== undefined && value !== null && value !== '') {
-          formDataToSend.append(key, String(value));
+        if (key !== '_id') { // Don't send _id in form data
+          const value = employeeData[key];
+          if (value !== undefined && value !== null && value !== '') {
+            formDataToSend.append(key, String(value));
+          }
         }
       });
 
@@ -250,8 +278,10 @@ const Employee = () => {
         formDataToSend.append("avatar", photoFile);
       }
 
-      // Use the MongoDB _id for updating
+      // Use the MongoDB _id in the URL
       const response = await API.put(`/employees/${id}`, formDataToSend);
+      
+      console.log("Update response:", response.data); // Debug
       
       if (response.data.success) {
         return response.data;
@@ -260,13 +290,14 @@ const Employee = () => {
       }
     } catch (error: any) {
       console.error("Update error details:", error);
+      console.error("Error response:", error.response?.data); // Debug
       throw error;
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // DELETE EMPLOYEE - BACKEND COMPATIBLE
+  // DELETE EMPLOYEE
   const deleteEmployee = async (id: string) => {
     try {
       // Check if id is valid
@@ -295,7 +326,8 @@ const Employee = () => {
       emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       emp.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
       emp.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.employeeId.toLowerCase().includes(searchQuery.toLowerCase())
+      emp.employeeId.toLowerCase().includes(searchQuery.toLowerCase())||
+      emp.id.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -339,10 +371,9 @@ const Employee = () => {
       const response = await createEmployee(formData, photoFile);
       
       if (response.success) {
-        // Add new employee to the list with proper _id mapping
         const newEmployee = {
           ...response.data,
-          id: response.data._id, // Map _id to id
+          id: response.data._id,
         };
         setEmployees(prev => [...prev, newEmployee]);
         setIsAddModalOpen(false);
@@ -358,10 +389,16 @@ const Employee = () => {
     }
   };
 
-  // HANDLE UPDATE - USING MONGODB _id
+  // HANDLE UPDATE - FIXED VERSION
   const handleUpdateEmployee = async () => {
-    if (!selectedEmployee) {
-      alert("No employee selected");
+    // Get ID from editFormData
+    const mongoId = editFormData._id;
+    
+    console.log("handleUpdateEmployee - ID:", mongoId);
+    console.log("editFormData:", editFormData);
+    
+    if (!mongoId || mongoId === "undefined" || mongoId === "") {
+      alert("Invalid employee ID. Cannot update.");
       return;
     }
 
@@ -369,33 +406,26 @@ const Employee = () => {
       setIsSubmitting(true);
       const photoFile = editFileInputRef.current?.files?.[0];
       
-      // Use MongoDB _id from selectedEmployee
-      const mongoId = selectedEmployee._id;
-      console.log("Updating employee with MongoDB ID:", mongoId);
-      
-      if (!mongoId || mongoId === "undefined") {
-        alert("Invalid employee ID. Cannot update.");
-        return;
-      }
-      
       console.log(`✏️ Updating employee with MongoDB ID: ${mongoId}...`);
       
       const response = await updateEmployee(mongoId, editFormData, photoFile);
       
       if (response.success) {
-        // Update the employee in the list using _id
         const updatedEmployee = {
           ...response.data,
-          id: response.data._id, // Map _id to id
+          id: response.data._id,
         };
         
         setEmployees(prev => 
           prev.map(emp => emp._id === mongoId ? updatedEmployee : emp)
         );
         
-        // Update the selected employee
-        setSelectedEmployee(updatedEmployee);
+        if (selectedEmployee && selectedEmployee._id === mongoId) {
+          setSelectedEmployee(updatedEmployee);
+        }
+        
         setIsEditModalOpen(false);
+        resetEditForm();
         alert("✅ Employee updated successfully!");
       }
     } catch (error: any) {
@@ -406,7 +436,7 @@ const Employee = () => {
     }
   };
 
-  // HANDLE DELETE - USING MONGODB _id
+  // HANDLE DELETE
   const handleDeleteEmployee = async (employee: EmployeeType) => {
     if (!employee || !employee._id) {
       alert("Invalid employee");
@@ -422,13 +452,10 @@ const Employee = () => {
       const response = await deleteEmployee(employee._id);
       
       if (response.success) {
-        // Remove from the list using _id
         setEmployees(prev => prev.filter(emp => emp._id !== employee._id));
         
-        // If viewing this employee's detail, go back to list
         if (selectedEmployee && selectedEmployee._id === employee._id) {
-          setView("list");
-          setSelectedEmployee(null);
+          handleBackToList();
         }
         
         await fetchEmployeeStats();
@@ -491,59 +518,79 @@ const Employee = () => {
     }
   };
 
-  // Handle View Profile click
+  // Handle View Profile click - FIXED
   const handleViewProfile = (employee: EmployeeType) => {
     setSelectedEmployee(employee);
     setView("detail");
+    // URL کو update کریں تاکہ refresh پر بھی detail view برقرار رہے
+    setSearchParams({ view: employee._id });
   };
 
-  // Handle Edit click - FIXED FOR MONGODB _id
- const handleEditClick = (employee: EmployeeType) => {
-  console.log("Editing employee with MongoDB ID:", employee._id);
-  
-  if (!employee) {
-    alert("Error: Employee data not found");
-    return;
-  }
-  
-  setSelectedEmployee(employee);
-  
-  // Extract salary number from formatted string
-  let salaryValue = "";
-  if (employee.salary) {
-    // Remove "Rs. " and commas, then parse the number
-    const salaryMatch = employee.salary.match(/[\d,]+\.?\d*/);
-    if (salaryMatch) {
-      salaryValue = salaryMatch[0].replace(/,/g, '');
-    }
-  }
-  
-  const formattedData = {
-    _id: employee._id || "", // Add the _id field here
-    employeeId: employee.employeeId || "",
-    name: employee.name || "",
-    address: employee.address || "",
-    phone: employee.phone || "",
-    email: employee.email || "",
-    cnic: employee.cnic || "",
-    dob: formatDateForInput(employee.dob),
-    emergencyContact: employee.emergencyContact || "",
-    title: employee.title || "",
-    department: employee.department || "",
-    reportingManager: employee.reportingManager || "",
-    hireDate: formatDateForInput(employee.hireDate),
-    startTime: formatTimeForInput(employee.startTime || "09:00"),
-    endTime: formatTimeForInput(employee.endTime || "17:00"),
-    responsibilities: employee.responsibilities || "",
-    salary: salaryValue,
+  // Handle Back to List - FIXED
+  const handleBackToList = () => {
+    setView("list");
+    setSelectedEmployee(null);
+    // URL سے view parameter ہٹائیں
+    setSearchParams({});
   };
-  
-  console.log("Edit form data:", formattedData);
-  
-  setEditFormData(formattedData);
-  setEditPhotoPreview(employee.avatar || null);
-  setIsEditModalOpen(true);
-};
+
+  // Handle Edit click - FIXED VERSION
+  const handleEditClick = (employee: EmployeeType) => {
+    console.log("handleEditClick - Employee data:", employee);
+    
+    if (!employee) {
+      alert("Error: Employee data not found");
+      return;
+    }
+    
+    // Check for _id in multiple locations
+    const mongoId = employee._id || employee.id;
+    console.log("MongoDB ID found:", mongoId);
+    
+    if (!mongoId) {
+      alert("Error: Employee ID not found. Cannot edit.");
+      return;
+    }
+    
+    setSelectedEmployee(employee);
+    
+    // Extract salary number
+    let salaryValue = "";
+    if (employee.salary) {
+      if (typeof employee.salary === 'string') {
+        // Remove "Rs. " and commas
+        salaryValue = employee.salary.replace(/Rs\.\s?|,/g, '');
+      } else if (typeof employee.salary === 'number') {
+        salaryValue = employee.salary.toString();
+      }
+    }
+    
+    const formattedData = {
+      _id: mongoId,
+      employeeId: employee.employeeId || "",
+      name: employee.name || "",
+      address: employee.address || "",
+      phone: employee.phone || "",
+      email: employee.email || "",
+      cnic: employee.cnic || "",
+      dob: formatDateForInput(employee.dob),
+      emergencyContact: employee.emergencyContact || "",
+      title: employee.title || "",
+      department: employee.department || "",
+      reportingManager: employee.reportingManager || "",
+      hireDate: formatDateForInput(employee.hireDate),
+      startTime: formatTimeForInput(employee.startTime || "09:00"),
+      endTime: formatTimeForInput(employee.endTime || "17:00"),
+      responsibilities: employee.responsibilities || "",
+      salary: salaryValue,
+    };
+    
+    console.log("Edit form data prepared:", formattedData);
+    
+    setEditFormData(formattedData);
+    setEditPhotoPreview(employee.avatar || null);
+    setIsEditModalOpen(true);
+  };
 
   const formatDateForInput = (dateString: string) => {
     if (!dateString) return "";
@@ -635,10 +682,7 @@ const Employee = () => {
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-4">
               <button
-                onClick={() => {
-                  setView("list");
-                  setSelectedEmployee(null);
-                }}
+                onClick={handleBackToList}
                 className="text-foreground hover:text-muted-foreground transition-colors"
               >
                 <ArrowLeft className="w-5 h-5" />
@@ -805,7 +849,7 @@ const Employee = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredEmployees.map((employee) => (
                 <div
-                  key={employee._id} // Use MongoDB _id as key
+                  key={employee._id}
                   className="bg-card rounded-xl p-5 hover:shadow-lg transition-shadow"
                 >
                   <div className="flex items-start justify-between mb-4">
@@ -1090,7 +1134,9 @@ const Employee = () => {
           <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto bg-background border-border">
             <DialogHeader>
               <div className="text-muted-foreground text-sm mb-1">Employees / Edit Employee</div>
-              <DialogTitle className="text-xl font-bold text-foreground">Edit Employee - {editFormData._id}</DialogTitle>
+              <DialogTitle className="text-xl font-bold text-foreground">
+                Edit Employee - {editFormData.employeeId || "Loading..."}
+              </DialogTitle>
               <DialogDescription className="text-muted-foreground text-sm">
                 Update the details for Employee
               </DialogDescription>
@@ -1255,6 +1301,13 @@ const Employee = () => {
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Debug Info (remove in production) */}
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-xs text-yellow-800">
+                  Debug Info: MongoDB ID: {editFormData._id || "Not found"}
+                </p>
               </div>
 
               {/* Action Buttons */}

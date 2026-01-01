@@ -18,8 +18,8 @@ const storage = multer.diskStorage({
       folder = "profiles"
     } else if (file.fieldname === "membershipDocument") {
       folder = "documents"
-    } else if (file.fieldname === "paymentReceipt") {
-      folder = "receipts"
+    } else if (file.fieldname === "paymentReceipt" || file.fieldname === "receiptImage") {
+      folder = "receipts" // Handle both fieldnames
     }
 
     const fullPath = path.join(uploadDir, folder)
@@ -33,7 +33,15 @@ const storage = multer.diskStorage({
     // Generate unique filename
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9)
     const extension = path.extname(file.originalname)
-    cb(null, file.fieldname + "-" + uniqueSuffix + extension)
+    
+    // Use a more descriptive filename
+    if (file.fieldname === "receiptImage") {
+      // Generate filename with invoice number if available
+      const invoiceNo = req.body.invoiceNo || 'unknown'
+      cb(null, `receipt-${invoiceNo}-${uniqueSuffix}${extension}`)
+    } else {
+      cb(null, file.fieldname + "-" + uniqueSuffix + extension)
+    }
   },
 })
 

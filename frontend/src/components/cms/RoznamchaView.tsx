@@ -312,9 +312,8 @@ export function RoznamchaView() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editExpense, setEditExpense] = useState<ExpenseItem | null>(null);
   const [viewExpense, setViewExpense] = useState<ExpenseItem | null>(null);
-  const [activeTab, setActiveTab] = useState("Daily");
+  const [activeTab, setActiveTab] = useState("All"); // Changed default tab to "All"
   const [filters, setFilters] = useState({
-    period: "1 Dec",
     category: "All Categories",
     purpose: "",
     personResponsible: "",
@@ -591,226 +590,43 @@ export function RoznamchaView() {
     setViewExpense(null);
   };
 
-  // Calculate daily statistics from local data
-  const calculateTodayExpense = () => {
-    const today = new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
-    return expenses
-      .filter(expense => expense.date === today)
-      .reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
-  };
-
-  const calculateYesterdayExpense = () => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
-    
-    return expenses
-      .filter(expense => expense.date === yesterdayStr)
-      .reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
-  };
-
-  // Calculate weekly statistics
-  const calculateWeeklyExpense = () => {
-    const today = new Date();
-    const firstDayOfWeek = new Date(today);
-    firstDayOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
-    const lastDayOfWeek = new Date(today);
-    lastDayOfWeek.setDate(today.getDate() + (6 - today.getDay())); // Saturday
-    
-    return expenses
-      .filter(expense => {
-        const expenseDate = new Date(expense.date);
-        return expenseDate >= firstDayOfWeek && expenseDate <= lastDayOfWeek;
-      })
-      .reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
-  };
-
-  const calculateLastWeekExpense = () => {
-    const today = new Date();
-    const firstDayOfLastWeek = new Date(today);
-    firstDayOfLastWeek.setDate(today.getDate() - today.getDay() - 7); // Sunday of last week
-    const lastDayOfLastWeek = new Date(today);
-    lastDayOfLastWeek.setDate(today.getDate() - today.getDay() - 1); // Saturday of last week
-    
-    return expenses
-      .filter(expense => {
-        const expenseDate = new Date(expense.date);
-        return expenseDate >= firstDayOfLastWeek && expenseDate <= lastDayOfLastWeek;
-      })
-      .reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
-  };
-
-  // Calculate monthly statistics
-  const calculateMonthlyExpense = () => {
-    const today = new Date();
-    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    
-    return expenses
-      .filter(expense => {
-        const expenseDate = new Date(expense.date);
-        return expenseDate >= firstDayOfMonth && expenseDate <= lastDayOfMonth;
-      })
-      .reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
-  };
-
-  const calculateLastMonthExpense = () => {
-    const today = new Date();
-    const firstDayOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const lastDayOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
-    
-    return expenses
-      .filter(expense => {
-        const expenseDate = new Date(expense.date);
-        return expenseDate >= firstDayOfLastMonth && expenseDate <= lastDayOfLastMonth;
-      })
-      .reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
-  };
-
-  // Calculate average based on active tab
-  const calculateAvgExpense = () => {
-    switch (activeTab) {
-      case "Daily":
-        return calculateTotalExpenses() / Math.max(new Set(expenses.map(e => e.date)).size, 1);
-      case "Weekly":
-        return calculateMonthlyExpense() / 4.33; // Average weeks in a month
-      case "Monthly":
-        return calculateMonthlyExpense();
-      default:
-        return 0;
-    }
-  };
-
+  // Calculate total expenses
   const calculateTotalExpenses = () => {
     return expenses.reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
   };
 
-  // Filter expenses based on active tab
-  const getFilteredExpensesByTab = (expensesList: ExpenseItem[]) => {
-    const today = new Date();
+  // Calculate average daily expense (based on all time data)
+  const calculateAverageDailyExpense = () => {
+    if (expenses.length === 0) return 0;
     
-    switch (activeTab) {
-      case "Daily":
-        const todayStr = today.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
-        return expensesList.filter(expense => expense.date === todayStr);
-      
-      case "Weekly":
-        const firstDayOfWeek = new Date(today);
-        firstDayOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
-        const lastDayOfWeek = new Date(today);
-        lastDayOfWeek.setDate(today.getDate() + (6 - today.getDay())); // Saturday
-        
-        return expensesList.filter(expense => {
-          const expenseDate = new Date(expense.date);
-          return expenseDate >= firstDayOfWeek && expenseDate <= lastDayOfWeek;
-        });
-      
-      case "Monthly":
-        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-        const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-        
-        return expensesList.filter(expense => {
-          const expenseDate = new Date(expense.date);
-          return expenseDate >= firstDayOfMonth && expenseDate <= lastDayOfMonth;
-        });
-      
-      default:
-        return expensesList;
-    }
+    // Get unique dates from expenses
+    const uniqueDates = new Set(expenses.map(e => e.date));
+    const totalDays = uniqueDates.size || 1;
+    const totalAmount = calculateTotalExpenses();
+    
+    return totalAmount / totalDays;
   };
 
-  // Get current period stats based on active tab
-  const getCurrentPeriodStats = () => {
-    switch (activeTab) {
-      case "Daily":
-        return {
-          current: calculateTodayExpense(),
-          previous: calculateYesterdayExpense(),
-          avg: calculateAvgExpense()
-        };
-      case "Weekly":
-        return {
-          current: calculateWeeklyExpense(),
-          previous: calculateLastWeekExpense(),
-          avg: calculateAvgExpense()
-        };
-      case "Monthly":
-        return {
-          current: calculateMonthlyExpense(),
-          previous: calculateLastMonthExpense(),
-          avg: calculateAvgExpense()
-        };
-      default:
-        return {
-          current: 0,
-          previous: 0,
-          avg: 0
-        };
-    }
+  // Calculate monthly average
+  const calculateMonthlyAverage = () => {
+    if (expenses.length === 0) return 0;
+    
+    // Get unique months from expenses
+    const uniqueMonths = new Set(
+      expenses.map(e => {
+        const date = new Date(e.date);
+        return `${date.getFullYear()}-${date.getMonth()}`;
+      })
+    );
+    
+    const totalMonths = uniqueMonths.size || 1;
+    const totalAmount = calculateTotalExpenses();
+    
+    return totalAmount / totalMonths;
   };
 
-  // Get period label based on active tab
-  const getPeriodLabel = () => {
-    switch (activeTab) {
-      case "Daily":
-        return "Today's";
-      case "Weekly":
-        return "This Week's";
-      case "Monthly":
-        return "This Month's";
-      default:
-        return "Today's";
-    }
-  };
-
-  const getPreviousPeriodLabel = () => {
-    switch (activeTab) {
-      case "Daily":
-        return "Yesterday's";
-      case "Weekly":
-        return "Last Week's";
-      case "Monthly":
-        return "Last Month's";
-      default:
-        return "Yesterday's";
-    }
-  };
-
-  // Get period display date
-  const getPeriodDisplay = () => {
-    const today = new Date();
-    switch (activeTab) {
-      case "Daily":
-        return today.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
-      case "Weekly":
-        const firstDay = new Date(today);
-        firstDay.setDate(today.getDate() - today.getDay());
-        const lastDay = new Date(today);
-        lastDay.setDate(today.getDate() + (6 - today.getDay()));
-        return `${firstDay.getDate()} ${firstDay.toLocaleDateString('en-US', { month: 'short' })} - ${lastDay.getDate()} ${lastDay.toLocaleDateString('en-US', { month: 'short' })}`;
-      case "Monthly":
-        return today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-      default:
-        return today.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
-    }
-  };
-
-  // Initial data fetch
-  useEffect(() => {
-    fetchExpenses();
-    fetchStats();
-  }, []);
-
-  // Update period filter when tab changes
-  useEffect(() => {
-    setFilters(prev => ({
-      ...prev,
-      period: getPeriodDisplay()
-    }));
-  }, [activeTab]);
-
-  // Filter expenses based on search, filters, and active tab
-  const baseFilteredExpenses = expenses.filter(expense => {
+  // Filter expenses based on search and filters ONLY - NO DATE FILTERING
+  const filteredExpenses = expenses.filter(expense => {
     const searchMatch = searchTerm === "" ||
       expense.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
       expense.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -823,11 +639,45 @@ export function RoznamchaView() {
     return searchMatch && purposeMatch && personMatch && usageMatch;
   });
 
-  // Apply tab-based filtering
-  const filteredExpenses = getFilteredExpensesByTab(baseFilteredExpenses);
+  // Get stats based on active tab
+  const getCurrentStats = () => {
+    const total = calculateTotalExpenses();
+    
+    switch (activeTab) {
+      case "All":
+        return {
+          total: total,
+          average: total / Math.max(expenses.length, 1),
+          periodLabel: "All Time"
+        };
+      case "Daily":
+        return {
+          total: total,
+          average: calculateAverageDailyExpense(),
+          periodLabel: "All Time Daily"
+        };
+      case "Monthly":
+        return {
+          total: total,
+          average: calculateMonthlyAverage(),
+          periodLabel: "All Time Monthly"
+        };
+      default:
+        return {
+          total: total,
+          average: total / Math.max(expenses.length, 1),
+          periodLabel: "All Time"
+        };
+    }
+  };
 
-  // Get current period stats
-  const currentStats = getCurrentPeriodStats();
+  const currentStats = getCurrentStats();
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchExpenses();
+    fetchStats();
+  }, []);
 
   return (
     <>
@@ -843,7 +693,7 @@ export function RoznamchaView() {
         {/* Tabs and Actions Row */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-1 bg-cms-card rounded-lg p-1">
-            {["Daily", "Weekly", "Monthly"].map((tab) => (
+            {["All", "Daily", "Monthly"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -869,14 +719,9 @@ export function RoznamchaView() {
           </button>
         </div>
 
-        {/* Filters Row */}
+        {/* Filters Row - REMOVED Period filter */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <button className="bg-cms-card border border-border rounded-lg px-4 py-2.5 text-sm text-foreground flex items-center gap-2">
-              <Calendar className="w-4 h-4" />
-              Period: {getPeriodDisplay()}
-              <ChevronDown className="w-4 h-4" />
-            </button>
             <select
               value={filters.purpose}
               onChange={(e) => setFilters({...filters, purpose: e.target.value})}
@@ -921,21 +766,21 @@ export function RoznamchaView() {
           </div>
         </div>
 
-        {/* Stats Cards - Updated based on active tab */}
+        {/* Stats Cards - Updated to show all-time statistics */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="bg-cms-card rounded-xl p-4">
-            <p className="text-sm text-muted-foreground mb-1">{getPeriodLabel()} Expense</p>
-            <p className="text-2xl font-bold text-foreground">Rs. {currentStats.current.toLocaleString()}</p>
+            <p className="text-sm text-muted-foreground mb-1">Total All Time Expense</p>
+            <p className="text-2xl font-bold text-foreground">Rs. {currentStats.total.toLocaleString()}</p>
           </div>
           <div className="bg-cms-card rounded-xl p-4">
-            <p className="text-sm text-muted-foreground mb-1">{getPreviousPeriodLabel()} Expense</p>
-            <p className="text-2xl font-bold text-foreground">Rs. {currentStats.previous.toLocaleString()}</p>
+            <p className="text-sm text-muted-foreground mb-1">Total Expenses Count</p>
+            <p className="text-2xl font-bold text-foreground">{expenses.length}</p>
           </div>
           <div className="bg-cms-card rounded-xl p-4">
-            <p className="text-sm text-muted-foreground mb-1">Avg. {activeTab === "Monthly" ? "Monthly" : activeTab} Expense</p>
+            <p className="text-sm text-muted-foreground mb-1">Avg. {activeTab === "All" ? "Per Expense" : activeTab} Expense</p>
             <p className="text-2xl font-bold text-foreground">
-              Rs. {currentStats.avg.toLocaleString(undefined, { 
-                maximumFractionDigits: activeTab === "Monthly" ? 0 : 0 
+              Rs. {currentStats.average.toLocaleString(undefined, { 
+                maximumFractionDigits: 0 
               })}
             </p>
           </div>
@@ -952,7 +797,7 @@ export function RoznamchaView() {
           </button>
         </div>
 
-        {/* Table - Updates INSTANTLY */}
+        {/* Table - Shows ALL expenses from all years */}
         <div className="bg-cms-card rounded-xl overflow-hidden">
           {loading && expenses.length === 0 ? (
             <div className="p-8 text-center">
@@ -961,7 +806,7 @@ export function RoznamchaView() {
             </div>
           ) : filteredExpenses.length === 0 ? (
             <div className="p-8 text-center">
-              <p className="text-muted-foreground">No {activeTab.toLowerCase()} expenses found</p>
+              <p className="text-muted-foreground">No expenses found</p>
               <button
                 onClick={() => setDialogOpen(true)}
                 className="mt-2 px-4 py-2 bg-primary text-white rounded-md text-sm"
@@ -980,8 +825,6 @@ export function RoznamchaView() {
                   </p>
                 </div>
               )}
-              
-              {/* Active Tab Indicator - REMOVED as per request */}
               
               <table className="w-full">
                 <thead>

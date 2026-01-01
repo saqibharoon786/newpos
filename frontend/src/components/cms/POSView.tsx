@@ -392,188 +392,189 @@ export function POSView() {
       </div>
 
       {/* Table */}
-      <div className="bg-cms-card rounded-xl overflow-hidden">
-        {loading ? (
-          <div className="flex justify-center items-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <span className="ml-2 text-muted-foreground">Loading sales...</span>
-          </div>
-        ) : filteredSales.length === 0 ? (
-          <div className="text-center py-12">
-            <ShoppingCart className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-foreground mb-2">No sales found</h3>
-            <p className="text-muted-foreground mb-4">
-              {searchTerm ? 'No sales match your search.' : 'Add your first sale to get started.'}
-            </p>
-            {!searchTerm && (
-              <button
-                onClick={handleAddNew}
-                className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors mx-auto"
-              >
-                <Plus className="w-4 h-4" />
-                Add First Sale
-              </button>
-            )}
-          </div>
-        ) : (
-          <>
-            <table className="w-full">
-              <thead>
-                <tr className="bg-cms-table-header">
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Invoice No.</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Buyer</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight & Units</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Amount</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {currentItems.map((sale, index) => (
-                  <tr
-                    key={sale._id}
-                    className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'} hover:bg-cms-card-hover transition-colors`}
+     {/* Table */}
+<div className="bg-cms-card rounded-xl overflow-hidden">
+  {loading ? (
+    <div className="flex justify-center items-center py-12">
+      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <span className="ml-2 text-muted-foreground">Loading sales...</span>
+    </div>
+  ) : filteredSales.length === 0 ? (
+    <div className="text-center py-12">
+      <ShoppingCart className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+      <h3 className="text-lg font-medium text-foreground mb-2">No sales found</h3>
+      <p className="text-muted-foreground mb-4">
+        {searchTerm ? 'No sales match your search.' : 'Add your first sale to get started.'}
+      </p>
+      {!searchTerm && (
+        <button
+          onClick={handleAddNew}
+          className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors mx-auto"
+        >
+          <Plus className="w-4 h-4" />
+          Add First Sale
+        </button>
+      )}
+    </div>
+  ) : (
+    <>
+      <table className="w-full">
+        <thead>
+          <tr className="bg-cms-table-header">
+            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Invoice No.</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Buyer</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight & Units</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Amount</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {currentItems.map((sale, index) => (
+            <tr
+              key={sale._id}
+              className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'} hover:bg-cms-card-hover transition-colors`}
+            >
+              <td className="px-4 py-3">
+  <span className="text-sm font-medium text-foreground">{sale.invoiceNo || 'N/A'}</span>
+</td>
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <div 
+                    className="w-3 h-3 rounded-full border border-border"
+                    style={{ backgroundColor: sale.materialColor || '#FFFFFF' }}
+                  />
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">{sale.materialName || 'N/A'}</span>
+                    <span className="text-xs text-muted-foreground">{sale.supplierName || ''}</span>
+                  </div>
+                </div>
+              </td>
+              <td className="px-4 py-3">
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-foreground">{sale.buyerName || 'N/A'}</span>
+                  {sale.buyerPhone && (
+                    <span className="text-xs text-muted-foreground">{sale.buyerPhone}</span>
+                  )}
+                </div>
+              </td>
+              <td className="px-4 py-3">
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-foreground">{sale.weight || '0'}</span>
+                  <span className="text-xs text-muted-foreground">{sale.unit || '0'} units</span>
+                </div>
+              </td>
+              <td className="px-4 py-3">
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-foreground">{formatCurrency(sale.finalAmount || sale.sellingPrice)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {parseFloat(sale.sellingPrice || '0').toLocaleString()} each
+                  </span>
+                </div>
+              </td>
+              <td className="px-4 py-3 text-sm text-foreground">
+                {getVehicleNumber(sale)}
+              </td>
+              <td className="px-4 py-3 text-sm text-primary">{formatDate(sale.purchaseDate || sale.createdAt)}</td>
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => handleViewDetails(sale)}
+                    className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                    title="View Details"
                   >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div 
-                          className="w-3 h-3 rounded-full border border-border"
-                          style={{ backgroundColor: sale.materialColor || '#FFFFFF' }}
-                        />
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-foreground">{sale.materialName || 'N/A'}</span>
-                          <span className="text-xs text-muted-foreground">{sale.supplierName || ''}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm font-medium text-foreground">{sale.invoiceNo || 'N/A'}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-foreground">{sale.buyerName || 'N/A'}</span>
-                        {sale.buyerPhone && (
-                          <span className="text-xs text-muted-foreground">{sale.buyerPhone}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-foreground">{sale.weight || '0'}</span>
-                        <span className="text-xs text-muted-foreground">{sale.unit || '0'} units</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-foreground">{formatCurrency(sale.finalAmount || sale.sellingPrice)}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {parseFloat(sale.sellingPrice || '0').toLocaleString()} each
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-foreground">
-                      {getVehicleNumber(sale)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-primary">{formatDate(sale.purchaseDate || sale.createdAt)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => handleViewDetails(sale)}
-                          className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
-                          title="View Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button 
-                          onClick={() => handleEdit(sale)}
-                          className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
-                          title="Edit"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(sale._id)}
-                          className="p-1.5 hover:bg-destructive/20 rounded transition-colors text-muted-foreground hover:text-destructive"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                  className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum;
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (currentPage <= 3) {
-                    pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
-                  } else {
-                    pageNum = currentPage - 2 + i;
-                  }
-
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
-                        currentPage === pageNum
-                          ? 'bg-primary text-primary-foreground'
-                          : 'hover:bg-secondary text-muted-foreground'
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-
-                {totalPages > 5 && currentPage < totalPages - 2 && (
-                  <span className="text-muted-foreground px-2">...</span>
-                )}
-
-                {totalPages > 5 && currentPage < totalPages - 2 && (
-                  <button
-                    onClick={() => setCurrentPage(totalPages)}
-                    className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
-                      currentPage === totalPages
-                        ? 'bg-primary text-primary-foreground'
-                        : 'hover:bg-secondary text-muted-foreground'
-                    }`}
-                  >
-                    {totalPages}
+                    <Eye className="w-4 h-4" />
                   </button>
-                )}
+                  <button 
+                    onClick={() => handleEdit(sale)}
+                    className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                    title="Edit"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(sale._id)}
+                    className="p-1.5 hover:bg-destructive/20 rounded transition-colors text-muted-foreground hover:text-destructive"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                  className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
+          <button 
+            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            disabled={currentPage === 1}
+            className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          
+          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+            let pageNum;
+            if (totalPages <= 5) {
+              pageNum = i + 1;
+            } else if (currentPage <= 3) {
+              pageNum = i + 1;
+            } else if (currentPage >= totalPages - 2) {
+              pageNum = totalPages - 4 + i;
+            } else {
+              pageNum = currentPage - 2 + i;
+            }
+
+            return (
+              <button
+                key={pageNum}
+                onClick={() => setCurrentPage(pageNum)}
+                className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
+                  currentPage === pageNum
+                    ? 'bg-primary text-primary-foreground'
+                    : 'hover:bg-secondary text-muted-foreground'
+                }`}
+              >
+                {pageNum}
+              </button>
+            );
+          })}
+
+          {totalPages > 5 && currentPage < totalPages - 2 && (
+            <span className="text-muted-foreground px-2">...</span>
+          )}
+
+          {totalPages > 5 && currentPage < totalPages - 2 && (
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
+                currentPage === totalPages
+                  ? 'bg-primary text-primary-foreground'
+                  : 'hover:bg-secondary text-muted-foreground'
+              }`}
+            >
+              {totalPages}
+            </button>
+          )}
+
+          <button 
+            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            disabled={currentPage === totalPages}
+            className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+    </>
+  )}
+</div>
 
       {/* Add/Edit Dialog */}
       <AddSaleDialog

@@ -10,8 +10,8 @@ const saleSchema = new mongoose.Schema(
     weight: { type: String, required: true }, // 30KG / 40KG
     unit: { type: String, required: true },
 
-    purchaseDate: { type: String,  },
-    purchaseTime: { type: String,  },
+    purchaseDate: { type: String },
+    purchaseTime: { type: String },
 
     branch: { type: String, required: false },
     materialColor: { type: String, required: true },
@@ -30,6 +30,13 @@ const saleSchema = new mongoose.Schema(
     buyerEmail: { type: String, required: false },
     buyerCnic: { type: String, required: false },
     buyerCompany: { type: String, required: false },
+
+    // New field for receipt image
+    receiptImage: { 
+      type: String, 
+      required: false, // یہ optional ہو سکتا ہے کیونکہ ممکن ہے ہر سیلز کی رسید نہ ہو
+      default: "" 
+    },
   },
   { timestamps: true }
 );
