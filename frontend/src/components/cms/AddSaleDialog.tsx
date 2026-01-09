@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import axios from "axios";
 
 // Configure axios with environment variable
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 // Create axios instance with environment variable as base URL
 const api = axios.create({
@@ -22,7 +22,7 @@ const API_ENDPOINTS = {
   GET_ONE: (id: string) => `${PURCHASES_API_URL}/${id}`,
   UPDATE: (id: string) => `${PURCHASES_API_URL}/${id}`,
   DELETE: (id: string) => `${PURCHASES_API_URL}/${id}`,
-  ADD_SALE: `${SALES_API_URL}/add-sale`, // Your backend uses /add-sale
+  ADD_SALE: `${SALES_API_URL}/add-sale`,
   UPDATE_SALE: (id: string) => `${SALES_API_URL}/${id}`,
   GET_SALES: `${SALES_API_URL}`,
 };
@@ -61,6 +61,7 @@ interface Sale {
   productionCost: string;
   sellingPrice: string;
   discount: string;
+  advancePayment: number; // ADDED THIS
   buyerName: string;
   buyerAddress: string;
   buyerPhone: string;
@@ -116,6 +117,7 @@ export function AddSaleDialog({
     productionCost: "",
     sellingPrice: "",
     discount: "0",
+    advancePayment: "", // ADDED THIS FIELD
     buyerName: "",
     buyerAddress: "",
     buyerPhone: "",
@@ -181,6 +183,7 @@ export function AddSaleDialog({
           productionCost: editData.productionCost || "",
           sellingPrice: editData.sellingPrice || "",
           discount: editData.discount || "0",
+          advancePayment: editData.advancePayment?.toString() || "", // ADDED THIS LINE
           buyerName: editData.buyerName || "",
           buyerAddress: editData.buyerAddress || "",
           buyerPhone: editData.buyerPhone || "",
@@ -363,6 +366,7 @@ export function AddSaleDialog({
       formDataToSend.append('productionCost', formData.productionCost || '0');
       formDataToSend.append('sellingPrice', formData.sellingPrice);
       formDataToSend.append('discount', formData.discount);
+      formDataToSend.append('advancePayment', formData.advancePayment || '0'); // ADDED THIS LINE
       formDataToSend.append('buyerName', formData.buyerName);
       formDataToSend.append('buyerAddress', formData.buyerAddress || '');
       formDataToSend.append('buyerPhone', formData.buyerPhone);
@@ -397,7 +401,7 @@ export function AddSaleDialog({
       } else {
         // CREATE request using POST to /api/sales/add-sale
         response = await api.post(
-          API_ENDPOINTS.ADD_SALE, // This should match your backend route
+          API_ENDPOINTS.ADD_SALE,
           formDataToSend,
           {
             headers: {
@@ -460,6 +464,7 @@ export function AddSaleDialog({
       productionCost: "",
       sellingPrice: "",
       discount: "0",
+      advancePayment: "", // ADDED THIS LINE
       buyerName: "",
       buyerAddress: "",
       buyerPhone: "",
@@ -595,7 +600,7 @@ export function AddSaleDialog({
             </div>
             <div>
               <div className="flex flex-col gap-1.5">
-                <label className="block text-xs text-muted-foreground">Purchase Date *</label>
+                <label className="block text-xs text-muted-foreground">Sale Date *</label>
                 <div className="relative">
                   <input
                     type="date"
@@ -611,7 +616,7 @@ export function AddSaleDialog({
                 )}
               </div>
               <div className="flex flex-col gap-1.5 mt-2">
-                <label className="block text-xs text-muted-foreground">Purchase Time *</label>
+                <label className="block text-xs text-muted-foreground">Sale Time *</label>
                 <div className="relative">
                   <input
                     type="time"
@@ -683,10 +688,10 @@ export function AddSaleDialog({
           </div>
         </div>
 
-        {/* Price Details Section */}
+        {/* Price Details Section - UPDATED with advance payment field */}
         <div className="mb-6">
           <h3 className="text-base font-semibold text-foreground mb-4">Price Details</h3>
-          <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Actual Price *</label>
               <input
@@ -715,6 +720,20 @@ export function AddSaleDialog({
                 step="0.01"
                 className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               />
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Advance Payment</label>
+              <input
+                type="number"
+                name="advancePayment"
+                placeholder="e.g 5000"
+                value={formData.advancePayment}
+                onChange={handleInputChange}
+                min="0"
+                step="0.01"
+                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Optional</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4 mb-4">

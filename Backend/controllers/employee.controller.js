@@ -104,6 +104,7 @@ const getEmployees = async (req, res) => {
                 reportingManager: emp.reportingManager || '',
                 hireDate: emp.hireDate ? emp.hireDate.toISOString().split('T')[0] : '',
                 responsibilities: emp.responsibilities || '',
+                advancePayment: emp.advancePayment || 0, // ADDED THIS LINE
                 isActive: emp.isActive !== undefined ? emp.isActive : true
             };
         });
@@ -161,6 +162,7 @@ const getEmployeeById = async (req, res) => {
             responsibilities: employee.responsibilities || '',
             startTime: employee.startTime || '',
             endTime: employee.endTime || '',
+            advancePayment: employee.advancePayment || 0, // ADDED THIS LINE
             isActive: employee.isActive !== undefined ? employee.isActive : true,
             createdAt: employee.createdAt,
             updatedAt: employee.updatedAt
@@ -257,6 +259,7 @@ const createEmployee = async (req, res) => {
             reportingManager: req.body.reportingManager || '',
             hireDate: req.body.hireDate ? new Date(req.body.hireDate) : new Date(),
             responsibilities: req.body.responsibilities || '',
+            advancePayment: parseFloat(req.body.advancePayment) || 0, // ADDED THIS LINE
             isActive: req.body.isActive !== undefined ? req.body.isActive : true
         };
         
@@ -290,6 +293,7 @@ const createEmployee = async (req, res) => {
             reportingManager: employee.reportingManager || '',
             hireDate: employee.hireDate ? employee.hireDate.toISOString().split('T')[0] : '',
             responsibilities: employee.responsibilities || '',
+            advancePayment: employee.advancePayment || 0, // ADDED THIS LINE
             isActive: employee.isActive
         };
         
@@ -328,6 +332,17 @@ const updateEmployee = async (req, res) => {
         message: "Invalid employee ID",
       });
     }
+
+    // Handle salary conversion if provided
+    if (updateData.salary && typeof updateData.salary === 'string') {
+      updateData.salary = parseFloat(updateData.salary.replace(/[^0-9.-]+/g, "")) || 0;
+    }
+
+    // Handle advancePayment conversion if provided
+    if (updateData.advancePayment !== undefined) {
+      updateData.advancePayment = parseFloat(updateData.advancePayment) || 0;
+    }
+
     // Handle file upload if exists
     if (req.file) {
       updateData.avatar = req.file.path;
@@ -351,6 +366,9 @@ const updateEmployee = async (req, res) => {
       });
     }
 
+    // Get file URL for avatar
+    const avatarUrl = getFileUrl(req, employee.avatar);
+
     // Format the response
     const formattedEmployee = {
       _id: employee._id,
@@ -362,7 +380,7 @@ const updateEmployee = async (req, res) => {
       phone: employee.phone,
       schedule: employee.schedule || "",
       salary: employee.salary ? `Rs. ${employee.salary.toLocaleString()}` : "Rs. 0",
-      avatar: employee.avatar || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face",
+      avatar: avatarUrl || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face",
       address: employee.address || "",
       cnic: employee.cnic || "",
       dob: employee.dob ? employee.dob.toISOString().split('T')[0] : "",
@@ -370,6 +388,7 @@ const updateEmployee = async (req, res) => {
       reportingManager: employee.reportingManager || "",
       hireDate: employee.hireDate ? employee.hireDate.toISOString().split('T')[0] : "",
       responsibilities: employee.responsibilities || "",
+      advancePayment: employee.advancePayment || 0, // ADDED THIS LINE
       isActive: employee.isActive || true,
       startTime: employee.startTime || "09:00",
       endTime: employee.endTime || "17:00",
@@ -396,10 +415,23 @@ const updateEmployee = async (req, res) => {
       });
     }
 
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      let field = Object.keys(error.keyPattern)[0];
+      let fieldName = field === 'employeeId' ? 'Employee ID' : 
+                     field === 'email' ? 'Email' : 
+                     field === 'cnic' ? 'CNIC' : field;
+      
+      return res.status(400).json({
+        success: false,
+        message: `${fieldName} already exists`,
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: "Server error while updating employee",
-      error: error.message,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   }
 };

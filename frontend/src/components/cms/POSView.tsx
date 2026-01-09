@@ -391,8 +391,9 @@ export function POSView() {
         </div>
       </div>
 
-      {/* Table */}
      {/* Table */}
+
+{/* Table */}
 <div className="bg-cms-card rounded-xl overflow-hidden">
   {loading ? (
     <div className="flex justify-center items-center py-12">
@@ -425,90 +426,119 @@ export function POSView() {
             <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material</th>
             <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Buyer</th>
             <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight & Units</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Amount</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total Amount</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Advance Paid</th>
+            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Balance</th>
             <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
             <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>
             <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
           </tr>
         </thead>
         <tbody>
-          {currentItems.map((sale, index) => (
-            <tr
-              key={sale._id}
-              className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'} hover:bg-cms-card-hover transition-colors`}
-            >
-              <td className="px-4 py-3">
-  <span className="text-sm font-medium text-foreground">{sale.invoiceNo || 'N/A'}</span>
-</td>
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <div 
-                    className="w-3 h-3 rounded-full border border-border"
-                    style={{ backgroundColor: sale.materialColor || '#FFFFFF' }}
-                  />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">{sale.materialName || 'N/A'}</span>
-                    <span className="text-xs text-muted-foreground">{sale.supplierName || ''}</span>
+          {currentItems.map((sale, index) => {
+            const totalAmount = parseFloat(sale.finalAmount || sale.sellingPrice) || 0;
+            const advancePayment = parseFloat((sale as any).advancePayment) || 0;
+            const balance = totalAmount - advancePayment;
+            
+            return (
+              <tr
+                key={sale._id}
+                className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'} hover:bg-cms-card-hover transition-colors`}
+              >
+                <td className="px-4 py-3">
+                  <span className="text-sm font-medium text-foreground">{sale.invoiceNo || 'N/A'}</span>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <div 
+                      className="w-3 h-3 rounded-full border border-border"
+                      style={{ backgroundColor: sale.materialColor || '#FFFFFF' }}
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground">{sale.materialName || 'N/A'}</span>
+                      <span className="text-xs text-muted-foreground">{sale.supplierName || ''}</span>
+                    </div>
                   </div>
-                </div>
-              </td>
-              <td className="px-4 py-3">
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium text-foreground">{sale.buyerName || 'N/A'}</span>
-                  {sale.buyerPhone && (
-                    <span className="text-xs text-muted-foreground">{sale.buyerPhone}</span>
-                  )}
-                </div>
-              </td>
-              <td className="px-4 py-3">
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium text-foreground">{sale.weight || '0'}</span>
-                  <span className="text-xs text-muted-foreground">{sale.unit || '0'} units</span>
-                </div>
-              </td>
-              <td className="px-4 py-3">
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium text-foreground">{formatCurrency(sale.finalAmount || sale.sellingPrice)}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {parseFloat(sale.sellingPrice || '0').toLocaleString()} each
-                  </span>
-                </div>
-              </td>
-              <td className="px-4 py-3 text-sm text-foreground">
-                {getVehicleNumber(sale)}
-              </td>
-              <td className="px-4 py-3 text-sm text-primary">{formatDate(sale.purchaseDate || sale.createdAt)}</td>
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={() => handleViewDetails(sale)}
-                    className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
-                    title="View Details"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </button>
-                  <button 
-                    onClick={() => handleEdit(sale)}
-                    className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
-                    title="Edit"
-                  >
-                    <Pencil className="w-4 h-4" />
-                  </button>
-                  <button 
-                    onClick={() => handleDelete(sale._id)}
-                    className="p-1.5 hover:bg-destructive/20 rounded transition-colors text-muted-foreground hover:text-destructive"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">{sale.buyerName || 'N/A'}</span>
+                    {sale.buyerPhone && (
+                      <span className="text-xs text-muted-foreground">{sale.buyerPhone}</span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">{sale.weight || '0'}</span>
+                    <span className="text-xs text-muted-foreground">{sale.unit || '0'} units</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">{formatCurrency(sale.finalAmount || sale.sellingPrice)}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {parseFloat(sale.sellingPrice || '0').toLocaleString()} each
+                    </span>
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">
+                      {formatCurrency(advancePayment.toString())}
+                    </span>
+                    {advancePayment > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {((advancePayment / totalAmount) * 100).toFixed(1)}% of total
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">
+                      {formatCurrency(balance.toString())}
+                    </span>
+                    {balance === 0 && (
+                      <span className="text-xs text-green-600">Paid</span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-sm text-foreground">
+                  {getVehicleNumber(sale)}
+                </td>
+                <td className="px-4 py-3 text-sm text-primary">{formatDate(sale.purchaseDate || sale.createdAt)}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => handleViewDetails(sale)}
+                      className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                      title="View Details"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleEdit(sale)}
+                      className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                      title="Edit"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(sale._id)}
+                      className="p-1.5 hover:bg-destructive/20 rounded transition-colors text-muted-foreground hover:text-destructive"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
           <button 
@@ -575,6 +605,7 @@ export function POSView() {
     </>
   )}
 </div>
+
 
       {/* Add/Edit Dialog */}
       <AddSaleDialog

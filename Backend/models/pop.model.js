@@ -9,7 +9,7 @@ const purchaseSchema = new mongoose.Schema(
     quality: { type: String, required: false },
 
     purchaseDate: { type: String, required: true },
-    materialColor: { type: String, },
+    materialColor: { type: String },
 
     vehicleName: { type: String, required: false },
     vehicleType: { type: String, required: false },
@@ -22,6 +22,8 @@ const purchaseSchema = new mongoose.Schema(
     receiptNo: { type: String, required: false },
 
     vehicleImage: { type: String, required: false }, // file URL
+    
+    advancePayment: { type: Number, default: 0 }, // ADDED THIS FIELD
   },
   { timestamps: true }
 );

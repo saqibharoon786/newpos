@@ -1,4 +1,4 @@
-// Employee.tsx - FIXED VERSION WITH NO REFRESH ISSUE
+// Employee.tsx - UPDATED WITH ONLY ADVANCEPAYMENT FIELD
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
@@ -20,12 +20,13 @@ import {
   Calendar,
   AlertCircle,
   Briefcase,
+  Wallet,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import axios from "axios";
 
 // ==================== API CONFIGURATION ====================
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 const createAPI = () => {
   const instance = axios.create({
@@ -81,6 +82,7 @@ interface EmployeeType {
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  advancePayment: number; // ADDED THIS FIELD
 }
 
 const Employee = () => {
@@ -127,6 +129,7 @@ const Employee = () => {
     endTime: "17:00",
     responsibilities: "",
     salary: "",
+    advancePayment: "0", // ADDED THIS FIELD
   });
 
   const [editFormData, setEditFormData] = useState({
@@ -147,6 +150,7 @@ const Employee = () => {
     endTime: "17:00",
     responsibilities: "",
     salary: "",
+    advancePayment: "0", // ADDED THIS FIELD
   });
 
   // ==================== LIFECYCLE ====================
@@ -180,6 +184,7 @@ const Employee = () => {
           console.log("Employee from backend:", emp); // Debug each employee
           return {
             ...emp,
+            advancePayment: emp.advancePayment || 0, // ADDED THIS LINE
           };
         });
         console.log("Mapped employees data:", employeesData); // Debug
@@ -247,7 +252,7 @@ const Employee = () => {
     }
   };
 
-  // UPDATE EMPLOYEE - FIXED VERSION
+  // UPDATE EMPLOYEE
   const updateEmployee = async (id: string, employeeData: any, photoFile?: File) => {
     try {
       setIsSubmitting(true);
@@ -374,6 +379,7 @@ const Employee = () => {
         const newEmployee = {
           ...response.data,
           id: response.data._id,
+          advancePayment: response.data.advancePayment || 0, // ADDED THIS
         };
         setEmployees(prev => [...prev, newEmployee]);
         setIsAddModalOpen(false);
@@ -389,7 +395,7 @@ const Employee = () => {
     }
   };
 
-  // HANDLE UPDATE - FIXED VERSION
+  // HANDLE UPDATE
   const handleUpdateEmployee = async () => {
     // Get ID from editFormData
     const mongoId = editFormData._id;
@@ -414,6 +420,7 @@ const Employee = () => {
         const updatedEmployee = {
           ...response.data,
           id: response.data._id,
+          advancePayment: response.data.advancePayment || 0, // ADDED THIS
         };
         
         setEmployees(prev => 
@@ -485,6 +492,7 @@ const Employee = () => {
       endTime: "17:00",
       responsibilities: "",
       salary: "",
+      advancePayment: "0", // ADDED THIS
     });
     setPhotoPreview(null);
     if (fileInputRef.current) {
@@ -511,6 +519,7 @@ const Employee = () => {
       endTime: "17:00",
       responsibilities: "",
       salary: "",
+      advancePayment: "0", // ADDED THIS
     });
     setEditPhotoPreview(null);
     if (editFileInputRef.current) {
@@ -518,7 +527,7 @@ const Employee = () => {
     }
   };
 
-  // Handle View Profile click - FIXED
+  // Handle View Profile click
   const handleViewProfile = (employee: EmployeeType) => {
     setSelectedEmployee(employee);
     setView("detail");
@@ -526,7 +535,7 @@ const Employee = () => {
     setSearchParams({ view: employee._id });
   };
 
-  // Handle Back to List - FIXED
+  // Handle Back to List
   const handleBackToList = () => {
     setView("list");
     setSelectedEmployee(null);
@@ -534,7 +543,7 @@ const Employee = () => {
     setSearchParams({});
   };
 
-  // Handle Edit click - FIXED VERSION
+  // Handle Edit click
   const handleEditClick = (employee: EmployeeType) => {
     console.log("handleEditClick - Employee data:", employee);
     
@@ -565,6 +574,16 @@ const Employee = () => {
       }
     }
     
+    // Extract advancePayment
+    let advancePaymentValue = "";
+    if (employee.advancePayment !== undefined) {
+      if (typeof employee.advancePayment === 'number') {
+        advancePaymentValue = employee.advancePayment.toString();
+      } else if (typeof employee.advancePayment === 'string') {
+        advancePaymentValue = employee.advancePayment.replace(/Rs\.\s?|,/g, '');
+      }
+    }
+    
     const formattedData = {
       _id: mongoId,
       employeeId: employee.employeeId || "",
@@ -583,6 +602,7 @@ const Employee = () => {
       endTime: formatTimeForInput(employee.endTime || "17:00"),
       responsibilities: employee.responsibilities || "",
       salary: salaryValue,
+      advancePayment: advancePaymentValue || "0", // ADDED THIS
     };
     
     console.log("Edit form data prepared:", formattedData);
@@ -641,6 +661,10 @@ const Employee = () => {
       }
     }
     return `Rs. 0`;
+  };
+
+  const formatAdvancePayment = (advancePayment: number) => {
+    return `Rs. ${advancePayment.toLocaleString()}`;
   };
 
   const formatSchedule = (employee: EmployeeType) => {
@@ -737,6 +761,7 @@ const Employee = () => {
                   { icon: MapPin, label: "Address", value: selectedEmployee.address || "N/A" },
                   { icon: Calendar, label: "DOB", value: selectedEmployee.dob || "N/A" },
                   { icon: AlertCircle, label: "Emergency Contact", value: selectedEmployee.emergencyContact || "N/A" },
+                  { icon: Wallet, label: "Advance Payment", value: formatAdvancePayment(selectedEmployee.advancePayment || 0) }, // ADDED THIS
                 ].map((item, index) => (
                   <div key={`personal-${index}`} className="flex items-center justify-between">
                     <div className="flex items-center gap-3 text-muted-foreground">
@@ -898,6 +923,10 @@ const Employee = () => {
                       <DollarSign className="w-4 h-4" />
                       <span>{formatSalary(employee.salary)}</span>
                     </div>
+                    <div className="flex items-center gap-3 text-muted-foreground">
+                      <Wallet className="w-4 h-4" />
+                      <span>Advance: {formatAdvancePayment(employee.advancePayment || 0)}</span>
+                    </div>
                   </div>
 
                   <button
@@ -987,6 +1016,7 @@ const Employee = () => {
                     { name: 'cnic', label: 'CNIC No.', type: 'text', placeholder: 'e.g 17301-242111-3' },
                     { name: 'dob', label: 'Date of Birth', type: 'date' },
                     { name: 'emergencyContact', label: 'Emergency Contact', type: 'text', placeholder: 'e.g 83662626' },
+                    { name: 'advancePayment', label: 'Advance Payment', type: 'number', placeholder: 'e.g 5000' }, // ADDED THIS
                   ].map((field) => (
                     <div key={field.name}>
                       <label className="block text-sm text-muted-foreground mb-2">{field.label}</label>
@@ -997,6 +1027,8 @@ const Employee = () => {
                         onChange={handleInputChange}
                         placeholder={field.placeholder}
                         className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                        min={field.name === 'advancePayment' ? "0" : undefined}
+                        step={field.name === 'advancePayment' ? "1" : undefined}
                       />
                     </div>
                   ))}
@@ -1187,6 +1219,7 @@ const Employee = () => {
                     { name: 'cnic', label: 'CNIC No.', type: 'text', placeholder: 'e.g 17301-242111-3' },
                     { name: 'dob', label: 'Date of Birth', type: 'date' },
                     { name: 'emergencyContact', label: 'Emergency Contact', type: 'text', placeholder: 'e.g 83662626' },
+                    { name: 'advancePayment', label: 'Advance Payment', type: 'number', placeholder: 'e.g 5000' }, // ADDED THIS
                   ].map((field) => (
                     <div key={field.name}>
                       <label className="block text-sm text-muted-foreground mb-2">{field.label}</label>
@@ -1197,6 +1230,8 @@ const Employee = () => {
                         onChange={handleEditInputChange}
                         placeholder={field.placeholder}
                         className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                        min={field.name === 'advancePayment' ? "0" : undefined}
+                        step={field.name === 'advancePayment' ? "1" : undefined}
                       />
                     </div>
                   ))}

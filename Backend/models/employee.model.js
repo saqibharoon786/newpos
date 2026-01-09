@@ -85,6 +85,11 @@ const employeeSchema = new mongoose.Schema({
         default: '',
         trim: true
     },
+      advancePayment: { // ADDED THIS FIELD
+        type: Number,
+        default: 0,
+        min: [0, 'Advance payment cannot be negative']
+    },
     isActive: {
         type: Boolean,
         default: true

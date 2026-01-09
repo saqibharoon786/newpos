@@ -22,11 +22,13 @@ const addPurchase = async (req, res) => {
       vehicleColor,
       deliveryDate,
       receiptNo,
+      advancePayment, // ADDED THIS LINE
     } = req.body;
 
     console.log('Parsed values:');
     console.log('materialColor:', materialColor, 'Type:', typeof materialColor);
     console.log('vehicleColor:', vehicleColor, 'Type:', typeof vehicleColor);
+    console.log('advancePayment:', advancePayment, 'Type:', typeof advancePayment); // ADDED THIS LINE
 
     // Ensure we have required fields
     if (!materialName || !vendor || !price || !weight || !purchaseDate) {
@@ -53,6 +55,7 @@ const addPurchase = async (req, res) => {
       vehicleColor,
       deliveryDate,
       receiptNo,
+      advancePayment, // ADDED THIS LINE
       vehicleImage
     });
 
@@ -71,6 +74,7 @@ const addPurchase = async (req, res) => {
       vehicleColor,
       deliveryDate,
       receiptNo,
+      advancePayment: advancePayment || 0, // ADDED THIS LINE (with default value)
       vehicleImage,
     });
 

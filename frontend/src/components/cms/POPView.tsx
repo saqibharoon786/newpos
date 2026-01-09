@@ -35,6 +35,7 @@ interface Purchase {
   deliveryTime?: string;
   receiptNo: string;
   vehicleImage: string;
+  advancePayment: number; // ADDED THIS FIELD
   createdAt: string;
   updatedAt: string;
 }
@@ -97,6 +98,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     deliveryDate: "",
     deliveryTime: "09:00", // Default delivery time
     receiptNo: "",
+    advancePayment: "", // ADDED THIS FIELD
     vehicleImage: null as File | null,
   });
 
@@ -180,6 +182,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           deliveryDate: deliveryDate || "",
           deliveryTime: deliveryTime,
           receiptNo: editData.receiptNo || "",
+          advancePayment: editData.advancePayment?.toString() || "", // ADDED THIS LINE
           vehicleImage: null,
         });
         
@@ -217,6 +220,10 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     if (!formData.deliveryDate) newErrors.deliveryDate = "Delivery date is required";
     if (!formData.deliveryTime) newErrors.deliveryTime = "Delivery time is required";
     if (!formData.receiptNo.trim()) newErrors.receiptNo = "Receipt number is required";
+    // ADDED: Validate advance payment - it's optional but if provided must be a valid number
+    if (formData.advancePayment && isNaN(Number(formData.advancePayment))) {
+      newErrors.advancePayment = "Advance payment must be a valid number";
+    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -285,6 +292,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         vehicleColor: formData.vehicleColor,
         deliveryDate: deliveryDateTime,
         receiptNo: formData.receiptNo,
+        advancePayment: formData.advancePayment || 0, // ADDED THIS LINE
       };
 
       Object.entries(fields).forEach(([key, value]) => {
@@ -397,6 +405,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       deliveryDate: "",
       deliveryTime: "09:00",
       receiptNo: "",
+      advancePayment: "", // ADDED THIS LINE
       vehicleImage: null,
     });
     setSelectedMaterialColor("#FFFFFF");
@@ -567,32 +576,52 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
               </div>
             </div>
 
-            {/* Material Color */}
-            <div className="mb-4">
-              <label className="block text-xs text-muted-foreground mb-2">Material Color *</label>
-              <div className="flex flex-wrap items-center gap-3">
-                {colorOptions.map((color) => (
-                  <label key={color.value} className="flex items-center gap-1.5 cursor-pointer">
-                    <div className="relative flex items-center">
-                      <input
-                        type="radio"
-                        name="materialColor"
-                        value={color.value}
-                        checked={selectedMaterialColor === color.value}
-                        onChange={() => setSelectedMaterialColor(color.value)}
-                        className="sr-only"
-                      />
-                      <div 
-                        className={`w-5 h-5 rounded-full ${color.color} border-2 ${
-                          selectedMaterialColor === color.value 
-                            ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' 
-                            : 'border-border'
-                        }`} 
-                      />
-                    </div>
-                    <span className="text-xs text-foreground">{color.name}</span>
-                  </label>
-                ))}
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              {/* Material Color */}
+              <div className="col-span-2">
+                <label className="block text-xs text-muted-foreground mb-2">Material Color *</label>
+                <div className="flex flex-wrap items-center gap-3">
+                  {colorOptions.map((color) => (
+                    <label key={color.value} className="flex items-center gap-1.5 cursor-pointer">
+                      <div className="relative flex items-center">
+                        <input
+                          type="radio"
+                          name="materialColor"
+                          value={color.value}
+                          checked={selectedMaterialColor === color.value}
+                          onChange={() => setSelectedMaterialColor(color.value)}
+                          className="sr-only"
+                        />
+                        <div 
+                          className={`w-5 h-5 rounded-full ${color.color} border-2 ${
+                            selectedMaterialColor === color.value 
+                              ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' 
+                              : 'border-border'
+                          }`} 
+                        />
+                      </div>
+                      <span className="text-xs text-foreground">{color.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {/* ADDED: Advance Payment Field */}
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Advance Payment</label>
+                <input
+                  type="number"
+                  name="advancePayment"
+                  min="0"
+                  step="0.01"
+                  placeholder="e.g 20000"
+                  value={formData.advancePayment}
+                  onChange={handleInputChange}
+                  className={`w-full bg-cms-card border ${errors.advancePayment ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                />
+                {errors.advancePayment && (
+                  <p className="text-xs text-red-500 mt-1">{errors.advancePayment}</p>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">Optional</p>
               </div>
             </div>
           </div>
@@ -925,6 +954,15 @@ export function POPView() {
     }
   };
 
+  // Format advance payment - ADDED THIS FUNCTION
+  const formatAdvancePayment = (amount: number) => {
+    if (!amount && amount !== 0) return '0';
+    return amount.toLocaleString('en-IN', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    });
+  };
+
   // Pagination
   const itemsPerPage = 10;
   const totalPages = Math.ceil(filteredPurchases.length / itemsPerPage);
@@ -959,7 +997,7 @@ export function POPView() {
       </div>
 
       {/* Stats Cards - MOVED TO TOP */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-cms-card rounded-lg p-4 border border-border">
           <div className="flex items-center justify-between">
             <div>
@@ -994,6 +1032,20 @@ export function POPView() {
             </div>
             <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
               <span className="text-green-500 text-lg font-bold">V</span>
+            </div>
+          </div>
+        </div>
+        {/* ADDED: Advance Payment Stats Card */}
+        <div className="bg-cms-card rounded-lg p-4 border border-border">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Total Advance Paid</p>
+              <p className="text-2xl font-semibold text-foreground">
+                {purchases.reduce((total, p) => total + (p.advancePayment || 0), 0).toLocaleString()}
+              </p>
+            </div>
+            <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center">
+              <span className="text-amber-500 text-lg font-bold">A</span>
             </div>
           </div>
         </div>
@@ -1062,69 +1114,72 @@ export function POPView() {
     </div>
   ) : (
     <>
-      <table className="w-full">
-        <thead>
-          <tr className="bg-cms-table-header">
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Receipt No.</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material Name</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight (Kg)</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Price</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Supplier</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date & Time</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {currentItems.map((purchase, index) => (
-            <tr
-              key={purchase._id}
-              className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'} hover:bg-cms-card-hover transition-colors`}
+     {/* Table Header - UPDATED to include Advance Paid column */}
+<table className="w-full">
+  <thead>
+    <tr className="bg-cms-table-header">
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Receipt No.</th>
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material Name</th>
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight (Kg)</th>
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Price</th>
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Advance Paid</th> {/* ADDED */}
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Supplier</th>
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date & Time</th>
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {currentItems.map((purchase, index) => (
+      <tr
+        key={purchase._id}
+        className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'} hover:bg-cms-card-hover transition-colors`}
+      >
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2">
+            <div 
+              className="w-3 h-3 rounded-full border border-border"
+              style={{ backgroundColor: purchase.materialColor || '#FFFFFF' }}
+            />
+            <span className="text-sm font-medium text-foreground">{purchase.receiptNo || 'N/A'}</span>
+          </div>
+        </td>
+        <td className="px-4 py-3 text-sm text-foreground">{purchase.materialName || 'N/A'}</td>
+        <td className="px-4 py-3 text-sm text-foreground">{purchase.weight || 'N/A'} kg</td>
+        <td className="px-4 py-3 text-sm text-foreground">{formatCurrency(purchase.price)}</td>
+        <td className="px-4 py-3 text-sm text-foreground">{formatAdvancePayment(purchase.advancePayment)}</td> {/* UPDATED: Removed amber color */}
+        <td className="px-4 py-3 text-sm text-foreground">{purchase.vendor || 'N/A'}</td>
+        <td className="px-4 py-3 text-sm text-foreground">{purchase.vehicleNumber || 'N/A'}</td>
+        <td className="px-4 py-3 text-sm text-primary">{formatDateTime(purchase.purchaseDate || purchase.createdAt)}</td>
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => handleEditPurchase(purchase)}
+              className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+              title="Edit"
             >
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <div 
-                    className="w-3 h-3 rounded-full border border-border"
-                    style={{ backgroundColor: purchase.materialColor || '#FFFFFF' }}
-                  />
-                  <span className="text-sm font-medium text-foreground">{purchase.receiptNo || 'N/A'}</span>
-                </div>
-              </td>
-              <td className="px-4 py-3 text-sm text-foreground">{purchase.materialName || 'N/A'}</td>
-              <td className="px-4 py-3 text-sm text-foreground">{purchase.weight || 'N/A'} kg</td>
-              <td className="px-4 py-3 text-sm text-foreground">{formatCurrency(purchase.price)}</td>
-              <td className="px-4 py-3 text-sm text-foreground">{purchase.vendor || 'N/A'}</td>
-              <td className="px-4 py-3 text-sm text-foreground">{purchase.vehicleNumber || 'N/A'}</td>
-              <td className="px-4 py-3 text-sm text-primary">{formatDateTime(purchase.purchaseDate || purchase.createdAt)}</td>
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={() => handleEditPurchase(purchase)}
-                    className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
-                    title="Edit"
-                  >
-                    <Pencil className="w-4 h-4" />
-                  </button>
-                  <button 
-                    onClick={() => handleViewDetails(purchase)}
-                    className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
-                    title="View Details"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </button>
-                  <button 
-                    onClick={() => handleDeletePurchase(purchase._id)}
-                    className="p-1.5 hover:bg-destructive/20 rounded transition-colors text-muted-foreground hover:text-destructive"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              <Pencil className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => handleViewDetails(purchase)}
+              className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+              title="View Details"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => handleDeletePurchase(purchase._id)}
+              className="p-1.5 hover:bg-destructive/20 rounded transition-colors text-muted-foreground hover:text-destructive"
+              title="Delete"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </td>
+      </tr>
+    ))}
+  </tbody>
+</table>
 
       {/* Pagination */}
       {totalPages > 1 && (

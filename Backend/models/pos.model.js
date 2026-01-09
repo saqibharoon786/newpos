@@ -22,6 +22,7 @@ const saleSchema = new mongoose.Schema(
     sellingPrice: { type: String, required: true },
     discount: { type: String, default: "0" },
     finalAmount: { type: String },
+    advancePayment: { type: Number, default: 0 }, // ADDED THIS FIELD
 
     // Buyer Details
     buyerName: { type: String, required: true },
@@ -34,7 +35,7 @@ const saleSchema = new mongoose.Schema(
     // New field for receipt image
     receiptImage: { 
       type: String, 
-      required: false, // یہ optional ہو سکتا ہے کیونکہ ممکن ہے ہر سیلز کی رسید نہ ہو
+      required: false,
       default: "" 
     },
   },

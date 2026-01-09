@@ -427,24 +427,24 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
         </div>
       </div>
 
-      {/* Vehicle Image Section */}
+      {/* Vehicle Image Section - UPDATED */}
       <div className="bg-cms-card rounded-xl p-5 border border-border mb-6">
         <h3 className="text-base font-semibold text-foreground mb-4 pb-3 border-b border-border">Vehicle Image</h3>
         
         {imageUrl ? (
-          <div>
-            <div className="rounded-xl overflow-hidden border border-border">
+          <div className="flex flex-col items-center">
+            <div className="w-full max-w-2xl rounded-xl overflow-hidden border border-border bg-cms-card-hover">
               <img 
                 src={imageUrl}
                 alt={`${purchase.vehicleName} vehicle`} 
-                className="w-full h-64 object-cover"
+                className="w-full h-auto max-h-[500px] object-contain"
                 onError={() => {
                   setImageError(true);
                 }}
               />
             </div>
             {imageError && (
-              <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
                 <p className="text-sm text-yellow-600">
                   Could not load image. Please check the image file.
                 </p>

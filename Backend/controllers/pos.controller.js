@@ -25,6 +25,7 @@ const addSale = async (req, res) => {
       productionCost,
       sellingPrice,
       discount,
+      advancePayment, // ADDED THIS FIELD
       buyerName,
       buyerAddress,
       buyerPhone,
@@ -34,9 +35,15 @@ const addSale = async (req, res) => {
     } = req.body;
 
     console.log("Invoice No from body:", invoiceNo); // Debug log
+    console.log("Advance Payment from body:", advancePayment, "Type:", typeof advancePayment); // ADDED THIS LINE
 
-    const finalAmount =
-      (parseFloat(sellingPrice) || 0) - (parseFloat(discount) || 0);
+    // Calculate final amount
+    const sellingPriceNum = parseFloat(sellingPrice) || 0;
+    const discountNum = parseFloat(discount) || 0;
+    const finalAmount = sellingPriceNum - discountNum;
+
+    // Parse advance payment (convert to number, default to 0)
+    const advancePaymentNum = parseFloat(advancePayment) || 0;
 
     // Handle receipt image uploaded via Multer
     let receiptImagePath = "";
@@ -68,7 +75,8 @@ const addSale = async (req, res) => {
       productionCost,
       sellingPrice,
       discount,
-      finalAmount,
+      finalAmount: finalAmount.toString(),
+      advancePayment: advancePaymentNum, // ADDED THIS FIELD
       buyerName,
       buyerAddress,
       buyerPhone,
@@ -80,6 +88,7 @@ const addSale = async (req, res) => {
 
     console.log("Sale created successfully. ID:", sale._id); // Debug log
     console.log("Receipt image in saved sale:", sale.receiptImage); // Debug log
+    console.log("Advance payment in saved sale:", sale.advancePayment); // ADDED THIS LINE
 
     res.status(201).json({
       success: true,
@@ -160,6 +169,7 @@ const updateSale = async (req, res) => {
     console.log("=== UPDATE SALE REQUEST ===");
     console.log("Request file:", req.file); // Debug log
     console.log("Request body:", req.body); // Debug log
+    console.log("Advance Payment in request:", req.body.advancePayment); // ADDED THIS LINE
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -211,9 +221,20 @@ const updateSale = async (req, res) => {
 
     // Calculate final amount if sellingPrice or discount is updated
     if (updateData.sellingPrice || updateData.discount) {
-      updateData.finalAmount =
-        (parseFloat(updateData.sellingPrice) || parseFloat(existingSale.sellingPrice) || 0) -
-        (parseFloat(updateData.discount) || parseFloat(existingSale.discount) || 0);
+      const sellingPriceNum = parseFloat(updateData.sellingPrice) || parseFloat(existingSale.sellingPrice) || 0;
+      const discountNum = parseFloat(updateData.discount) || parseFloat(existingSale.discount) || 0;
+      updateData.finalAmount = (sellingPriceNum - discountNum).toString();
+    }
+
+    // Handle advance payment - convert to number
+    if (updateData.advancePayment !== undefined) {
+      updateData.advancePayment = parseFloat(updateData.advancePayment) || 0;
+      console.log("Parsed advance payment:", updateData.advancePayment); // ADDED THIS LINE
+    }
+
+    // If advancePayment is being updated but is empty string, set to 0
+    if (updateData.advancePayment === "") {
+      updateData.advancePayment = 0;
     }
 
     const sale = await Sale.findByIdAndUpdate(
@@ -227,6 +248,8 @@ const updateSale = async (req, res) => {
     if (saleObj.receiptImage && saleObj.receiptImage.trim() !== '') {
       saleObj.receiptImage = `${req.protocol}://${req.get('host')}${saleObj.receiptImage}`;
     }
+
+    console.log("Updated sale advance payment:", saleObj.advancePayment); // ADDED THIS LINE
 
     res.status(200).json({
       success: true,

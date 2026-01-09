@@ -798,156 +798,162 @@ export function RoznamchaView() {
         </div>
 
         {/* Table - Shows ALL expenses from all years */}
-        <div className="bg-cms-card rounded-xl overflow-hidden">
-          {loading && expenses.length === 0 ? (
-            <div className="p-8 text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-              <p className="mt-2 text-sm text-muted-foreground">Loading expenses...</p>
+     {/* Table - Shows ALL expenses from all years */}
+<div className="bg-cms-card rounded-xl overflow-hidden">
+  {loading && expenses.length === 0 ? (
+    <div className="p-8 text-center">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+      <p className="mt-2 text-sm text-muted-foreground">Loading expenses...</p>
+    </div>
+  ) : filteredExpenses.length === 0 ? (
+    <div className="p-8 text-center">
+      <p className="text-muted-foreground">No expenses found</p>
+      <button
+        onClick={() => setDialogOpen(true)}
+        className="mt-2 px-4 py-2 bg-primary text-white rounded-md text-sm"
+      >
+        Add Your First Expense
+      </button>
+    </div>
+  ) : (
+    <>
+      {/* Optimistic Updates Indicator */}
+      {Object.keys(optimisticUpdates).length > 0 && (
+        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2">
+          <p className="text-xs text-yellow-800 flex items-center gap-2">
+            <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-yellow-600"></div>
+            Saving changes... ({Object.keys(optimisticUpdates).length} item(s))
+          </p>
+        </div>
+      )}
+      
+     <table className="w-full">
+  <thead>
+    <tr className="bg-cms-table-header">
+      <th className="text-center px-4 py-3 text-sm font-medium text-foreground">#</th> {/* Changed to text-center */}
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Subject</th>
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Purpose</th>
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Usage</th>
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Price</th>
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Responsible</th>
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date & Time</th>
+      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {filteredExpenses.map((expense, index) => {
+      const isOptimistic = optimisticUpdates[expense._id];
+      const isTemp = expense._id.startsWith('temp-');
+      const serialNumber = index + 1; // Calculate serial number
+      
+      return (
+        <tr
+          key={expense._id}
+          className={`border-t border-border ${
+            index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'
+          } hover:bg-cms-card-hover transition-colors ${
+            isOptimistic ? 'opacity-80 bg-yellow-50' : ''
+          } ${isTemp ? 'opacity-70 bg-blue-50' : ''}`}
+        >
+          <td className="px-4 py-3 text-sm text-foreground font-medium text-center">
+            {serialNumber}
+          </td>
+          <td className="px-4 py-3 text-sm text-foreground">
+            <div className="flex items-center gap-2">
+              <div>
+                <p className="font-medium">{expense.subject}</p>
+                {/* Description removed as per request */}
+              </div>
+              {isOptimistic && (
+                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-yellow-600"></div>
+              )}
+              {isTemp && (
+                <span className="text-xs text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">Saving...</span>
+              )}
             </div>
-          ) : filteredExpenses.length === 0 ? (
-            <div className="p-8 text-center">
-              <p className="text-muted-foreground">No expenses found</p>
-              <button
-                onClick={() => setDialogOpen(true)}
-                className="mt-2 px-4 py-2 bg-primary text-white rounded-md text-sm"
+          </td>
+          <td className="px-4 py-3 text-sm text-foreground">{expense.purpose}</td>
+          <td className="px-4 py-3 text-sm">
+            <span className={`px-2 py-1 rounded text-xs ${expense.usage === 'Personal' ? 'bg-primary/20 text-primary' : 'bg-cms-success/20 text-cms-success'}`}>
+              {expense.usage}
+            </span>
+          </td>
+          <td className="px-4 py-3 text-sm text-foreground font-medium">
+            Rs. {expense.price}
+          </td>
+          <td className="px-4 py-3 text-sm text-foreground">{expense.personResponsible}</td>
+          <td className="px-4 py-3 text-sm text-foreground">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-muted-foreground" />
+              <div>
+                <p>{expense.date}</p>
+                <p className="text-xs text-muted-foreground">{expense.time}</p>
+              </div>
+            </div>
+          </td>
+          <td className="px-4 py-3">
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => handleEditExpense(expense)}
+                disabled={isTemp || isOptimistic}
+                className={`p-1.5 hover:bg-secondary rounded transition-colors ${
+                  isTemp || isOptimistic 
+                    ? 'text-gray-400 cursor-not-allowed' 
+                    : 'text-blue-600 hover:text-blue-700'
+                }`}
+                title={isTemp || isOptimistic ? "Saving... Please wait" : "Edit"}
               >
-                Add Your First Expense
+                <Pencil className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => handleViewExpense(expense._id)}
+                disabled={isTemp}
+                className={`p-1.5 hover:bg-secondary rounded transition-colors ${
+                  isTemp 
+                    ? 'text-gray-400 cursor-not-allowed' 
+                    : 'text-green-600 hover:text-green-700'
+                }`}
+                title={isTemp ? "Saving... Please wait" : "View Details"}
+              >
+                <Eye className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => handleDeleteExpense(expense._id)}
+                disabled={isTemp || isOptimistic}
+                className={`p-1.5 hover:bg-secondary rounded transition-colors ${
+                  isTemp || isOptimistic 
+                    ? 'text-gray-400 cursor-not-allowed' 
+                    : 'text-red-600 hover:text-red-700'
+                }`}
+                title={isTemp || isOptimistic ? "Saving... Please wait" : "Delete"}
+              >
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
-          ) : (
-            <>
-              {/* Optimistic Updates Indicator */}
-              {Object.keys(optimisticUpdates).length > 0 && (
-                <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2">
-                  <p className="text-xs text-yellow-800 flex items-center gap-2">
-                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-yellow-600"></div>
-                    Saving changes... ({Object.keys(optimisticUpdates).length} item(s))
-                  </p>
-                </div>
-              )}
-              
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-cms-table-header">
-                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Subject</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Purpose</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Usage</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Price</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Responsible</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date & Time</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredExpenses.map((expense, index) => {
-                    const isOptimistic = optimisticUpdates[expense._id];
-                    const isTemp = expense._id.startsWith('temp-');
-                    
-                    return (
-                      <tr
-                        key={expense._id}
-                        className={`border-t border-border ${
-                          index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'
-                        } hover:bg-cms-card-hover transition-colors ${
-                          isOptimistic ? 'opacity-80 bg-yellow-50' : ''
-                        } ${isTemp ? 'opacity-70 bg-blue-50' : ''}`}
-                      >
-                        <td className="px-4 py-3 text-sm text-foreground">
-                          <div className="flex items-center gap-2">
-                            <div>
-                              <p className="font-medium">{expense.subject}</p>
-                              {/* Description removed as per request */}
-                            </div>
-                            {isOptimistic && (
-                              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-yellow-600"></div>
-                            )}
-                            {isTemp && (
-                              <span className="text-xs text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">Saving...</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-foreground">{expense.purpose}</td>
-                        <td className="px-4 py-3 text-sm">
-                          <span className={`px-2 py-1 rounded text-xs ${expense.usage === 'Personal' ? 'bg-primary/20 text-primary' : 'bg-cms-success/20 text-cms-success'}`}>
-                            {expense.usage}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-foreground font-medium">
-                          Rs. {expense.price}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-foreground">{expense.personResponsible}</td>
-                        <td className="px-4 py-3 text-sm text-foreground">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4 text-muted-foreground" />
-                            <div>
-                              <p>{expense.date}</p>
-                              <p className="text-xs text-muted-foreground">{expense.time}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <button 
-                              onClick={() => handleEditExpense(expense)}
-                              disabled={isTemp || isOptimistic}
-                              className={`p-1.5 hover:bg-secondary rounded transition-colors ${
-                                isTemp || isOptimistic 
-                                  ? 'text-gray-400 cursor-not-allowed' 
-                                  : 'text-blue-600 hover:text-blue-700'
-                              }`}
-                              title={isTemp || isOptimistic ? "Saving... Please wait" : "Edit"}
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={() => handleViewExpense(expense._id)}
-                              disabled={isTemp}
-                              className={`p-1.5 hover:bg-secondary rounded transition-colors ${
-                                isTemp 
-                                  ? 'text-gray-400 cursor-not-allowed' 
-                                  : 'text-green-600 hover:text-green-700'
-                              }`}
-                              title={isTemp ? "Saving... Please wait" : "View Details"}
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteExpense(expense._id)}
-                              disabled={isTemp || isOptimistic}
-                              className={`p-1.5 hover:bg-secondary rounded transition-colors ${
-                                isTemp || isOptimistic 
-                                  ? 'text-gray-400 cursor-not-allowed' 
-                                  : 'text-red-600 hover:text-red-700'
-                              }`}
-                              title={isTemp || isOptimistic ? "Saving... Please wait" : "Delete"}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          </td>
+        </tr>
+      );
+    })}
+  </tbody>
+</table>
 
-              {/* Pagination */}
-              <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
-                <button className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground">
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button className="w-8 h-8 bg-primary text-primary-foreground rounded-md text-sm font-medium">1</button>
-                <button className="w-8 h-8 hover:bg-secondary text-muted-foreground rounded-md text-sm font-medium transition-colors">2</button>
-                <button className="w-8 h-8 hover:bg-secondary text-muted-foreground rounded-md text-sm font-medium transition-colors">3</button>
-                <span className="text-muted-foreground px-2">.....</span>
-                <button className="w-8 h-8 hover:bg-secondary text-muted-foreground rounded-md text-sm font-medium transition-colors">10</button>
-                <button className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground">
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+      {/* Pagination */}
+      <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
+        <button className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground">
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <button className="w-8 h-8 bg-primary text-primary-foreground rounded-md text-sm font-medium">1</button>
+        <button className="w-8 h-8 hover:bg-secondary text-muted-foreground rounded-md text-sm font-medium transition-colors">2</button>
+        <button className="w-8 h-8 hover:bg-secondary text-muted-foreground rounded-md text-sm font-medium transition-colors">3</button>
+        <span className="text-muted-foreground px-2">.....</span>
+        <button className="w-8 h-8 hover:bg-secondary text-muted-foreground rounded-md text-sm font-medium transition-colors">10</button>
+        <button className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground">
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </>
+  )}
+</div>
 
         {/* Add/Edit Expense Dialog */}
         <AddExpenseDialog
