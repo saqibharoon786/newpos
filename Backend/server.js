@@ -31,7 +31,8 @@ const dashboardRoutes = require("./routes/dashboard.route");
 const employeeRoutes = require("./routes/employee.route");
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT;
+const HOST = process.env.HOST;
 
 // Connect to database
 connectDB();
@@ -52,7 +53,7 @@ if (!fs.existsSync(receiptsDir)) {
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:3000", 
+  origin: process.env.FRONTEND_URL,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -63,7 +64,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "blob:", "http://localhost:5000", "http://localhost:3000"],
+      imgSrc: ["'self'", "data:", "blob:", "http://${HOST}:5000", "http://${HOST}:3000"],
       connectSrc: ["'self'"],
     },
   },
@@ -147,19 +148,19 @@ app.use("/api/employees", employeeRoutes);
 app.get("/api/test-upload/:filename", (req, res) => {
   const filename = req.params.filename;
   const filePath = path.join(__dirname, "uploads", filename);
-  
+
   if (fs.existsSync(filePath)) {
     res.json({
       exists: true,
       path: filePath,
-      url: `http://localhost:${PORT}/uploads/${filename}`,
+      url: `http://${HOST}:${PORT}/uploads/${filename}`,
       size: fs.statSync(filePath).size
     });
   } else {
-    const filesInUploads = fs.existsSync(path.join(__dirname, "uploads")) 
+    const filesInUploads = fs.existsSync(path.join(__dirname, "uploads"))
       ? fs.readdirSync(path.join(__dirname, "uploads"))
       : [];
-    
+
     res.status(404).json({
       exists: false,
       message: "File not found in uploads",
@@ -173,19 +174,19 @@ app.get("/api/test-upload/:filename", (req, res) => {
 app.get("/api/test-receipt/:filename", (req, res) => {
   const filename = req.params.filename;
   const filePath = path.join(__dirname, "receipts", filename);
-  
+
   if (fs.existsSync(filePath)) {
     res.json({
       exists: true,
       path: filePath,
-      url: `http://localhost:${PORT}/receipts/${filename}`,
+      url: `http://${HOST}:${PORT}/receipts/${filename}`,
       size: fs.statSync(filePath).size
     });
   } else {
-    const filesInReceipts = fs.existsSync(path.join(__dirname, "receipts")) 
+    const filesInReceipts = fs.existsSync(path.join(__dirname, "receipts"))
       ? fs.readdirSync(path.join(__dirname, "receipts"))
       : [];
-    
+
     res.status(404).json({
       exists: false,
       message: "File not found in receipts",
@@ -208,7 +209,7 @@ app.get("/api/uploads", (req, res) => {
           name: file,
           size: stats.size,
           created: stats.birthtime,
-          url: `http://localhost:${PORT}/uploads/${file}`
+          url: `http://${HOST}:${PORT}/uploads/${file}`
         };
       })
     });
@@ -233,7 +234,7 @@ app.get("/api/receipts", (req, res) => {
           name: file,
           size: stats.size,
           created: stats.birthtime,
-          url: `http://localhost:${PORT}/receipts/${file}`
+          url: `http://${HOST}:${PORT}/receipts/${file}`
         };
       })
     });
@@ -247,37 +248,37 @@ app.get("/api/receipts", (req, res) => {
 
 // Health check
 app.get("/api/health", (req, res) => {
-  const uploadsInfo = fs.existsSync(uploadsDir) 
+  const uploadsInfo = fs.existsSync(uploadsDir)
     ? {
-        exists: true,
-        fileCount: fs.readdirSync(uploadsDir).length,
-        path: uploadsDir
-      }
+      exists: true,
+      fileCount: fs.readdirSync(uploadsDir).length,
+      path: uploadsDir
+    }
     : {
-        exists: false,
-        message: "Uploads directory not found"
-      };
+      exists: false,
+      message: "Uploads directory not found"
+    };
 
-  const receiptsInfo = fs.existsSync(receiptsDir) 
+  const receiptsInfo = fs.existsSync(receiptsDir)
     ? {
-        exists: true,
-        fileCount: fs.readdirSync(receiptsDir).length,
-        path: receiptsDir
-      }
+      exists: true,
+      fileCount: fs.readdirSync(receiptsDir).length,
+      path: receiptsDir
+    }
     : {
-        exists: false,
-        message: "Receipts directory not found"
-      };
-  
-  res.status(200).json({ 
+      exists: false,
+      message: "Receipts directory not found"
+    };
+
+  res.status(200).json({
     status: "OK",
     serverTime: new Date().toISOString(),
     port: PORT,
     uploads: uploadsInfo,
     receipts: receiptsInfo,
     staticFileUrls: {
-      uploads: `http://localhost:${PORT}/uploads/`,
-      receipts: `http://localhost:${PORT}/receipts/`
+      uploads: `http://${HOST}:${PORT}/uploads/`,
+      receipts: `http://${HOST}:${PORT}/receipts/`
     },
     environment: process.env.NODE_ENV || 'development'
   });
@@ -317,9 +318,9 @@ app.listen(PORT, () => {
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
   logger.info(`Uploads directory: ${uploadsDir}`);
   logger.info(`Receipts directory: ${receiptsDir}`);
-  logger.info(`Uploads files available at: http://localhost:${PORT}/uploads/`);
-  logger.info(`Receipts files available at: http://localhost:${PORT}/receipts/`);
-  
+  logger.info(`Uploads files available at: http://${HOST}:${PORT}/uploads/`);
+  logger.info(`Receipts files available at: http://${HOST}:${PORT}/receipts/`);
+
   // Simple console output
   console.log(`
 ====================================================
@@ -330,11 +331,11 @@ ENVIRONMENT:    ${process.env.NODE_ENV || 'development'}
 UPLOADS DIR:    ${uploadsDir}
 RECEIPTS DIR:   ${receiptsDir}
 ====================================================
-HEALTH CHECK:   http://localhost:${PORT}/api/health
-TEST UPLOADS:   http://localhost:${PORT}/api/uploads
-TEST RECEIPTS:  http://localhost:${PORT}/api/receipts
-UPLOADS FILES:  http://localhost:${PORT}/uploads/
-RECEIPTS FILES: http://localhost:${PORT}/receipts/
+HEALTH CHECK:   http://${HOST}:${PORT}/api/health
+TEST UPLOADS:   http://${HOST}:${PORT}/api/uploads
+TEST RECEIPTS:  http://${HOST}:${PORT}/api/receipts
+UPLOADS FILES:  http://${HOST}:${PORT}/uploads/
+RECEIPTS FILES: http://${HOST}:${PORT}/receipts/
 ====================================================
   `);
 });
