@@ -10,7 +10,7 @@ import axios from "axios";
 
 export function DashboardView() {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-console.log('API_BASE_URL:', API_BASE_URL);
+  console.log('API_BASE_URL:', API_BASE_URL);
   const [dashboardStats, setDashboardStats] = useState({
     rawMaterials: { value: 0, formatted: "0" },
     productSold: { value: 0, formatted: "0" },
@@ -26,19 +26,19 @@ console.log('API_BASE_URL:', API_BASE_URL);
     try {
       setLoading(true);
       setError(null);
-      
+
       console.log(`Fetching dashboard data from ${API_BASE_URL}/api/dashboard/stats`);
-      
+
       const response = await axios.get(`${API_BASE_URL}/api/dashboard/stats`);
       console.log('Dashboard data response:', response.data);
       if (response.data.success) {
         const data = response.data.data;
-        
+
         // Calculate profit based on available data
         let profitValue = 0;
         let profitFormatted = "Rs. 0";
         let isPositive = true;
-        
+
         // Try different profit fields from backend
         if (data.totalProfit !== undefined) {
           profitValue = data.totalProfit.value || data.totalProfit || 0;
@@ -56,12 +56,12 @@ console.log('API_BASE_URL:', API_BASE_URL);
           profitFormatted = `Rs. ${Math.abs(profitValue).toLocaleString()}`;
           isPositive = profitValue >= 0;
         }
-        
+
         // Format profit with +/- sign for negative values
         if (profitValue < 0) {
           profitFormatted = `-Rs. ${Math.abs(profitValue).toLocaleString()}`;
         }
-        
+
         // Map backend response to frontend structure
         setDashboardStats({
           rawMaterials: {
@@ -113,7 +113,7 @@ console.log('API_BASE_URL:', API_BASE_URL);
     return (
       <div className="flex-1 p-6 overflow-auto animate-fade-in">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Dashboard Overview</h1>
+          <h1 className="text-2xl font-bold text-foreground">Dashboard Overviews</h1>
           <div className="flex items-center gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -143,7 +143,7 @@ console.log('API_BASE_URL:', API_BASE_URL);
     return (
       <div className="flex-1 p-6 overflow-auto animate-fade-in">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Dashboard Overview</h1>
+          <h1 className="text-2xl font-bold text-foreground">Dashboard Overviews</h1>
           <button
             onClick={refreshData}
             className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm"
@@ -172,7 +172,7 @@ console.log('API_BASE_URL:', API_BASE_URL);
     <div className="flex-1 p-6 overflow-auto animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-foreground">Dashboard Overview</h1>
+        <h1 className="text-2xl font-bold text-foreground">Dashboard Overviews</h1>
         <div className="flex items-center gap-4">
           <button
             onClick={refreshData}
@@ -197,37 +197,37 @@ console.log('API_BASE_URL:', API_BASE_URL);
 
       {/* Stats Row - CONNECTED TO BACKEND */}
       <div className="grid grid-cols-5 gap-4 mb-6">
-        <StatsCard 
-          icon={Package} 
-          iconColor="text-cms-accent" 
-          label="Raw Materials" 
-          value={dashboardStats.rawMaterials.formatted} 
+        <StatsCard
+          icon={Package}
+          iconColor="text-cms-accent"
+          label="Raw Materials"
+          value={dashboardStats.rawMaterials.formatted}
         />
-        <StatsCard 
-          icon={ShoppingBag} 
-          iconColor="text-cms-success" 
-          label="Product Sold" 
-          value={dashboardStats.productSold.formatted} 
+        <StatsCard
+          icon={ShoppingBag}
+          iconColor="text-cms-success"
+          label="Product Sold"
+          value={dashboardStats.productSold.formatted}
         />
-        <StatsCard 
-          icon={Users} 
-          iconColor="text-cms-warning" 
-          label="Total Employees" 
-          value={dashboardStats.totalEmployees.formatted} 
+        <StatsCard
+          icon={Users}
+          iconColor="text-cms-warning"
+          label="Total Employees"
+          value={dashboardStats.totalEmployees.formatted}
         />
         {/* Total Profit Card */}
-        <StatsCard 
+        <StatsCard
           icon={dashboardStats.totalProfit.isPositive ? TrendingUp : TrendingDown}
           iconColor={dashboardStats.totalProfit.isPositive ? "text-cms-success" : "text-cms-orange"}
-          label="Total Profit" 
+          label="Total Profit"
           value={dashboardStats.totalProfit.formatted}
           valueColor={dashboardStats.totalProfit.isPositive ? "text-cms-success" : "text-cms-orange"}
         />
-        <StatsCard 
-          icon={DollarSign} 
-          iconColor="text-cms-orange" 
-          label="Total Expenses" 
-          value={dashboardStats.totalExpenses.formatted} 
+        <StatsCard
+          icon={DollarSign}
+          iconColor="text-cms-orange"
+          label="Total Expenses"
+          value={dashboardStats.totalExpenses.formatted}
         />
       </div>
 
