@@ -1039,24 +1039,24 @@ const Employee = () => {
               <div className="mb-8">
                 <h3 className="text-lg font-semibold text-foreground mb-4">Employment Details</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {[
-                    { name: 'employeeId', label: 'Employee ID', type: 'text', placeholder: 'e.g EMP202' },
-                    { 
-                      name: 'title', 
-                      label: 'Job Title', 
-                      type: 'select',
-                      options: ['', 'Lead Designer', 'Frontend Dev', 'Backend Dev', 'Manager', 'HR', 'Accountant', 'Sales Executive'] 
-                    },
-                    { 
-                      name: 'department', 
-                      label: 'Department', 
-                      type: 'select',
-                      options: ['', 'Production', 'Engineering', 'Marketing', 'HR', 'Finance', 'Sales', 'Operations'] 
-                    },
-                    { name: 'reportingManager', label: 'Reporting Manager', type: 'text', placeholder: 'e.g Mil young' },
-                    { name: 'hireDate', label: 'Hiring Date', type: 'date' },
-                    { name: 'salary', label: 'Salary', type: 'text', placeholder: 'e.g 40000' },
-                  ].map((field) => (
+                 {[
+  { name: 'employeeId', label: 'Employee ID', type: 'text', placeholder: 'e.g EMP202' },
+  { 
+    name: 'title', 
+    label: 'Job Title', 
+    type: 'text',  // CHANGED FROM 'select' TO 'text'
+    placeholder: 'e.g Senior Developer'  // ADDED PLACEHOLDER
+  },
+  { 
+    name: 'department', 
+    label: 'Department', 
+    type: 'text',  // CHANGED FROM 'select' TO 'text'
+    placeholder: 'e.g IT Department'  // ADDED PLACEHOLDER
+  },
+  { name: 'reportingManager', label: 'Reporting Manager', type: 'text', placeholder: 'e.g Mil young' },
+  { name: 'hireDate', label: 'Hiring Date', type: 'date' },
+  { name: 'salary', label: 'Salary', type: 'text', placeholder: 'e.g 40000' },
+].map((field) => (
                     <div key={field.name}>
                       <label className="block text-sm text-muted-foreground mb-2">{field.label}</label>
                       {field.type === 'select' ? (
