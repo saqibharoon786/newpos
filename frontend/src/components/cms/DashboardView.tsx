@@ -7,9 +7,10 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 
 // API Base URL - For Vite, use import.meta.env
-const API_BASE_URL = import.meta.env.VITE_API_URL ;
 
 export function DashboardView() {
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+console.log('API_BASE_URL:', API_BASE_URL);
   const [dashboardStats, setDashboardStats] = useState({
     rawMaterials: { value: 0, formatted: "0" },
     productSold: { value: 0, formatted: "0" },
@@ -29,7 +30,7 @@ export function DashboardView() {
       console.log(`Fetching dashboard data from ${API_BASE_URL}/api/dashboard/stats`);
       
       const response = await axios.get(`${API_BASE_URL}/api/dashboard/stats`);
-      
+      console.log('Dashboard data response:', response.data);
       if (response.data.success) {
         const data = response.data.data;
         
