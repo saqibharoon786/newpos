@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 
 // API Base URL - For Vite, use import.meta.env
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_API_URL ;
 
 export function DashboardView() {
   const [dashboardStats, setDashboardStats] = useState({
