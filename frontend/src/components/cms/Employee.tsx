@@ -876,7 +876,7 @@ const Employee = () => {
     return (
       <div className="h-full w-full bg-background">
         <div className="h-full w-full px-6 py-4">
-          <div className="text-muted-foreground text-sm mb-4">Employees / Detail</div>
+          <div className="text-muted-foreground text-sm mb-4">Employee / Detail</div>
 
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-4">
