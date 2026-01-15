@@ -16,6 +16,8 @@ const storage = multer.diskStorage({
     // Organize files by type/feature
     if (file.fieldname === "avatar" || file.fieldname === "profilePicture") {
       folder = "employees/profiles"
+    } else if (file.fieldname === "cnicFrontImage" || file.fieldname === "cnicBackImage") {
+      folder = "employees/cnic"
     } else if (file.fieldname === "membershipDocument") {
       folder = "employees/documents"
     } else if (file.fieldname === "paymentReceipt") {
@@ -38,8 +40,20 @@ const storage = multer.diskStorage({
     
     // For employee avatars, use employee ID if available
     if ((file.fieldname === "avatar" || file.fieldname === "profilePicture") && req.body.employeeId) {
-      cb(null, `employee-${req.body.employeeId}-${uniqueSuffix}${extension}`)
-    } else {
+      cb(null, `employee-${req.body.employeeId}-avatar-${uniqueSuffix}${extension}`)
+    } 
+    // For CNIC images, include CNIC number if available
+    else if ((file.fieldname === "cnicFrontImage" || file.fieldname === "cnicBackImage") && req.body.cnic) {
+      const cnicType = file.fieldname === "cnicFrontImage" ? "front" : "back"
+      cb(null, `employee-cnic-${req.body.cnic}-${cnicType}-${uniqueSuffix}${extension}`)
+    }
+    // For CNIC images without CNIC number
+    else if (file.fieldname === "cnicFrontImage" || file.fieldname === "cnicBackImage") {
+      const cnicType = file.fieldname === "cnicFrontImage" ? "front" : "back"
+      const employeeId = req.body.employeeId || "unknown"
+      cb(null, `employee-${employeeId}-cnic-${cnicType}-${uniqueSuffix}${extension}`)
+    }
+    else {
       cb(null, file.fieldname + "-" + uniqueSuffix + extension)
     }
   },
@@ -61,6 +75,18 @@ const fileFilter = (req, file, cb) => {
       "image/jpg", 
       "image/png",
       "image/gif",
+      "image/webp"
+    ],
+    "cnicFrontImage": [
+      "image/jpeg",
+      "image/jpg", 
+      "image/png",
+      "image/webp"
+    ],
+    "cnicBackImage": [
+      "image/jpeg",
+      "image/jpg", 
+      "image/png",
       "image/webp"
     ],
     "employeeDocument": [
@@ -109,26 +135,26 @@ const upload = multer({
   storage: storage,
   limits: {
     fileSize: Number.parseInt(process.env.MAX_FILE_SIZE) || 5 * 1024 * 1024, // 5MB default
-    
-    // Field-specific size limits
-    fileFilter: (req, file, cb) => {
-      // Apply different size limits based on field
-      const sizeLimits = {
-        "avatar": 1 * 1024 * 1024, // 1MB for avatars
-        "profilePicture": 1 * 1024 * 1024, // 1MB for profile pictures
-        "employeeDocument": 10 * 1024 * 1024, // 10MB for documents
-        "default": 5 * 1024 * 1024 // 5MB default
-      }
-      
-      const limit = sizeLimits[file.fieldname] || sizeLimits["default"]
-      
-      if (file.size > limit) {
-        return cb(new Error(`File too large. Maximum size for ${file.fieldname} is ${limit / (1024*1024)}MB`), false)
-      }
-      
-      // Now check file type
-      fileFilter(req, file, cb)
+  },
+  fileFilter: (req, file, cb) => {
+    // Apply different size limits based on field
+    const sizeLimits = {
+      "avatar": 2 * 1024 * 1024, // 2MB for avatars
+      "profilePicture": 2 * 1024 * 1024, // 2MB for profile pictures
+      "cnicFrontImage": 3 * 1024 * 1024, // 3MB for CNIC images
+      "cnicBackImage": 3 * 1024 * 1024, // 3MB for CNIC images
+      "employeeDocument": 10 * 1024 * 1024, // 10MB for documents
+      "default": 5 * 1024 * 1024 // 5MB default
     }
+    
+    const limit = sizeLimits[file.fieldname] || sizeLimits["default"]
+    
+    if (file.size > limit) {
+      return cb(new Error(`File too large. Maximum size for ${file.fieldname} is ${limit / (1024*1024)}MB`), false)
+    }
+    
+    // Now check file type
+    fileFilter(req, file, cb)
   }
 })
 
@@ -160,7 +186,14 @@ const getFileUrl = (req, filePath) => {
   return `${req.protocol}://${req.get('host')}/uploads${relativePath}`
 }
 
-// Specific middleware for employee avatar upload
+// Middleware for multiple employee file uploads (avatar + CNIC images)
+const uploadEmployeeFiles = upload.fields([
+  { name: 'avatar', maxCount: 1 },
+  { name: 'cnicFrontImage', maxCount: 1 },
+  { name: 'cnicBackImage', maxCount: 1 }
+])
+
+// Specific middleware for employee avatar upload (backward compatibility)
 const uploadEmployeeAvatar = upload.single('avatar')
 
 // Middleware for employee documents (multiple files)
@@ -171,7 +204,8 @@ const uploadGeneral = upload.single('file')
 
 module.exports = {
   upload,
-  uploadEmployeeAvatar,
+  uploadEmployeeFiles, // New: For multiple employee file uploads
+  uploadEmployeeAvatar, // Kept for backward compatibility
   uploadEmployeeDocuments,
   uploadGeneral,
   deleteFile,

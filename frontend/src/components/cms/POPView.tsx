@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X } from "lucide-react";
+import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package } from "lucide-react";
 import { PurchaseDetailsView } from "./PurchaseDetailsView";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
@@ -15,6 +15,7 @@ const api = axios.create({
 
 // API endpoints
 const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
+const SALES_API_URL = `${API_BASE_URL}/api/sales`;
 
 interface Purchase {
   _id: string;
@@ -35,9 +36,16 @@ interface Purchase {
   deliveryTime?: string;
   receiptNo: string;
   vehicleImage: string;
-  advancePayment: number; // ADDED THIS FIELD
+  advancePayment: number;
   createdAt: string;
   updatedAt: string;
+}
+
+// Interface with remaining weight
+interface PurchaseWithRemaining extends Purchase {
+  totalWeight: number;
+  soldWeight: number;
+  remainingWeight: number;
 }
 
 const colorOptions = [
@@ -47,7 +55,7 @@ const colorOptions = [
   { name: "Blue", color: "bg-blue-600", value: "#2563EB" },
   { name: "Orange", color: "bg-orange-500", value: "#F97316" },
   { name: "Green", color: "bg-green-500", value: "#22C55E" },
-  { name: "Black", color: "bg-black", value: "#000000" }, // Added Black color
+  { name: "Black", color: "bg-black", value: "#000000" },
 ];
 
 // Quality options
@@ -86,9 +94,9 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     vendor: "",
     price: "",
     weight: "",
-    quality: "PP750", // Default to PP750
-    purchaseDate: getTodayDate(), // Default to today's date
-    purchaseTime: getCurrentTime(), // Default to current time
+    quality: "PP750",
+    purchaseDate: getTodayDate(),
+    purchaseTime: getCurrentTime(),
     materialColor: "#FFFFFF",
     vehicleName: "",
     vehicleType: "",
@@ -96,9 +104,9 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     driverName: "",
     vehicleColor: "",
     deliveryDate: "",
-    deliveryTime: "09:00", // Default delivery time
+    deliveryTime: "09:00",
     receiptNo: "",
-    advancePayment: "", // ADDED THIS FIELD
+    advancePayment: "",
     vehicleImage: null as File | null,
   });
 
@@ -112,25 +120,20 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   const getImageUrl = (imagePath: string | undefined): string | null => {
     if (!imagePath) return null;
     
-    // If it's already a full URL
     if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
       return imagePath;
     }
     
-    // Remove leading slash if present for consistency
     const cleanPath = imagePath.startsWith('/') ? imagePath.slice(1) : imagePath;
     
-    // If it starts with uploads
     if (cleanPath.startsWith('uploads/')) {
       return `${API_BASE_URL}/${cleanPath}`;
     }
     
-    // If it's just a filename without path
     if (!cleanPath.includes('/')) {
       return `${API_BASE_URL}/uploads/${cleanPath}`;
     }
     
-    // Default case - assume it's relative to API base URL
     return `${API_BASE_URL}/${cleanPath}`;
   };
 
@@ -138,7 +141,6 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   useEffect(() => {
     if (open) {
       if (isEdit && editData) {
-        // Format dates to YYYY-MM-DD for date inputs
         const formatDateForInput = (dateString: string) => {
           if (!dateString) return "";
           try {
@@ -149,7 +151,6 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           }
         };
 
-        // Extract time from date string (HH:MM format)
         const extractTimeFromDate = (dateString: string) => {
           if (!dateString) return getCurrentTime();
           try {
@@ -182,7 +183,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           deliveryDate: deliveryDate || "",
           deliveryTime: deliveryTime,
           receiptNo: editData.receiptNo || "",
-          advancePayment: editData.advancePayment?.toString() || "", // ADDED THIS LINE
+          advancePayment: editData.advancePayment?.toString() || "",
           vehicleImage: null,
         });
         
@@ -220,7 +221,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     if (!formData.deliveryDate) newErrors.deliveryDate = "Delivery date is required";
     if (!formData.deliveryTime) newErrors.deliveryTime = "Delivery time is required";
     if (!formData.receiptNo.trim()) newErrors.receiptNo = "Receipt number is required";
-    // ADDED: Validate advance payment - it's optional but if provided must be a valid number
+    
     if (formData.advancePayment && isNaN(Number(formData.advancePayment))) {
       newErrors.advancePayment = "Advance payment must be a valid number";
     }
@@ -273,7 +274,6 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     try {
       const formDataToSend = new FormData();
       
-      // Combine date and time for purchase and delivery
       const purchaseDateTime = `${formData.purchaseDate}T${formData.purchaseTime}:00`;
       const deliveryDateTime = `${formData.deliveryDate}T${formData.deliveryTime}:00`;
 
@@ -292,7 +292,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         vehicleColor: formData.vehicleColor,
         deliveryDate: deliveryDateTime,
         receiptNo: formData.receiptNo,
-        advancePayment: formData.advancePayment || 0, // ADDED THIS LINE
+        advancePayment: formData.advancePayment || 0,
       };
 
       Object.entries(fields).forEach(([key, value]) => {
@@ -307,7 +307,6 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
 
       let response;
       if (isEdit && editData && editData._id) {
-        // UPDATE request using PUT
         response = await api.put(
           `${PURCHASES_API_URL}/${editData._id}`,
           formDataToSend,
@@ -318,7 +317,6 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           }
         );
       } else {
-        // CREATE request using POST
         response = await api.post(
           `${PURCHASES_API_URL}/add`,
           formDataToSend,
@@ -405,7 +403,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       deliveryDate: "",
       deliveryTime: "09:00",
       receiptNo: "",
-      advancePayment: "", // ADDED THIS LINE
+      advancePayment: "",
       vehicleImage: null,
     });
     setSelectedMaterialColor("#FFFFFF");
@@ -577,7 +575,6 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
             </div>
 
             <div className="grid grid-cols-3 gap-4 mb-4">
-              {/* Material Color */}
               <div className="col-span-2">
                 <label className="block text-xs text-muted-foreground mb-2">Material Color *</label>
                 <div className="flex flex-wrap items-center gap-3">
@@ -605,7 +602,6 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                   ))}
                 </div>
               </div>
-              {/* ADDED: Advance Payment Field */}
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Advance Payment</label>
                 <input
@@ -816,8 +812,9 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   );
 }
 
+// MAIN EXPORT
 export function POPView() {
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [purchases, setPurchases] = useState<PurchaseWithRemaining[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -825,13 +822,36 @@ export function POPView() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedPurchaseId, setSelectedPurchaseId] = useState<string | null>(null);
-  const [selectedPurchaseForEdit, setSelectedPurchaseForEdit] = useState<Purchase | null>(null);
+  const [selectedPurchaseForEdit, setSelectedPurchaseForEdit] = useState<PurchaseWithRemaining | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
 
   // Fetch purchases on component mount
   useEffect(() => {
     fetchPurchases();
   }, []);
+
+  // FIXED: Fetch sold weight by purchase ID (not material name)
+  const fetchSoldWeightForPurchase = async (purchaseId: string): Promise<number> => {
+    try {
+      const response = await api.get(`${SALES_API_URL}/purchase/${purchaseId}`);
+      if (response.data.success && response.data.data) {
+        let totalSoldWeight = 0;
+        response.data.data.forEach((sale: any) => {
+          totalSoldWeight += parseFloat(sale.sellingWeight) || 0;
+        });
+        return totalSoldWeight;
+      }
+      return 0;
+    } catch (error) {
+      console.error('Error fetching sales for purchase:', error);
+      return 0;
+    }
+  };
+
+  // Calculate remaining weight
+  const calculateRemainingWeight = (totalWeight: number, soldWeight: number): number => {
+    return totalWeight - soldWeight;
+  };
 
   const fetchPurchases = async () => {
     try {
@@ -840,7 +860,25 @@ export function POPView() {
       const response = await api.get(`${PURCHASES_API_URL}/get-all`);
       
       if (response.data.success) {
-        setPurchases(response.data.data || []);
+        const purchasesData = response.data.data || [];
+        
+        // Calculate sold weight and remaining weight for each purchase
+        const purchasesWithRemaining = await Promise.all(
+          purchasesData.map(async (purchase: Purchase) => {
+            const totalWeight = parseFloat(purchase.weight) || 0;
+            const soldWeight = await fetchSoldWeightForPurchase(purchase._id);
+            const remainingWeight = calculateRemainingWeight(totalWeight, soldWeight);
+            
+            return {
+              ...purchase,
+              totalWeight,
+              soldWeight,
+              remainingWeight: remainingWeight > 0 ? remainingWeight : 0
+            };
+          })
+        );
+        
+        setPurchases(purchasesWithRemaining);
       } else {
         throw new Error(response.data.message || 'Failed to fetch purchases');
       }
@@ -861,7 +899,7 @@ export function POPView() {
     await fetchPurchases();
   };
 
-  const handleEditPurchase = (purchase: Purchase) => {
+  const handleEditPurchase = (purchase: PurchaseWithRemaining) => {
     setSelectedPurchaseForEdit(purchase);
     setIsEditMode(true);
     setDialogOpen(true);
@@ -870,6 +908,17 @@ export function POPView() {
   const handleDeletePurchase = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this purchase?')) {
       try {
+        // Check if there are sales for this purchase
+        const salesResponse = await api.get(`${SALES_API_URL}/purchase/${id}`);
+        if (salesResponse.data.success && salesResponse.data.data && salesResponse.data.data.length > 0) {
+          toast({
+            title: "Cannot Delete",
+            description: "This purchase has existing sales. Delete the sales first.",
+            variant: "destructive",
+          });
+          return;
+        }
+
         await api.delete(`${PURCHASES_API_URL}/${id}`);
         await fetchPurchases();
         toast({
@@ -887,7 +936,7 @@ export function POPView() {
     }
   };
 
-  const handleViewDetails = (purchase: Purchase) => {
+  const handleViewDetails = (purchase: PurchaseWithRemaining) => {
     setSelectedPurchaseId(purchase._id);
     setShowDetails(true);
   };
@@ -923,24 +972,7 @@ export function POPView() {
     }
   };
 
-  // Format created at date
-  const formatCreatedAt = (dateString: string) => {
-    if (!dateString) return 'N/A';
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch (error) {
-      return dateString;
-    }
-  };
-
-  // Format currency - REMOVED CURRENCY SYMBOL
+  // Format currency
   const formatCurrency = (amount: string) => {
     try {
       const numAmount = parseFloat(amount);
@@ -954,7 +986,7 @@ export function POPView() {
     }
   };
 
-  // Format advance payment - ADDED THIS FUNCTION
+  // Format advance payment
   const formatAdvancePayment = (amount: number) => {
     if (!amount && amount !== 0) return '0';
     return amount.toLocaleString('en-IN', {
@@ -996,8 +1028,8 @@ export function POPView() {
         <h1 className="text-lg font-semibold text-foreground">Point Of Purchase (POP)</h1>
       </div>
 
-      {/* Stats Cards - MOVED TO TOP */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <div className="bg-cms-card rounded-lg p-4 border border-border">
           <div className="flex items-center justify-between">
             <div>
@@ -1014,7 +1046,7 @@ export function POPView() {
             <div>
               <p className="text-sm text-muted-foreground">Total Weight</p>
               <p className="text-2xl font-semibold text-foreground">
-                {purchases.reduce((total, p) => total + (parseFloat(p.weight) || 0), 0).toLocaleString()} kg
+                {purchases.reduce((total, p) => total + p.totalWeight, 0).toLocaleString()} kg
               </p>
             </div>
             <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
@@ -1025,27 +1057,39 @@ export function POPView() {
         <div className="bg-cms-card rounded-lg p-4 border border-border">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">Total Value</p>
+              <p className="text-sm text-muted-foreground">Sold Weight</p>
               <p className="text-2xl font-semibold text-foreground">
-                {purchases.reduce((total, p) => total + (parseFloat(p.price) || 0), 0).toLocaleString()}
+                {purchases.reduce((total, p) => total + p.soldWeight, 0).toLocaleString()} kg
               </p>
             </div>
-            <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
-              <span className="text-green-500 text-lg font-bold">V</span>
+            <div className="w-10 h-10 bg-red-500/10 rounded-lg flex items-center justify-center">
+              <Package className="w-5 h-5 text-red-500" />
             </div>
           </div>
         </div>
-        {/* ADDED: Advance Payment Stats Card */}
         <div className="bg-cms-card rounded-lg p-4 border border-border">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">Total Advance Paid</p>
+              <p className="text-sm text-muted-foreground">Remaining Weight</p>
               <p className="text-2xl font-semibold text-foreground">
-                {purchases.reduce((total, p) => total + (p.advancePayment || 0), 0).toLocaleString()}
+                {purchases.reduce((total, p) => total + p.remainingWeight, 0).toLocaleString()} kg
               </p>
             </div>
-            <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center">
-              <span className="text-amber-500 text-lg font-bold">A</span>
+            <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
+              <Package className="w-5 h-5 text-green-500" />
+            </div>
+          </div>
+        </div>
+        <div className="bg-cms-card rounded-lg p-4 border border-border">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Total Value</p>
+              <p className="text-2xl font-semibold text-foreground">
+                Rs. {purchases.reduce((total, p) => total + (parseFloat(p.price) || 0), 0).toLocaleString()}
+              </p>
+            </div>
+            <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
+              <span className="text-green-500 text-lg font-bold">₹</span>
             </div>
           </div>
         </div>
@@ -1090,166 +1134,210 @@ export function POPView() {
 
       {/* Table */}
       <div className="bg-cms-card rounded-xl overflow-hidden">
-  {loading ? (
-    <div className="flex justify-center items-center py-12">
-      <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      <span className="ml-2 text-muted-foreground">Loading purchases...</span>
-    </div>
-  ) : filteredPurchases.length === 0 ? (
-    <div className="text-center py-12">
-      <ShoppingCart className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-      <h3 className="text-lg font-medium text-foreground mb-2">No purchases found</h3>
-      <p className="text-muted-foreground mb-4">
-        {searchTerm ? 'No purchases match your search.' : 'Add your first purchase to get started.'}
-      </p>
-      {!searchTerm && (
-        <button
-          onClick={handleAddNew}
-          className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors mx-auto"
-        >
-          <Plus className="w-4 h-4" />
-          Add First Purchase
-        </button>
-      )}
-    </div>
-  ) : (
-    <>
-     {/* Table Header - UPDATED to include Advance Paid column */}
-<table className="w-full">
-  <thead>
-    <tr className="bg-cms-table-header">
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Receipt No.</th>
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material Name</th>
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight (Kg)</th>
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Price</th>
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Advance Paid</th> {/* ADDED */}
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Supplier</th>
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date & Time</th>
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
-    </tr>
-  </thead>
-  <tbody>
-    {currentItems.map((purchase, index) => (
-      <tr
-        key={purchase._id}
-        className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'} hover:bg-cms-card-hover transition-colors`}
-      >
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div 
-              className="w-3 h-3 rounded-full border border-border"
-              style={{ backgroundColor: purchase.materialColor || '#FFFFFF' }}
-            />
-            <span className="text-sm font-medium text-foreground">{purchase.receiptNo || 'N/A'}</span>
+        {loading ? (
+          <div className="flex justify-center items-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <span className="ml-2 text-muted-foreground">Loading purchases...</span>
           </div>
-        </td>
-        <td className="px-4 py-3 text-sm text-foreground">{purchase.materialName || 'N/A'}</td>
-        <td className="px-4 py-3 text-sm text-foreground">{purchase.weight || 'N/A'} kg</td>
-        <td className="px-4 py-3 text-sm text-foreground">{formatCurrency(purchase.price)}</td>
-        <td className="px-4 py-3 text-sm text-foreground">{formatAdvancePayment(purchase.advancePayment)}</td> {/* UPDATED: Removed amber color */}
-        <td className="px-4 py-3 text-sm text-foreground">{purchase.vendor || 'N/A'}</td>
-        <td className="px-4 py-3 text-sm text-foreground">{purchase.vehicleNumber || 'N/A'}</td>
-        <td className="px-4 py-3 text-sm text-primary">{formatDateTime(purchase.purchaseDate || purchase.createdAt)}</td>
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => handleEditPurchase(purchase)}
-              className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
-              title="Edit"
-            >
-              <Pencil className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={() => handleViewDetails(purchase)}
-              className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
-              title="View Details"
-            >
-              <Eye className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={() => handleDeletePurchase(purchase._id)}
-              className="p-1.5 hover:bg-destructive/20 rounded transition-colors text-muted-foreground hover:text-destructive"
-              title="Delete"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        </td>
-      </tr>
-    ))}
-  </tbody>
-</table>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
-          <button 
-            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-            disabled={currentPage === 1}
-            className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          
-          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-            let pageNum;
-            if (totalPages <= 5) {
-              pageNum = i + 1;
-            } else if (currentPage <= 3) {
-              pageNum = i + 1;
-            } else if (currentPage >= totalPages - 2) {
-              pageNum = totalPages - 4 + i;
-            } else {
-              pageNum = currentPage - 2 + i;
-            }
-
-            return (
+        ) : filteredPurchases.length === 0 ? (
+          <div className="text-center py-12">
+            <ShoppingCart className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-foreground mb-2">No purchases found</h3>
+            <p className="text-muted-foreground mb-4">
+              {searchTerm ? 'No purchases match your search.' : 'Add your first purchase to get started.'}
+            </p>
+            {!searchTerm && (
               <button
-                key={pageNum}
-                onClick={() => setCurrentPage(pageNum)}
-                className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
-                  currentPage === pageNum
-                    ? 'bg-primary text-primary-foreground'
-                    : 'hover:bg-secondary text-muted-foreground'
-                }`}
+                onClick={handleAddNew}
+                className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors mx-auto"
               >
-                {pageNum}
+                <Plus className="w-4 h-4" />
+                Add First Purchase
               </button>
-            );
-          })}
+            )}
+          </div>
+        ) : (
+          <>
+            <table className="w-full">
+              <thead>
+                <tr className="bg-cms-table-header">
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Receipt No.</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material Name</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total Weight (kg)</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Sold Weight (kg)</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining Weight (kg)</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Price</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Advance Paid</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Supplier</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date & Time</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Stock Status</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentItems.map((purchase, index) => (
+                  <tr
+                    key={purchase._id}
+                    className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'} hover:bg-cms-card-hover transition-colors`}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-3 h-3 rounded-full border border-border"
+                          style={{ backgroundColor: purchase.materialColor || '#FFFFFF' }}
+                        />
+                        <span className="text-sm font-medium text-foreground">{purchase.receiptNo || 'N/A'}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-foreground">
+                      <div className="font-medium">{purchase.materialName || 'N/A'}</div>
+                      <div className="text-xs text-muted-foreground">{purchase.quality || 'N/A'}</div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-foreground">
+                      <div className="font-medium">{purchase.totalWeight.toLocaleString()} kg</div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-foreground">
+                      <div className={`font-medium ${purchase.soldWeight > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
+                        {purchase.soldWeight.toLocaleString()} kg
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-foreground">
+                      <div className={`font-medium ${
+                        purchase.remainingWeight > 0 
+                          ? 'text-green-600' 
+                          : purchase.remainingWeight === 0 
+                            ? 'text-amber-600' 
+                            : 'text-red-600'
+                      }`}>
+                        {purchase.remainingWeight.toLocaleString()} kg
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-foreground">Rs. {formatCurrency(purchase.price)}</td>
+                    <td className="px-4 py-3 text-sm text-foreground">Rs. {formatAdvancePayment(purchase.advancePayment)}</td>
+                    <td className="px-4 py-3 text-sm text-foreground">{purchase.vendor || 'N/A'}</td>
+                    <td className="px-4 py-3 text-sm text-foreground">{purchase.vehicleNumber || 'N/A'}</td>
+                    <td className="px-4 py-3 text-sm text-primary">{formatDateTime(purchase.purchaseDate || purchase.createdAt)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex">
+                        {purchase.remainingWeight > purchase.totalWeight * 0.5 ? (
+                          <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                            In Stock
+                          </span>
+                        ) : purchase.remainingWeight > 0 ? (
+                          <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
+                            Low Stock
+                          </span>
+                        ) : purchase.remainingWeight === 0 ? (
+                          <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">
+                            Out of Stock
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">
+                            Over Sold
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => handleEditPurchase(purchase)}
+                          className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                          title="Edit"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleViewDetails(purchase)}
+                          className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                          title="View Details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeletePurchase(purchase._id)}
+                          className="p-1.5 hover:bg-destructive/20 rounded transition-colors text-muted-foreground hover:text-destructive"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
 
-          {totalPages > 5 && currentPage < totalPages - 2 && (
-            <span className="text-muted-foreground px-2">...</span>
-          )}
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
+                <button 
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
 
-          {totalPages > 5 && currentPage < totalPages - 2 && (
-            <button
-              onClick={() => setCurrentPage(totalPages)}
-              className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
-                currentPage === totalPages
-                  ? 'bg-primary text-primary-foreground'
-                  : 'hover:bg-secondary text-muted-foreground'
-              }`}
-            >
-              {totalPages}
-            </button>
-          )}
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
+                        currentPage === pageNum
+                          ? 'bg-primary text-primary-foreground'
+                          : 'hover:bg-secondary text-muted-foreground'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
 
-          <button 
-            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-            disabled={currentPage === totalPages}
-            className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-    </>
-  )}
-</div>
+                {totalPages > 5 && currentPage < totalPages - 2 && (
+                  <span className="text-muted-foreground px-2">...</span>
+                )}
 
-      {/* Purchase Dialog (for both Add and Edit) */}
+                {totalPages > 5 && currentPage < totalPages - 2 && (
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
+                      currentPage === totalPages
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-secondary text-muted-foreground'
+                    }`}
+                  >
+                    {totalPages}
+                  </button>
+                )}
+
+                <button 
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Purchase Dialog */}
       <PurchaseDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
@@ -1260,3 +1348,6 @@ export function POPView() {
     </div>
   );
 }
+
+// Default export
+export default POPView;

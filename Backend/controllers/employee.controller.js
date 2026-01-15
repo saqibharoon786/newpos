@@ -91,6 +91,8 @@ const getEmployees = async (req, res) => {
                 id: emp.employeeId,
                 name: emp.name,
                 title: emp.title,
+                cnicFrontImage: emp.cnicFrontImage,
+                cnicBackImage: emp.cnicBackImage,
                 department: emp.department,
                 email: emp.email,
                 phone: emp.phone,
@@ -192,9 +194,13 @@ const createEmployee = async (req, res) => {
         const missingFields = requiredFields.filter(field => !req.body[field]);
         
         if (missingFields.length > 0) {
-            // Delete uploaded file if exists
-            if (req.file) {
-                deleteFile(req.file.path);
+            // Delete uploaded files if exist
+            if (req.files) {
+                Object.values(req.files).forEach(fileArray => {
+                    if (Array.isArray(fileArray)) {
+                        fileArray.forEach(file => deleteFile(file.path));
+                    }
+                });
             }
             
             return res.status(400).json({
@@ -212,9 +218,13 @@ const createEmployee = async (req, res) => {
         });
         
         if (existingEmployee) {
-            // Delete uploaded file if exists
-            if (req.file) {
-                deleteFile(req.file.path);
+            // Delete uploaded files if exist
+            if (req.files) {
+                Object.values(req.files).forEach(fileArray => {
+                    if (Array.isArray(fileArray)) {
+                        fileArray.forEach(file => deleteFile(file.path));
+                    }
+                });
             }
             
             let field = '';
@@ -231,8 +241,13 @@ const createEmployee = async (req, res) => {
         if (req.body.cnic) {
             const existingCNIC = await Employee.findOne({ cnic: req.body.cnic });
             if (existingCNIC) {
-                if (req.file) {
-                    deleteFile(req.file.path);
+                // Delete uploaded files if exist
+                if (req.files) {
+                    Object.values(req.files).forEach(fileArray => {
+                        if (Array.isArray(fileArray)) {
+                            fileArray.forEach(file => deleteFile(file.path));
+                        }
+                    });
                 }
                 return res.status(400).json({
                     success: false,
@@ -259,13 +274,23 @@ const createEmployee = async (req, res) => {
             reportingManager: req.body.reportingManager || '',
             hireDate: req.body.hireDate ? new Date(req.body.hireDate) : new Date(),
             responsibilities: req.body.responsibilities || '',
-            advancePayment: parseFloat(req.body.advancePayment) || 0, // ADDED THIS LINE
+            advancePayment: parseFloat(req.body.advancePayment) || 0,
             isActive: req.body.isActive !== undefined ? req.body.isActive : true
         };
         
         // Add avatar path if file was uploaded
-        if (req.file) {
-            employeeData.avatar = req.file.path;
+        if (req.files && req.files.avatar) {
+            employeeData.avatar = req.files.avatar[0].path;
+        }
+        
+        // Add CNIC front image path if file was uploaded
+        if (req.files && req.files.cnicFrontImage) {
+            employeeData.cnicFrontImage = req.files.cnicFrontImage[0].path;
+        }
+        
+        // Add CNIC back image path if file was uploaded
+        if (req.files && req.files.cnicBackImage) {
+            employeeData.cnicBackImage = req.files.cnicBackImage[0].path;
         }
         
         // Create employee
@@ -273,19 +298,27 @@ const createEmployee = async (req, res) => {
         
         // Default avatar URL
         const defaultAvatar = 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face';
-        const avatarUrl = getFileUrl(req, employee.avatar) || defaultAvatar;
+        
+        // Default CNIC image URL (a placeholder for missing CNIC images)
+        const defaultCnicImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect width="100" height="100" fill="%23f0f0f0"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="10" fill="%23999"%3ECNIC Image%3C/text%3E%3C/svg%3E';
         
         // Format response
         const formattedEmployee = {
+            _id: employee._id,
             id: employee.employeeId,
+            employeeId: employee.employeeId,
             name: employee.name,
             title: employee.title,
             department: employee.department,
             email: employee.email,
             phone: employee.phone,
+            startTime: employee.startTime,
+            endTime: employee.endTime,
             schedule: employee.schedule,
             salary: `Rs. ${employee.salary?.toLocaleString() || '0'}`,
-            avatar: avatarUrl,
+            avatar: employee.avatar ? getFileUrl(req, employee.avatar) : defaultAvatar,
+            cnicFrontImage: employee.cnicFrontImage ? getFileUrl(req, employee.cnicFrontImage) : defaultCnicImage,
+            cnicBackImage: employee.cnicBackImage ? getFileUrl(req, employee.cnicBackImage) : defaultCnicImage,
             address: employee.address || '',
             cnic: employee.cnic || '',
             dob: employee.dob ? employee.dob.toISOString().split('T')[0] : '',
@@ -293,8 +326,10 @@ const createEmployee = async (req, res) => {
             reportingManager: employee.reportingManager || '',
             hireDate: employee.hireDate ? employee.hireDate.toISOString().split('T')[0] : '',
             responsibilities: employee.responsibilities || '',
-            advancePayment: employee.advancePayment || 0, // ADDED THIS LINE
-            isActive: employee.isActive
+            advancePayment: employee.advancePayment || 0,
+            isActive: employee.isActive,
+            createdAt: employee.createdAt,
+            updatedAt: employee.updatedAt
         };
         
         res.status(201).json({
@@ -303,9 +338,13 @@ const createEmployee = async (req, res) => {
             data: formattedEmployee
         });
     } catch (error) {
-        // Delete uploaded file if error occurs
-        if (req.file) {
-            deleteFile(req.file.path);
+        // Delete uploaded files if error occurs
+        if (req.files) {
+            Object.values(req.files).forEach(fileArray => {
+                if (Array.isArray(fileArray)) {
+                    fileArray.forEach(file => deleteFile(file.path));
+                }
+            });
         }
         
         console.error('Error creating employee:', error);

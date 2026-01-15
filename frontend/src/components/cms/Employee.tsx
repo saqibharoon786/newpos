@@ -1,4 +1,4 @@
-// Employee.tsx - UPDATED WITH ONLY ADVANCEPAYMENT FIELD
+// Employee.tsx - UPDATED WITH CNIC IMAGES AND TABLE VIEW
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
@@ -21,12 +21,16 @@ import {
   AlertCircle,
   Briefcase,
   Wallet,
+  FileImage,
+  Eye,
+  MoreVertical,
+  Download,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import axios from "axios";
 
 // ==================== API CONFIGURATION ====================
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ;
 
 const createAPI = () => {
   const instance = axios.create({
@@ -82,7 +86,9 @@ interface EmployeeType {
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
-  advancePayment: number; // ADDED THIS FIELD
+  advancePayment: number;
+  cnicFrontImage?: string; // ADDED: CNIC Front Image
+  cnicBackImage?: string; // ADDED: CNIC Back Image
 }
 
 const Employee = () => {
@@ -97,8 +103,17 @@ const Employee = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [view, setView] = useState<"list" | "detail">("list");
+  
+  // Photo Previews
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null);
+  
+  // CNIC Image Previews
+  const [cnicFrontPreview, setCnicFrontPreview] = useState<string | null>(null);
+  const [cnicBackPreview, setCnicBackPreview] = useState<string | null>(null);
+  const [editCnicFrontPreview, setEditCnicFrontPreview] = useState<string | null>(null);
+  const [editCnicBackPreview, setEditCnicBackPreview] = useState<string | null>(null);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stats, setStats] = useState({
@@ -110,6 +125,10 @@ const Employee = () => {
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
+  const cnicFrontInputRef = useRef<HTMLInputElement>(null);
+  const cnicBackInputRef = useRef<HTMLInputElement>(null);
+  const editCnicFrontInputRef = useRef<HTMLInputElement>(null);
+  const editCnicBackInputRef = useRef<HTMLInputElement>(null);
 
   // Form Data
   const [formData, setFormData] = useState({
@@ -129,7 +148,7 @@ const Employee = () => {
     endTime: "17:00",
     responsibilities: "",
     salary: "",
-    advancePayment: "0", // ADDED THIS FIELD
+    advancePayment: "0",
   });
 
   const [editFormData, setEditFormData] = useState({
@@ -150,7 +169,7 @@ const Employee = () => {
     endTime: "17:00",
     responsibilities: "",
     salary: "",
-    advancePayment: "0", // ADDED THIS FIELD
+    advancePayment: "0",
   });
 
   // ==================== LIFECYCLE ====================
@@ -176,18 +195,27 @@ const Employee = () => {
     try {
       setIsLoading(true);
       const response = await API.get("/employees/get-all");
-      console.log("Backend response for get-all:", response.data); // Debug
+      console.log("Backend response for get-all:", response.data);
       
       if (response.data.success) {
-        // Backend سے آنے والے ڈیٹا کو درست طریقے سے مپ کریں
         const employeesData = (response.data.data || []).map((emp: any) => {
-          console.log("Employee from backend:", emp); // Debug each employee
+          console.log(`Employee ${emp.name} CNIC images:`, {
+            front: emp.cnicFrontImage,
+            back: emp.cnicBackImage,
+            hasFront: !!emp.cnicFrontImage,
+            hasBack: !!emp.cnicBackImage
+          });
+          
           return {
             ...emp,
-            advancePayment: emp.advancePayment || 0, // ADDED THIS LINE
+            advancePayment: emp.advancePayment || 0,
+            cnicFrontImage: emp.cnicFrontImage || "",
+            cnicBackImage: emp.cnicBackImage || "",
+            // Fix avatar URL if needed
+            avatar: emp.avatar || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face"
           };
         });
-        console.log("Mapped employees data:", employeesData); // Debug
+        console.log("Mapped employees data with CNIC images:", employeesData);
         setEmployees(employeesData);
       } else {
         console.warn("Backend returned success: false");
@@ -195,7 +223,7 @@ const Employee = () => {
       }
     } catch (error: any) {
       console.error("Failed to load employees:", error);
-      console.error("Error response:", error.response); // Debug
+      console.error("Error response:", error.response);
       alert(`Failed to load employees: ${error.response?.data?.message || error.message}`);
       setEmployees([]);
     } finally {
@@ -220,24 +248,8 @@ const Employee = () => {
     }
   };
 
-  const createEmployee = async (employeeData: any, photoFile?: File) => {
+  const createEmployee = async (formDataToSend: FormData) => {
     try {
-      setIsSubmitting(true);
-      const formDataToSend = new FormData();
-      
-      // Append all form data
-      Object.keys(employeeData).forEach(key => {
-        const value = employeeData[key];
-        if (value !== undefined && value !== null && value !== '') {
-          formDataToSend.append(key, String(value));
-        }
-      });
-
-      // Append photo if exists
-      if (photoFile) {
-        formDataToSend.append("avatar", photoFile);
-      }
-
       const response = await API.post("/employees/create-employee", formDataToSend);
       
       if (response.data.success) {
@@ -246,31 +258,32 @@ const Employee = () => {
         throw new Error(response.data.message || 'Failed to create employee');
       }
     } catch (error: any) {
+      console.error("API Create error:", error);
       throw error;
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
   // UPDATE EMPLOYEE
-  const updateEmployee = async (id: string, employeeData: any, photoFile?: File) => {
+  const updateEmployee = async (id: string, employeeData: any, files: {
+    avatar?: File;
+    cnicFront?: File;
+    cnicBack?: File;
+  }) => {
     try {
       setIsSubmitting(true);
       
-      // Check if id is valid
       if (!id || id === "undefined" || id === "") {
         console.error("Invalid employee ID provided:", id);
         throw new Error("Invalid employee ID");
       }
       
       console.log("Updating employee with MongoDB _id:", id);
-      console.log("Data being sent:", employeeData);
       
       const formDataToSend = new FormData();
       
-      // Append all form data EXCEPT _id (backend uses route param)
+      // Append all form data EXCEPT _id
       Object.keys(employeeData).forEach(key => {
-        if (key !== '_id') { // Don't send _id in form data
+        if (key !== '_id') {
           const value = employeeData[key];
           if (value !== undefined && value !== null && value !== '') {
             formDataToSend.append(key, String(value));
@@ -278,15 +291,20 @@ const Employee = () => {
         }
       });
 
-      // Append photo if exists
-      if (photoFile) {
-        formDataToSend.append("avatar", photoFile);
+      // Append files if exists
+      if (files.avatar) {
+        formDataToSend.append("avatar", files.avatar);
+      }
+      if (files.cnicFront) {
+        formDataToSend.append("cnicFrontImage", files.cnicFront);
+      }
+      if (files.cnicBack) {
+        formDataToSend.append("cnicBackImage", files.cnicBack);
       }
 
-      // Use the MongoDB _id in the URL
       const response = await API.put(`/employees/${id}`, formDataToSend);
       
-      console.log("Update response:", response.data); // Debug
+      console.log("Update response:", response.data);
       
       if (response.data.success) {
         return response.data;
@@ -295,7 +313,7 @@ const Employee = () => {
       }
     } catch (error: any) {
       console.error("Update error details:", error);
-      console.error("Error response:", error.response?.data); // Debug
+      console.error("Error response:", error.response?.data);
       throw error;
     } finally {
       setIsSubmitting(false);
@@ -305,7 +323,6 @@ const Employee = () => {
   // DELETE EMPLOYEE
   const deleteEmployee = async (id: string) => {
     try {
-      // Check if id is valid
       if (!id || id === "undefined") {
         throw new Error("Invalid employee ID");
       }
@@ -331,7 +348,7 @@ const Employee = () => {
       emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       emp.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
       emp.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.employeeId.toLowerCase().includes(searchQuery.toLowerCase())||
+      emp.employeeId.toLowerCase().includes(searchQuery.toLowerCase()) ||
       emp.id.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -345,6 +362,7 @@ const Employee = () => {
     setEditFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  // Handle Photo Upload
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -360,36 +378,183 @@ const Employee = () => {
     reader.readAsDataURL(file);
   };
 
-  const triggerFileInput = (isEdit = false) => {
-    if (isEdit) {
-      editFileInputRef.current?.click();
-    } else {
-      fileInputRef.current?.click();
+  // Handle CNIC Front Image Upload
+  const handleCnicFrontUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (isEdit) {
+        setEditCnicFrontPreview(reader.result as string);
+      } else {
+        setCnicFrontPreview(reader.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Handle CNIC Back Image Upload
+  const handleCnicBackUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (isEdit) {
+        setEditCnicBackPreview(reader.result as string);
+      } else {
+        setCnicBackPreview(reader.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const triggerFileInput = (ref: React.RefObject<HTMLInputElement>) => {
+    ref.current?.click();
+  };
+
+  const checkEmployeeImages = (employee: EmployeeType) => {
+    console.log("=== Employee Image Debug ===");
+    console.log("Employee ID:", employee.employeeId);
+    console.log("Avatar:", employee.avatar);
+    console.log("CNIC Front:", employee.cnicFrontImage);
+    console.log("CNIC Back:", employee.cnicBackImage);
+    console.log("Type of CNIC Front:", typeof employee.cnicFrontImage);
+    console.log("Type of CNIC Back:", typeof employee.cnicBackImage);
+    
+    // Check if URLs are valid
+    if (employee.cnicFrontImage) {
+      console.log("CNIC Front starts with:", employee.cnicFrontImage.substring(0, 50));
     }
+    if (employee.cnicBackImage) {
+      console.log("CNIC Back starts with:", employee.cnicBackImage.substring(0, 50));
+    }
+    console.log("=========================");
+  };
+
+  // Helper function to get full image URL
+  const getFullImageUrl = (imagePath: string | undefined) => {
+    if (!imagePath) return "";
+    
+    // If it's already a full URL, return as is
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+      return imagePath;
+    }
+    
+    // If it's a base64 data URL, return as is
+    if (imagePath.startsWith('data:')) {
+      return imagePath;
+    }
+    
+    // Otherwise, prepend API base URL
+    return `${API_BASE_URL}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
   };
 
   const handleSaveEmployee = async () => {
+    // Validate required fields first
+    const requiredFields = ['employeeId', 'name', 'email', 'phone', 'salary'];
+    const missingFields = requiredFields.filter(field => {
+      const value = formData[field as keyof typeof formData];
+      return !value || (typeof value === 'string' && value.trim() === '');
+    });
+    
+    if (missingFields.length > 0) {
+      alert(`Missing required fields: ${missingFields.join(', ')}`);
+      return;
+    }
+
+    // Validate salary is a valid number
+    const salaryValue = parseFloat(formData.salary.replace(/[^0-9.-]+/g, ""));
+    if (isNaN(salaryValue) || salaryValue <= 0) {
+      alert("Please enter a valid salary amount");
+      return;
+    }
+
     try {
       setIsSubmitting(true);
-      const photoFile = fileInputRef.current?.files?.[0];
       
-      const response = await createEmployee(formData, photoFile);
+      // Debug: Log form data
+      console.log("Form Data to submit:", formData);
+      
+      // Create FormData for submission
+      const formDataToSend = new FormData();
+      
+      // Append all form data
+      Object.keys(formData).forEach(key => {
+        const value = formData[key as keyof typeof formData];
+        if (value !== undefined && value !== null && value !== '') {
+          formDataToSend.append(key, String(value));
+        }
+      });
+      
+      // Append files with correct field names
+      if (fileInputRef.current?.files?.[0]) {
+        formDataToSend.append("avatar", fileInputRef.current.files[0]);
+      }
+      if (cnicFrontInputRef.current?.files?.[0]) {
+        formDataToSend.append("cnicFrontImage", cnicFrontInputRef.current.files[0]);
+      }
+      if (cnicBackInputRef.current?.files?.[0]) {
+        formDataToSend.append("cnicBackImage", cnicBackInputRef.current.files[0]);
+      }
+      
+      // Debug: Log what's being sent
+      console.log("FormData being sent:");
+      for (let pair of formDataToSend.entries()) {
+        console.log(pair[0], pair[1]);
+      }
+      
+      const response = await createEmployee(formDataToSend);
       
       if (response.success) {
         const newEmployee = {
           ...response.data,
           id: response.data._id,
-          advancePayment: response.data.advancePayment || 0, // ADDED THIS
+          advancePayment: response.data.advancePayment || 0,
+          cnicFrontImage: response.data.cnicFrontImage || "",
+          cnicBackImage: response.data.cnicBackImage || "",
+          // Fix avatar URL if needed
+          avatar: response.data.avatar || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face"
         };
+        
+        console.log("New employee with CNIC images:", {
+          cnicFrontImage: newEmployee.cnicFrontImage,
+          cnicBackImage: newEmployee.cnicBackImage
+        });
+        
+        // Update employees list (DO NOT navigate to detail view)
         setEmployees(prev => [...prev, newEmployee]);
         setIsAddModalOpen(false);
         resetForm();
         await fetchEmployeeStats();
         alert("✅ Employee created successfully!");
+        
+        // Stay on list view - FIXED: No auto-navigation to detail page
       }
     } catch (error: any) {
-      console.error("Create error:", error);
-      alert(`Error: ${error.response?.data?.message || error.message || "Failed to create employee"}`);
+      console.error("Create error details:", {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      let errorMessage = "Failed to create employee";
+      
+      if (error.response) {
+        if (error.response.data) {
+          errorMessage = error.response.data.message || `Server error: ${error.response.status}`;
+        } else {
+          errorMessage = `Server error: ${error.response.status}`;
+        }
+      } else if (error.request) {
+        console.error("No response received:", error.request);
+        errorMessage = "No response from server. Please check if backend is running.";
+      } else {
+        errorMessage = error.message || "Failed to create employee";
+      }
+      
+      alert(`Error: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -397,11 +562,9 @@ const Employee = () => {
 
   // HANDLE UPDATE
   const handleUpdateEmployee = async () => {
-    // Get ID from editFormData
     const mongoId = editFormData._id;
     
     console.log("handleUpdateEmployee - ID:", mongoId);
-    console.log("editFormData:", editFormData);
     
     if (!mongoId || mongoId === "undefined" || mongoId === "") {
       alert("Invalid employee ID. Cannot update.");
@@ -410,17 +573,24 @@ const Employee = () => {
 
     try {
       setIsSubmitting(true);
-      const photoFile = editFileInputRef.current?.files?.[0];
+      
+      const files = {
+        avatar: editFileInputRef.current?.files?.[0],
+        cnicFront: editCnicFrontInputRef.current?.files?.[0],
+        cnicBack: editCnicBackInputRef.current?.files?.[0],
+      };
       
       console.log(`✏️ Updating employee with MongoDB ID: ${mongoId}...`);
       
-      const response = await updateEmployee(mongoId, editFormData, photoFile);
+      const response = await updateEmployee(mongoId, editFormData, files);
       
       if (response.success) {
         const updatedEmployee = {
           ...response.data,
           id: response.data._id,
-          advancePayment: response.data.advancePayment || 0, // ADDED THIS
+          advancePayment: response.data.advancePayment || 0,
+          cnicFrontImage: response.data.cnicFrontImage || "",
+          cnicBackImage: response.data.cnicBackImage || "",
         };
         
         setEmployees(prev => 
@@ -492,12 +662,14 @@ const Employee = () => {
       endTime: "17:00",
       responsibilities: "",
       salary: "",
-      advancePayment: "0", // ADDED THIS
+      advancePayment: "0",
     });
     setPhotoPreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    setCnicFrontPreview(null);
+    setCnicBackPreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cnicFrontInputRef.current) cnicFrontInputRef.current.value = "";
+    if (cnicBackInputRef.current) cnicBackInputRef.current.value = "";
   };
 
   const resetEditForm = () => {
@@ -519,27 +691,30 @@ const Employee = () => {
       endTime: "17:00",
       responsibilities: "",
       salary: "",
-      advancePayment: "0", // ADDED THIS
+      advancePayment: "0",
     });
     setEditPhotoPreview(null);
-    if (editFileInputRef.current) {
-      editFileInputRef.current.value = "";
-    }
+    setEditCnicFrontPreview(null);
+    setEditCnicBackPreview(null);
+    if (editFileInputRef.current) editFileInputRef.current.value = "";
+    if (editCnicFrontInputRef.current) editCnicFrontInputRef.current.value = "";
+    if (editCnicBackInputRef.current) editCnicBackInputRef.current.value = "";
   };
 
   // Handle View Profile click
   const handleViewProfile = (employee: EmployeeType) => {
     setSelectedEmployee(employee);
     setView("detail");
-    // URL کو update کریں تاکہ refresh پر بھی detail view برقرار رہے
     setSearchParams({ view: employee._id });
+    
+    // Debug: Check image URLs
+    checkEmployeeImages(employee);
   };
 
   // Handle Back to List
   const handleBackToList = () => {
     setView("list");
     setSelectedEmployee(null);
-    // URL سے view parameter ہٹائیں
     setSearchParams({});
   };
 
@@ -552,7 +727,6 @@ const Employee = () => {
       return;
     }
     
-    // Check for _id in multiple locations
     const mongoId = employee._id || employee.id;
     console.log("MongoDB ID found:", mongoId);
     
@@ -567,7 +741,6 @@ const Employee = () => {
     let salaryValue = "";
     if (employee.salary) {
       if (typeof employee.salary === 'string') {
-        // Remove "Rs. " and commas
         salaryValue = employee.salary.replace(/Rs\.\s?|,/g, '');
       } else if (typeof employee.salary === 'number') {
         salaryValue = employee.salary.toString();
@@ -602,13 +775,15 @@ const Employee = () => {
       endTime: formatTimeForInput(employee.endTime || "17:00"),
       responsibilities: employee.responsibilities || "",
       salary: salaryValue,
-      advancePayment: advancePaymentValue || "0", // ADDED THIS
+      advancePayment: advancePaymentValue || "0",
     };
     
     console.log("Edit form data prepared:", formattedData);
     
     setEditFormData(formattedData);
     setEditPhotoPreview(employee.avatar || null);
+    setEditCnicFrontPreview(employee.cnicFrontImage || null);
+    setEditCnicBackPreview(employee.cnicBackImage || null);
     setIsEditModalOpen(true);
   };
 
@@ -712,7 +887,7 @@ const Employee = () => {
                 <ArrowLeft className="w-5 h-5" />
               </button>
               <img
-                src={selectedEmployee.avatar}
+                src={getFullImageUrl(selectedEmployee.avatar)}
                 alt={selectedEmployee.name}
                 className="w-14 h-14 rounded-full object-cover border-2 border-primary"
                 onError={(e) => {
@@ -761,7 +936,7 @@ const Employee = () => {
                   { icon: MapPin, label: "Address", value: selectedEmployee.address || "N/A" },
                   { icon: Calendar, label: "DOB", value: selectedEmployee.dob || "N/A" },
                   { icon: AlertCircle, label: "Emergency Contact", value: selectedEmployee.emergencyContact || "N/A" },
-                  { icon: Wallet, label: "Advance Payment", value: formatAdvancePayment(selectedEmployee.advancePayment || 0) }, // ADDED THIS
+                  { icon: Wallet, label: "Advance Payment", value: formatAdvancePayment(selectedEmployee.advancePayment || 0) },
                 ].map((item, index) => (
                   <div key={`personal-${index}`} className="flex items-center justify-between">
                     <div className="flex items-center gap-3 text-muted-foreground">
@@ -771,6 +946,79 @@ const Employee = () => {
                     <span className="text-foreground text-right">{item.value}</span>
                   </div>
                 ))}
+              </div>
+              
+              {/* CNIC Images in Detail View */}
+              <div className="mt-8 pt-6 border-t border-border">
+                <h3 className="text-md font-semibold text-foreground mb-4">CNIC Images</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2">CNIC Front</p>
+                    {selectedEmployee && selectedEmployee.cnicFrontImage && 
+                     selectedEmployee.cnicFrontImage !== "" && 
+                     !selectedEmployee.cnicFrontImage.includes("data:image/svg+xml") ? (
+                      <div className="relative">
+                        <img 
+                          src={getFullImageUrl(selectedEmployee.cnicFrontImage)} 
+                          alt="CNIC Front" 
+                          className="w-full h-40 object-contain rounded-lg border border-border bg-gray-50"
+                          onError={(e) => {
+                            console.error("Error loading CNIC front image:", selectedEmployee.cnicFrontImage);
+                            (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23f0f0f0'/%3E%3Ctext x='50' y='55' text-anchor='middle' font-size='10' fill='%23999'%3ECNIC Front%3C/text%3E%3C/svg%3E";
+                          }}
+                        />
+                        <a 
+                          href={getFullImageUrl(selectedEmployee.cnicFrontImage)} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="absolute top-2 right-2 p-1 bg-black/50 rounded-full text-white hover:bg-black/70"
+                          title="View full image"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </a>
+                      </div>
+                    ) : (
+                      <div className="w-full h-40 flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg bg-gray-50">
+                        <FileImage className="w-8 h-8 text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground">No CNIC Front Image</p>
+                        <p className="text-xs text-muted-foreground mt-1">Upload in edit mode</p>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2">CNIC Back</p>
+                    {selectedEmployee && selectedEmployee.cnicBackImage && 
+                     selectedEmployee.cnicBackImage !== "" && 
+                     !selectedEmployee.cnicBackImage.includes("data:image/svg+xml") ? (
+                      <div className="relative">
+                        <img 
+                          src={getFullImageUrl(selectedEmployee.cnicBackImage)} 
+                          alt="CNIC Back" 
+                          className="w-full h-40 object-contain rounded-lg border border-border bg-gray-50"
+                          onError={(e) => {
+                            console.error("Error loading CNIC back image:", selectedEmployee.cnicBackImage);
+                            (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23f0f0f0'/%3E%3Ctext x='50' y='55' text-anchor='middle' font-size='10' fill='%23999'%3ECNIC Back%3C/text%3E%3C/svg%3E";
+                          }}
+                        />
+                        <a 
+                          href={getFullImageUrl(selectedEmployee.cnicBackImage)} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="absolute top-2 right-2 p-1 bg-black/50 rounded-full text-white hover:bg-black/70"
+                          title="View full image"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </a>
+                      </div>
+                    ) : (
+                      <div className="w-full h-40 flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg bg-gray-50">
+                        <FileImage className="w-8 h-8 text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground">No CNIC Back Image</p>
+                        <p className="text-xs text-muted-foreground mt-1">Upload in edit mode</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -808,13 +1056,25 @@ const Employee = () => {
     <div className="h-full w-full bg-background">
       <div className="h-full w-full px-6 py-4">
         {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
-          <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center">
-            <Users className="w-6 h-6 text-primary" />
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center">
+              <Users className="w-6 h-6 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Employees</h1>
+              <p className="text-sm text-muted-foreground">Total: {stats.totalEmployees} employees</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Employees</h1>
-            <p className="text-sm text-muted-foreground">Total: {stats.totalEmployees} employees</p>
+          <div className="flex items-center gap-3">
+            <button className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-xl text-foreground hover:bg-secondary transition-colors">
+              <Download className="w-4 h-4" />
+              Export
+            </button>
+            <button className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-xl text-foreground hover:bg-secondary transition-colors">
+              <Printer className="w-4 h-4" />
+              Print
+            </button>
           </div>
         </div>
 
@@ -850,14 +1110,10 @@ const Employee = () => {
           <div className="flex gap-3">
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-2 px-5 py-3 bg-card border border-border rounded-xl text-foreground hover:bg-secondary transition-colors"
+              className="flex items-center gap-2 px-5 py-3 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors"
             >
               <Plus className="w-5 h-5" />
-              Add Employees
-            </button>
-            <button className="flex items-center gap-2 px-5 py-3 bg-card border border-border rounded-xl text-foreground hover:bg-secondary transition-colors">
-              <Printer className="w-5 h-5" />
-              Print
+              Add Employee
             </button>
           </div>
         </div>
@@ -870,89 +1126,175 @@ const Employee = () => {
           </div>
         ) : (
           <>
-            {/* Employee Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredEmployees.map((employee) => (
-                <div
-                  key={employee._id}
-                  className="bg-card rounded-xl p-5 hover:shadow-lg transition-shadow"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={employee.avatar}
-                        alt={employee.name}
-                        className="w-12 h-12 rounded-full object-cover border-2 border-primary"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face";
-                        }}
-                      />
-                      <div>
-                        <h3 className="font-semibold text-foreground">{employee.name}</h3>
-                        <p className="text-sm text-muted-foreground">{employee.title}</p>
-                        <p className="text-xs text-muted-foreground">ID: {employee.employeeId}</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleEditClick(employee)}
-                      className="text-muted-foreground hover:text-foreground transition-colors p-1"
-                      title="Edit Employee"
-                    >
-                      <Pencil className="w-4 h-4" />
+            {/* Employee Table */}
+            <div className="bg-card rounded-xl overflow-hidden border border-border">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1000px]">
+                  <thead>
+                    <tr className="bg-secondary border-b border-border">
+                      <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Employee
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Contact
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Department & Role
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Schedule
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Salary
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Advance
+                      </th>
+                      <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {filteredEmployees.map((employee) => (
+                      <tr key={employee._id} className="hover:bg-secondary/50 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className="relative">
+                              <img
+                                src={getFullImageUrl(employee.avatar)}
+                                alt={employee.name}
+                                className="w-10 h-10 rounded-full object-cover border border-primary"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face";
+                                }}
+                              />
+                              <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-white ${
+                                employee.isActive ? 'bg-green-500' : 'bg-red-500'
+                              }`}></div>
+                            </div>
+                            <div>
+                              <p className="font-medium text-sm text-foreground">{employee.name}</p>
+                              <p className="text-xs text-muted-foreground">ID: {employee.employeeId}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Phone className="w-3 h-3 text-muted-foreground" />
+                              <span className="text-sm text-foreground">{employee.phone}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Mail className="w-3 h-3 text-muted-foreground" />
+                              <span className="text-sm text-foreground truncate max-w-[180px]">
+                                {employee.email}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-foreground">{employee.department}</p>
+                            <p className="text-xs text-muted-foreground">{employee.title}</p>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-3 h-3 text-muted-foreground" />
+                            <span className="text-sm text-foreground">{formatSchedule(employee)}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <DollarSign className="w-3 h-3 text-muted-foreground" />
+                            <span className="text-sm text-foreground">{formatSalary(employee.salary)}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <Wallet className="w-3 h-3 text-muted-foreground" />
+                            <span className="text-sm text-foreground">{formatAdvancePayment(employee.advancePayment || 0)}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleViewProfile(employee)}
+                              className="p-1.5 hover:bg-muted rounded-md transition-colors"
+                              title="View details"
+                            >
+                              <Eye className="w-4 h-4 text-muted-foreground" />
+                            </button>
+                            <button
+                              onClick={() => handleEditClick(employee)}
+                              className="p-1.5 hover:bg-muted rounded-md transition-colors"
+                              title="Edit employee"
+                            >
+                              <Pencil className="w-4 h-4 text-muted-foreground" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteEmployee(employee)}
+                              className="p-1.5 hover:bg-destructive/10 rounded-md transition-colors"
+                              title="Delete employee"
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </button>
+                            <button className="p-1.5 hover:bg-muted rounded-md transition-colors">
+                              <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Table Footer */}
+              <div className="bg-secondary border-t border-border px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {filteredEmployees.length} of {employees.length} employees
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors">
+                      Previous
+                    </button>
+                    <span className="px-3 py-1.5 text-sm text-foreground">1</span>
+                    <button className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors">
+                      Next
                     </button>
                   </div>
-
-                  <div className="space-y-3 text-sm">
-                    <div className="flex items-center gap-3 text-muted-foreground">
-                      <Building2 className="w-4 h-4" />
-                      <span>{employee.department || "No Department"}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-muted-foreground">
-                      <Mail className="w-4 h-4" />
-                      <span>{employee.email}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-muted-foreground">
-                      <Phone className="w-4 h-4" />
-                      <span>{employee.phone}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-muted-foreground">
-                      <Clock className="w-4 h-4" />
-                      <span>{formatSchedule(employee)}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-muted-foreground">
-                      <DollarSign className="w-4 h-4" />
-                      <span>{formatSalary(employee.salary)}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-muted-foreground">
-                      <Wallet className="w-4 h-4" />
-                      <span>Advance: {formatAdvancePayment(employee.advancePayment || 0)}</span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => handleViewProfile(employee)}
-                    className="w-full mt-5 py-2.5 text-center text-foreground hover:text-primary transition-colors border-t border-border"
-                  >
-                    View Profile
-                  </button>
                 </div>
-              ))}
+              </div>
             </div>
 
             {/* No Results */}
             {!isLoading && filteredEmployees.length === 0 && employees.length > 0 && (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">No employees match your search</p>
+              <div className="text-center py-12 bg-card rounded-xl border border-border mt-6">
+                <Search className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground mb-2">No employees found for "{searchQuery}"</p>
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="text-sm text-primary hover:text-primary/80"
+                >
+                  Clear search
+                </button>
               </div>
             )}
 
             {!isLoading && employees.length === 0 && (
               <div className="text-center py-12">
+                <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Users className="w-10 h-10 text-primary" />
+                </div>
                 <p className="text-muted-foreground mb-4">No employees found</p>
                 <button
                   onClick={() => setIsAddModalOpen(true)}
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+                  className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 mx-auto"
                 >
+                  <Plus className="w-5 h-5" />
                   Add Your First Employee
                 </button>
               </div>
@@ -972,35 +1314,99 @@ const Employee = () => {
             </DialogHeader>
 
             <div className="mt-6">
-              {/* Photo Upload */}
-              <div className="flex items-center gap-4 mb-8">
-                <div 
-                  onClick={() => triggerFileInput(false)}
-                  className="w-16 h-16 bg-primary rounded-full flex items-center justify-center relative cursor-pointer hover:bg-primary/90 transition-colors"
-                >
-                  {photoPreview ? (
-                    <img 
-                      src={photoPreview} 
-                      alt="Preview" 
-                      className="w-full h-full rounded-full object-cover"
+              {/* Photo Upload Section */}
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold text-foreground mb-4">Upload Images</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Profile Photo */}
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2">Profile Photo</p>
+                    <div 
+                      onClick={() => triggerFileInput(fileInputRef)}
+                      className="w-full h-32 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-secondary transition-colors"
+                    >
+                      {photoPreview ? (
+                        <img 
+                          src={photoPreview} 
+                          alt="Profile Preview" 
+                          className="w-full h-full object-cover rounded-lg"
+                        />
+                      ) : (
+                        <>
+                          <User className="w-8 h-8 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground">Click to upload</p>
+                          <p className="text-xs text-muted-foreground mt-1">PNG, JPG up to 1MB</p>
+                        </>
+                      )}
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handlePhotoUpload(e, false)}
+                      className="hidden"
                     />
-                  ) : (
-                    <User className="w-8 h-8 text-primary-foreground" />
-                  )}
-                  <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-accent rounded-full flex items-center justify-center">
-                    <Plus className="w-4 h-4 text-accent-foreground" />
                   </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => handlePhotoUpload(e, false)}
-                    className="hidden"
-                  />
-                </div>
-                <div>
-                  <p className="font-semibold text-foreground">Upload Photo</p>
-                  <p className="text-sm text-muted-foreground">PNG, JPG up to 1MB</p>
+
+                  {/* CNIC Front */}
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2">CNIC Front</p>
+                    <div 
+                      onClick={() => triggerFileInput(cnicFrontInputRef)}
+                      className="w-full h-32 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-secondary transition-colors"
+                    >
+                      {cnicFrontPreview ? (
+                        <img 
+                          src={cnicFrontPreview} 
+                          alt="CNIC Front Preview" 
+                          className="w-full h-full object-cover rounded-lg"
+                        />
+                      ) : (
+                        <>
+                          <FileImage className="w-8 h-8 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground">Click to upload</p>
+                          <p className="text-xs text-muted-foreground mt-1">PNG, JPG up to 1MB</p>
+                        </>
+                      )}
+                    </div>
+                    <input
+                      ref={cnicFrontInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleCnicFrontUpload(e, false)}
+                      className="hidden"
+                    />
+                  </div>
+
+                  {/* CNIC Back */}
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2">CNIC Back</p>
+                    <div 
+                      onClick={() => triggerFileInput(cnicBackInputRef)}
+                      className="w-full h-32 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-secondary transition-colors"
+                    >
+                      {cnicBackPreview ? (
+                        <img 
+                          src={cnicBackPreview} 
+                          alt="CNIC Back Preview" 
+                          className="w-full h-full object-cover rounded-lg"
+                        />
+                      ) : (
+                        <>
+                          <FileImage className="w-8 h-8 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground">Click to upload</p>
+                          <p className="text-xs text-muted-foreground mt-1">PNG, JPG up to 1MB</p>
+                        </>
+                      )}
+                    </div>
+                    <input
+                      ref={cnicBackInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleCnicBackUpload(e, false)}
+                      className="hidden"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -1016,7 +1422,7 @@ const Employee = () => {
                     { name: 'cnic', label: 'CNIC No.', type: 'text', placeholder: 'e.g 17301-242111-3' },
                     { name: 'dob', label: 'Date of Birth', type: 'date' },
                     { name: 'emergencyContact', label: 'Emergency Contact', type: 'text', placeholder: 'e.g 83662626' },
-                    { name: 'advancePayment', label: 'Advance Payment', type: 'number', placeholder: 'e.g 5000' }, // ADDED THIS
+                    { name: 'advancePayment', label: 'Advance Payment', type: 'number', placeholder: 'e.g 5000', min: "0" },
                   ].map((field) => (
                     <div key={field.name}>
                       <label className="block text-sm text-muted-foreground mb-2">{field.label}</label>
@@ -1027,7 +1433,7 @@ const Employee = () => {
                         onChange={handleInputChange}
                         placeholder={field.placeholder}
                         className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                        min={field.name === 'advancePayment' ? "0" : undefined}
+                        min={field.min}
                         step={field.name === 'advancePayment' ? "1" : undefined}
                       />
                     </div>
@@ -1039,49 +1445,37 @@ const Employee = () => {
               <div className="mb-8">
                 <h3 className="text-lg font-semibold text-foreground mb-4">Employment Details</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                 {[
-  { name: 'employeeId', label: 'Employee ID', type: 'text', placeholder: 'e.g EMP202' },
-  { 
-    name: 'title', 
-    label: 'Job Title', 
-    type: 'text',  // CHANGED FROM 'select' TO 'text'
-    placeholder: 'e.g Senior Developer'  // ADDED PLACEHOLDER
-  },
-  { 
-    name: 'department', 
-    label: 'Department', 
-    type: 'text',  // CHANGED FROM 'select' TO 'text'
-    placeholder: 'e.g IT Department'  // ADDED PLACEHOLDER
-  },
-  { name: 'reportingManager', label: 'Reporting Manager', type: 'text', placeholder: 'e.g Mil young' },
-  { name: 'hireDate', label: 'Hiring Date', type: 'date' },
-  { name: 'salary', label: 'Salary', type: 'text', placeholder: 'e.g 40000' },
-].map((field) => (
+                  {[
+                    { name: 'employeeId', label: 'Employee ID', type: 'text', placeholder: 'e.g EMP202' },
+                    { 
+                      name: 'title', 
+                      label: 'Job Title', 
+                      type: 'text',
+                      placeholder: 'e.g Senior Developer'
+                    },
+                    { 
+                      name: 'department', 
+                      label: 'Department', 
+                      type: 'text',
+                      placeholder: 'e.g IT Department'
+                    },
+                    { name: 'reportingManager', label: 'Reporting Manager', type: 'text', placeholder: 'e.g Mil young' },
+                    { name: 'hireDate', label: 'Hiring Date', type: 'date' },
+                    { name: 'salary', label: 'Salary*', type: 'number', placeholder: 'e.g 40000', min: "0", step: "1" },
+                  ].map((field) => (
                     <div key={field.name}>
                       <label className="block text-sm text-muted-foreground mb-2">{field.label}</label>
-                      {field.type === 'select' ? (
-                        <select
-                          name={field.name}
-                          value={formData[field.name as keyof typeof formData] || ''}
-                          onChange={handleInputChange}
-                          className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                        >
-                          {field.options?.map(option => (
-                            <option key={option} value={option}>
-                              {option || `Select ${field.label.toLowerCase()}`}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          type={field.type}
-                          name={field.name}
-                          value={formData[field.name as keyof typeof formData] || ''}
-                          onChange={handleInputChange}
-                          placeholder={field.placeholder}
-                          className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                        />
-                      )}
+                      <input
+                        type={field.type}
+                        name={field.name}
+                        value={formData[field.name as keyof typeof formData] || ''}
+                        onChange={handleInputChange}
+                        placeholder={field.placeholder}
+                        className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                        min={field.min}
+                        step={field.step}
+                        required={field.name === 'salary'}
+                      />
                     </div>
                   ))}
                   
@@ -1175,35 +1569,99 @@ const Employee = () => {
             </DialogHeader>
 
             <div className="mt-6">
-              {/* Photo Upload */}
-              <div className="flex items-center gap-4 mb-8">
-                <div 
-                  onClick={() => triggerFileInput(true)}
-                  className="w-16 h-16 bg-primary rounded-full flex items-center justify-center relative cursor-pointer hover:bg-primary/90 transition-colors"
-                >
-                  {editPhotoPreview ? (
-                    <img 
-                      src={editPhotoPreview} 
-                      alt="Preview" 
-                      className="w-full h-full rounded-full object-cover"
+              {/* Photo Upload Section */}
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold text-foreground mb-4">Upload Images</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Profile Photo */}
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2">Profile Photo</p>
+                    <div 
+                      onClick={() => triggerFileInput(editFileInputRef)}
+                      className="w-full h-32 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-secondary transition-colors"
+                    >
+                      {editPhotoPreview ? (
+                        <img 
+                          src={editPhotoPreview} 
+                          alt="Profile Preview" 
+                          className="w-full h-full object-cover rounded-lg"
+                        />
+                      ) : (
+                        <>
+                          <User className="w-8 h-8 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground">Click to upload</p>
+                          <p className="text-xs text-muted-foreground mt-1">PNG, JPG up to 1MB</p>
+                        </>
+                      )}
+                    </div>
+                    <input
+                      ref={editFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handlePhotoUpload(e, true)}
+                      className="hidden"
                     />
-                  ) : (
-                    <User className="w-8 h-8 text-primary-foreground" />
-                  )}
-                  <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-accent rounded-full flex items-center justify-center">
-                    <Plus className="w-4 h-4 text-accent-foreground" />
                   </div>
-                  <input
-                    ref={editFileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => handlePhotoUpload(e, true)}
-                    className="hidden"
-                  />
-                </div>
-                <div>
-                  <p className="font-semibold text-foreground">Upload Photo</p>
-                  <p className="text-sm text-muted-foreground">PNG, JPG up to 1MB</p>
+
+                  {/* CNIC Front */}
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2">CNIC Front</p>
+                    <div 
+                      onClick={() => triggerFileInput(editCnicFrontInputRef)}
+                      className="w-full h-32 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-secondary transition-colors"
+                    >
+                      {editCnicFrontPreview ? (
+                        <img 
+                          src={editCnicFrontPreview} 
+                          alt="CNIC Front Preview" 
+                          className="w-full h-full object-cover rounded-lg"
+                        />
+                      ) : (
+                        <>
+                          <FileImage className="w-8 h-8 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground">Click to upload</p>
+                          <p className="text-xs text-muted-foreground mt-1">PNG, JPG up to 1MB</p>
+                        </>
+                      )}
+                    </div>
+                    <input
+                      ref={editCnicFrontInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleCnicFrontUpload(e, true)}
+                      className="hidden"
+                    />
+                  </div>
+
+                  {/* CNIC Back */}
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2">CNIC Back</p>
+                    <div 
+                      onClick={() => triggerFileInput(editCnicBackInputRef)}
+                      className="w-full h-32 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-secondary transition-colors"
+                    >
+                      {editCnicBackPreview ? (
+                        <img 
+                          src={editCnicBackPreview} 
+                          alt="CNIC Back Preview" 
+                          className="w-full h-full object-cover rounded-lg"
+                        />
+                      ) : (
+                        <>
+                          <FileImage className="w-8 h-8 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground">Click to upload</p>
+                          <p className="text-xs text-muted-foreground mt-1">PNG, JPG up to 1MB</p>
+                        </>
+                      )}
+                    </div>
+                    <input
+                      ref={editCnicBackInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleCnicBackUpload(e, true)}
+                      className="hidden"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -1219,7 +1677,7 @@ const Employee = () => {
                     { name: 'cnic', label: 'CNIC No.', type: 'text', placeholder: 'e.g 17301-242111-3' },
                     { name: 'dob', label: 'Date of Birth', type: 'date' },
                     { name: 'emergencyContact', label: 'Emergency Contact', type: 'text', placeholder: 'e.g 83662626' },
-                    { name: 'advancePayment', label: 'Advance Payment', type: 'number', placeholder: 'e.g 5000' }, // ADDED THIS
+                    { name: 'advancePayment', label: 'Advance Payment', type: 'number', placeholder: 'e.g 5000', min: "0" },
                   ].map((field) => (
                     <div key={field.name}>
                       <label className="block text-sm text-muted-foreground mb-2">{field.label}</label>
@@ -1230,7 +1688,7 @@ const Employee = () => {
                         onChange={handleEditInputChange}
                         placeholder={field.placeholder}
                         className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                        min={field.name === 'advancePayment' ? "0" : undefined}
+                        min={field.min}
                         step={field.name === 'advancePayment' ? "1" : undefined}
                       />
                     </div>
@@ -1259,44 +1717,31 @@ const Employee = () => {
                     { 
                       name: 'title', 
                       label: 'Job Title', 
-                      type: 'select',
-                      options: ['', 'Lead Designer', 'Frontend Dev', 'Backend Dev', 'Manager', 'HR', 'Accountant', 'Sales Executive'] 
+                      type: 'text',
+                      placeholder: 'e.g Senior Developer'
                     },
                     { 
                       name: 'department', 
                       label: 'Department', 
-                      type: 'select',
-                      options: ['', 'Production', 'Engineering', 'Marketing', 'HR', 'Finance', 'Sales', 'Operations'] 
+                      type: 'text',
+                      placeholder: 'e.g IT Department'
                     },
                     { name: 'reportingManager', label: 'Reporting Manager', type: 'text', placeholder: 'e.g Mil young' },
                     { name: 'hireDate', label: 'Hiring Date', type: 'date' },
-                    { name: 'salary', label: 'Salary', type: 'text', placeholder: 'e.g 40000' },
+                    { name: 'salary', label: 'Salary', type: 'number', placeholder: 'e.g 40000', min: "0", step: "1" },
                   ].map((field) => (
                     <div key={field.name}>
                       <label className="block text-sm text-muted-foreground mb-2">{field.label}</label>
-                      {field.type === 'select' ? (
-                        <select
-                          name={field.name}
-                          value={editFormData[field.name as keyof typeof editFormData] || ''}
-                          onChange={handleEditInputChange}
-                          className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                        >
-                          {field.options?.map(option => (
-                            <option key={option} value={option}>
-                              {option || `Select ${field.label.toLowerCase()}`}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          type={field.type}
-                          name={field.name}
-                          value={editFormData[field.name as keyof typeof editFormData] || ''}
-                          onChange={handleEditInputChange}
-                          placeholder={field.placeholder}
-                          className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                        />
-                      )}
+                      <input
+                        type={field.type}
+                        name={field.name}
+                        value={editFormData[field.name as keyof typeof editFormData] || ''}
+                        onChange={handleEditInputChange}
+                        placeholder={field.placeholder}
+                        className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                        min={field.min}
+                        step={field.step}
+                      />
                     </div>
                   ))}
                   
@@ -1336,13 +1781,6 @@ const Employee = () => {
                     />
                   </div>
                 </div>
-              </div>
-
-              {/* Debug Info (remove in production) */}
-              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-xs text-yellow-800">
-                  Debug Info: MongoDB ID: {editFormData._id || "Not found"}
-                </p>
               </div>
 
               {/* Action Buttons */}

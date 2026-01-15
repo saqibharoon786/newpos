@@ -1,106 +1,130 @@
-const { default: mongoose } = require("mongoose");
+const mongoose = require("mongoose");
 const Sale = require("../models/pos.model");
+const Purchase = require("../models/pop.model");
 const path = require("path");
 const fs = require("fs");
 
-// ➕ Add Sale (with optional receipt image) - FIXED VERSION
+// ➕ Add Sale (with optional receipt image)
+// controllers/pos.controller.js
+
+// Add Sale function - UPDATED VERSION
 const addSale = async (req, res) => {
   try {
-    console.log("=== ADD SALE REQUEST ===");
-    console.log("Request file:", req.file); // Debug log
-    console.log("Request body:", req.body); // Debug log
-    console.log("Request body keys:", Object.keys(req.body)); // Debug log
-    
     const {
-      materialName,
-      supplierName,
-      invoiceNo,
-      weight,
-      unit,
-      purchaseDate,
-      purchaseTime,
-      branch,
-      materialColor,
-      actualPrice,
-      productionCost,
+      purchaseId,
+      customerName,
+      customerPhone,
+      customerEmail,
       sellingPrice,
-      discount,
-      advancePayment, // ADDED THIS FIELD
-      buyerName,
-      buyerAddress,
-      buyerPhone,
-      buyerEmail,
-      buyerCnic,
-      buyerCompany,
+      sellingWeight,
+      saleDate,
+      paymentMethod,
+      paymentStatus,
+      invoiceNo,
+      transportationCost,
+      notes
     } = req.body;
 
-    console.log("Invoice No from body:", invoiceNo); // Debug log
-    console.log("Advance Payment from body:", advancePayment, "Type:", typeof advancePayment); // ADDED THIS LINE
-
-    // Calculate final amount
-    const sellingPriceNum = parseFloat(sellingPrice) || 0;
-    const discountNum = parseFloat(discount) || 0;
-    const finalAmount = sellingPriceNum - discountNum;
-
-    // Parse advance payment (convert to number, default to 0)
-    const advancePaymentNum = parseFloat(advancePayment) || 0;
-
-    // Handle receipt image uploaded via Multer
-    let receiptImagePath = "";
-    
-    if (req.file) {
-      // File is saved by Multer - get the filename
-      console.log("File received:", req.file); // Debug log
-      console.log("File name:", req.file.filename); // Debug log
-      console.log("File path:", req.file.path); // Debug log
-      
-      // Store path relative to uploads folder
-      receiptImagePath = `/receipts/${req.file.filename}`;
-      console.log("Receipt image path to save:", receiptImagePath); // Debug log
-    } else {
-      console.log("No file received in request"); // Debug log
+    // Validate required fields
+    if (!purchaseId || !customerName || !sellingPrice || !sellingWeight || !invoiceNo) {
+      return res.status(400).json({
+        success: false,
+        message: "Required fields missing: purchaseId, customerName, sellingPrice, sellingWeight, invoiceNo"
+      });
     }
 
-    const sale = await Sale.create({
-      materialName,
-      supplierName,
-      invoiceNo,
-      weight,
-      unit,
-      purchaseDate,
-      purchaseTime,
-      branch,
-      materialColor,
-      actualPrice,
-      productionCost,
-      sellingPrice,
-      discount,
-      finalAmount: finalAmount.toString(),
-      advancePayment: advancePaymentNum, // ADDED THIS FIELD
-      buyerName,
-      buyerAddress,
-      buyerPhone,
-      buyerEmail,
-      buyerCnic,
-      buyerCompany,
-      receiptImage: receiptImagePath, // Save the path
-    });
+    // Find purchase
+    const purchase = await Purchase.findById(purchaseId);
+    if (!purchase) {
+      return res.status(404).json({
+        success: false,
+        message: "Purchase not found"
+      });
+    }
 
-    console.log("Sale created successfully. ID:", sale._id); // Debug log
-    console.log("Receipt image in saved sale:", sale.receiptImage); // Debug log
-    console.log("Advance payment in saved sale:", sale.advancePayment); // ADDED THIS LINE
+    // Convert weights to numbers
+    const purchaseWeight = parseFloat(purchase.weight) || 0;
+    const weightToSell = parseFloat(sellingWeight);
+
+    // Check if enough stock
+    if (weightToSell > purchaseWeight) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot sell ${weightToSell}kg. Only ${purchaseWeight}kg available.`
+      });
+    }
+
+    // Calculate new remaining weight
+    const newRemainingWeight = purchaseWeight - weightToSell;
+
+    // Update purchase record
+    purchase.weight = newRemainingWeight.toString();
+    
+    // Update status if all sold
+    if (newRemainingWeight === 0) {
+      purchase.status = 'sold_out';
+    } else {
+      purchase.status = 'partially_sold';
+    }
+    
+    await purchase.save();
+
+    // Get receipt image if uploaded
+    const receiptImage = req.file ? `/uploads/receipts/${req.file.filename}` : "";
+
+    // Create sale record using your Sale model fields
+    // Map frontend fields to Sale model fields
+    const sale = await Sale.create({
+      // Map from frontend to Sale model
+      purchaseId,  // Add this to your Sale model if not exists
+      materialName: purchase.materialName,  // Get from purchase
+      supplierName: purchase.vendor,        // Get from purchase
+      invoiceNo,
+      weight: sellingWeight.toString(),     // Selling weight
+      unit: "kg",                           // Default or get from purchase
+      purchaseDate: saleDate || new Date().toISOString(),
+      purchaseTime: new Date().toLocaleTimeString('en-US', { 
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      branch: "Main",                       // Default
+      materialColor: purchase.materialColor, // Get from purchase
+      actualPrice: purchase.price,          // Get from purchase
+      productionCost: "0",                   // Default or calculate
+      sellingPrice: sellingPrice.toString(),
+      discount: "0",
+      finalAmount: sellingPrice.toString(),
+      advancePayment: 0,
+      buyerName: customerName,
+      buyerAddress: "",
+      buyerPhone: customerPhone || "",
+      buyerEmail: customerEmail || "",
+      buyerCnic: "",
+      buyerCompany: "",
+      receiptImage,
+      transportationCost: transportationCost || 0,
+      notes: notes || ""
+    });
 
     res.status(201).json({
       success: true,
-      message: "Sale added successfully",
-      data: sale,
+      message: "Sale completed successfully",
+      data: {
+        sale,
+        updatedPurchase: {
+          id: purchase._id,
+          remainingWeight: newRemainingWeight,
+          status: purchase.status
+        }
+      }
     });
+
   } catch (error) {
-    console.error('Error in addSale:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message,
-      stack: error.stack // Add stack trace for debugging
+    console.error('Sale error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Internal server error"
     });
   }
 };
@@ -150,7 +174,7 @@ const getSaleById = async (req, res) => {
     // Add full URL to receiptImage if it exists
     const saleObj = sale.toObject();
     if (saleObj.receiptImage && saleObj.receiptImage.trim() !== '') {
-      saleObj.receiptImage = `${req.protocol}://${req.get('host')}/uploads/${saleObj.receiptImage}`;
+      saleObj.receiptImage = `${req.protocol}://${req.get('host')}${saleObj.receiptImage}`;
     }
 
     res.status(200).json({ success: true, data: saleObj });
@@ -161,15 +185,14 @@ const getSaleById = async (req, res) => {
   }
 };
 
-// ✏️ Update Sale (with receipt image update)
+// ✏️ Update Sale
 const updateSale = async (req, res) => {
   try {
     const { id } = req.params;
 
     console.log("=== UPDATE SALE REQUEST ===");
-    console.log("Request file:", req.file); // Debug log
-    console.log("Request body:", req.body); // Debug log
-    console.log("Advance Payment in request:", req.body.advancePayment); // ADDED THIS LINE
+    console.log("Request file:", req.file);
+    console.log("Request body:", req.body);
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -190,26 +213,22 @@ const updateSale = async (req, res) => {
     // Prepare update data
     const updateData = { ...req.body };
 
-    // Handle receipt image via Multer
+    // Handle receipt image
     if (req.file) {
-      console.log("New file uploaded:", req.file.filename); // Debug log
+      console.log("New file uploaded:", req.file.filename);
       
       // Delete old receipt image if exists
       if (existingSale.receiptImage && existingSale.receiptImage.trim() !== '') {
         const oldImagePath = path.join(process.env.UPLOAD_PATH || "./uploads", existingSale.receiptImage);
-        console.log("Old image path:", oldImagePath); // Debug log
-        
         if (fs.existsSync(oldImagePath)) {
           fs.unlinkSync(oldImagePath);
-          console.log("Old image deleted"); // Debug log
         }
       }
       
       // Save new receipt image path
       updateData.receiptImage = `/receipts/${req.file.filename}`;
-      console.log("New receipt image path:", updateData.receiptImage); // Debug log
     } else if (req.body.removeReceipt === 'true') {
-      // If user wants to remove receipt image
+      // Remove receipt image
       if (existingSale.receiptImage && existingSale.receiptImage.trim() !== '') {
         const oldImagePath = path.join(process.env.UPLOAD_PATH || "./uploads", existingSale.receiptImage);
         if (fs.existsSync(oldImagePath)) {
@@ -219,22 +238,16 @@ const updateSale = async (req, res) => {
       updateData.receiptImage = "";
     }
 
-    // Calculate final amount if sellingPrice or discount is updated
+    // Calculate final amount
     if (updateData.sellingPrice || updateData.discount) {
       const sellingPriceNum = parseFloat(updateData.sellingPrice) || parseFloat(existingSale.sellingPrice) || 0;
       const discountNum = parseFloat(updateData.discount) || parseFloat(existingSale.discount) || 0;
       updateData.finalAmount = (sellingPriceNum - discountNum).toString();
     }
 
-    // Handle advance payment - convert to number
+    // Handle advance payment
     if (updateData.advancePayment !== undefined) {
       updateData.advancePayment = parseFloat(updateData.advancePayment) || 0;
-      console.log("Parsed advance payment:", updateData.advancePayment); // ADDED THIS LINE
-    }
-
-    // If advancePayment is being updated but is empty string, set to 0
-    if (updateData.advancePayment === "") {
-      updateData.advancePayment = 0;
     }
 
     const sale = await Sale.findByIdAndUpdate(
@@ -249,8 +262,6 @@ const updateSale = async (req, res) => {
       saleObj.receiptImage = `${req.protocol}://${req.get('host')}${saleObj.receiptImage}`;
     }
 
-    console.log("Updated sale advance payment:", saleObj.advancePayment); // ADDED THIS LINE
-
     res.status(200).json({
       success: true,
       message: "Sale updated successfully",
@@ -262,7 +273,7 @@ const updateSale = async (req, res) => {
   }
 };
 
-// 🗑 Delete Sale (with receipt image cleanup)
+// 🗑 Delete Sale
 const deleteSale = async (req, res) => {
   try {
     const { id } = req.params;
@@ -301,10 +312,135 @@ const deleteSale = async (req, res) => {
   }
 };
 
+// 🔍 Get all sales by material name (for POP integration)
+const getSalesByMaterial = async (req, res) => {
+  try {
+    const { materialName } = req.params;
+    
+    const sales = await Sale.find({ materialName }).sort({ createdAt: -1 });
+    
+    // Calculate total sold weight
+    let totalSoldWeight = 0;
+    sales.forEach(sale => {
+      totalSoldWeight += parseFloat(sale.weight) || 0;
+    });
+    
+    // Add full URL to receiptImage if it exists
+    const salesWithFullUrls = sales.map(sale => {
+      const saleObj = sale.toObject();
+      if (saleObj.receiptImage && saleObj.receiptImage.trim() !== '') {
+        saleObj.receiptImage = `${req.protocol}://${req.get('host')}${saleObj.receiptImage}`;
+      }
+      return saleObj;
+    });
+    
+    res.status(200).json({ 
+      success: true, 
+      data: salesWithFullUrls,
+      totalSoldWeight,
+      salesCount: sales.length
+    });
+  } catch (error) {
+    console.error('Error in getSalesByMaterial:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+};
+
+// 📊 Get total sold weight by material
+const getTotalSoldWeightByMaterial = async (req, res) => {
+  try {
+    const { materialName } = req.params;
+    
+    const sales = await Sale.find({ materialName });
+    
+    let totalSoldWeight = 0;
+    sales.forEach(sale => {
+      totalSoldWeight += parseFloat(sale.weight) || 0;
+    });
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        totalSoldWeight,
+        salesCount: sales.length
+      }
+    });
+  } catch (error) {
+    console.error('Error in getTotalSoldWeightByMaterial:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+};
+
+// 📈 Get sales statistics
+const getSalesStatistics = async (req, res) => {
+  try {
+    const totalSales = await Sale.countDocuments();
+    const totalWeight = await Sale.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalWeight: { 
+            $sum: { 
+              $convert: { input: "$weight", to: "double", onError: 0 } 
+            }
+          }
+        }
+      }
+    ]);
+    
+    const totalAdvancePayment = await Sale.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalAdvance: { $sum: "$advancePayment" }
+        }
+      }
+    ]);
+    
+    const totalRevenue = await Sale.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { 
+            $sum: { 
+              $convert: { input: "$finalAmount", to: "double", onError: 0 } 
+            }
+          }
+        }
+      }
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalSales,
+        totalWeight: totalWeight[0]?.totalWeight || 0,
+        totalAdvancePayment: totalAdvancePayment[0]?.totalAdvance || 0,
+        totalRevenue: totalRevenue[0]?.totalRevenue || 0,
+      }
+    });
+  } catch (error) {
+    console.error('Error in getSalesStatistics:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+};
+
 module.exports = {
   addSale,
   getSales,
   getSaleById,
   updateSale,
   deleteSale,
+  getSalesByMaterial,
+  getTotalSoldWeightByMaterial,
+  getSalesStatistics,
 };

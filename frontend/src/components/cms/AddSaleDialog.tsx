@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Save, Upload, Calendar, Edit, Trash2, Eye, Loader2, ChevronDown, Clock, Image as ImageIcon, X } from "lucide-react";
+import { Save, Upload, Calendar, Edit, Trash2, Eye, Loader2, ChevronDown, Clock, Image as ImageIcon, X, Package } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import axios from "axios";
 
@@ -32,7 +32,7 @@ interface Purchase {
   materialName: string;
   vendor: string;
   price: string;
-  weight: string;
+  weight: string; // Total weight in POP
   quality: string;
   purchaseDate: string;
   materialColor: string;
@@ -44,6 +44,9 @@ interface Purchase {
   deliveryDate: string;
   receiptNo: string;
   vehicleImage: string;
+  advancePayment: number;
+  soldWeight: number; // Weight already sold
+  availableWeight: number; // Weight still available
   createdAt: string;
 }
 
@@ -52,7 +55,7 @@ interface Sale {
   materialName: string;
   supplierName: string;
   invoiceNo: string;
-  weight: string;
+  weight: string; // Sale weight
   unit: string;
   purchaseDate: string;
   branch: string;
@@ -61,7 +64,7 @@ interface Sale {
   productionCost: string;
   sellingPrice: string;
   discount: string;
-  advancePayment: number; // ADDED THIS
+  advancePayment: number;
   buyerName: string;
   buyerAddress: string;
   buyerPhone: string;
@@ -71,6 +74,8 @@ interface Sale {
   finalAmount: string;
   receiptImage?: string;
   createdAt: string;
+  originalPurchaseId?: string; // Reference to purchase record
+  originalWeight?: number; // Original available weight before sale
 }
 
 interface AddSaleDialogProps {
@@ -117,13 +122,18 @@ export function AddSaleDialog({
     productionCost: "",
     sellingPrice: "",
     discount: "0",
-    advancePayment: "", // ADDED THIS FIELD
+    advancePayment: "",
     buyerName: "",
     buyerAddress: "",
     buyerPhone: "",
     buyerEmail: "",
     buyerCnic: "",
     buyerCompany: "",
+    // Additional fields for controller
+    paymentMethod: "Cash",
+    paymentStatus: "Completed",
+    transportationCost: "0",
+    notes: "",
   });
 
   const [selectedColor, setSelectedColor] = useState("#FFFFFF");
@@ -133,6 +143,16 @@ export function AddSaleDialog({
   const [loadingMaterials, setLoadingMaterials] = useState(false);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+  const [selectedMaterialInfo, setSelectedMaterialInfo] = useState<{
+    totalWeight: number;
+    availableWeight: number;
+    soldWeight: number;
+    purchaseId: string;
+    vendor: string;
+    price: string;
+    materialColor: string;
+  } | null>(null);
+  const [weightError, setWeightError] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch materials from purchases when dialog opens
@@ -183,13 +203,17 @@ export function AddSaleDialog({
           productionCost: editData.productionCost || "",
           sellingPrice: editData.sellingPrice || "",
           discount: editData.discount || "0",
-          advancePayment: editData.advancePayment?.toString() || "", // ADDED THIS LINE
+          advancePayment: editData.advancePayment?.toString() || "",
           buyerName: editData.buyerName || "",
           buyerAddress: editData.buyerAddress || "",
           buyerPhone: editData.buyerPhone || "",
           buyerEmail: editData.buyerEmail || "",
           buyerCnic: editData.buyerCnic || "",
           buyerCompany: editData.buyerCompany || "",
+          paymentMethod: "Cash",
+          paymentStatus: "Completed",
+          transportationCost: "0",
+          notes: "",
         });
         
         setSelectedColor(editData.materialColor || "#FFFFFF");
@@ -210,7 +234,43 @@ export function AddSaleDialog({
       const response = await api.get(API_ENDPOINTS.GET_ALL);
       
       if (response.data.success) {
-        setMaterials(response.data.data || []);
+        const materialsData = response.data.data || [];
+        
+        // Calculate available weight for each material
+        const materialsWithAvailableWeight = await Promise.all(
+          materialsData.map(async (material: Purchase) => {
+            try {
+              // Fetch sales for this material to calculate sold weight
+              const salesResponse = await api.get(`${SALES_API_URL}/get-by-material/${material.materialName}`);
+              let totalSoldWeight = 0;
+              
+              if (salesResponse.data.success && salesResponse.data.data) {
+                salesResponse.data.data.forEach((sale: Sale) => {
+                  totalSoldWeight += parseFloat(sale.weight) || 0;
+                });
+              }
+              
+              const totalWeight = parseFloat(material.weight) || 0;
+              const availableWeight = totalWeight - totalSoldWeight;
+              
+              return {
+                ...material,
+                soldWeight: totalSoldWeight,
+                availableWeight: availableWeight > 0 ? availableWeight : 0,
+              };
+            } catch (error) {
+              // If error fetching sales, assume no sales yet
+              const totalWeight = parseFloat(material.weight) || 0;
+              return {
+                ...material,
+                soldWeight: 0,
+                availableWeight: totalWeight,
+              };
+            }
+          })
+        );
+        
+        setMaterials(materialsWithAvailableWeight);
       } else {
         throw new Error(response.data.message || 'Failed to fetch materials');
       }
@@ -227,7 +287,19 @@ export function AddSaleDialog({
     if (!formData.materialName.trim()) newErrors.materialName = "Material name is required";
     if (!formData.supplierName.trim()) newErrors.supplierName = "Supplier name is required";
     if (!formData.invoiceNo.trim()) newErrors.invoiceNo = "Invoice number is required";
-    if (!formData.weight.trim()) newErrors.weight = "Weight is required";
+    
+    // Weight validation with custom logic
+    if (!formData.weight.trim()) {
+      newErrors.weight = "Weight is required";
+    } else {
+      const saleWeight = parseFloat(formData.weight);
+      if (isNaN(saleWeight) || saleWeight <= 0) {
+        newErrors.weight = "Valid weight is required";
+      } else if (selectedMaterialInfo && saleWeight > selectedMaterialInfo.availableWeight) {
+        newErrors.weight = `Sale weight cannot exceed available weight (${selectedMaterialInfo.availableWeight} kg)`;
+      }
+    }
+    
     if (!formData.unit.trim()) newErrors.unit = "Unit is required";
     if (!formData.purchaseDate) newErrors.purchaseDate = "Purchase date is required";
     if (!formData.purchaseTime) newErrors.purchaseTime = "Purchase time is required";
@@ -284,57 +356,74 @@ export function AddSaleDialog({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    
+    // Validate weight when weight changes
+    if (name === 'weight' && selectedMaterialInfo) {
+      const saleWeight = parseFloat(value);
+      if (saleWeight > selectedMaterialInfo.availableWeight) {
+        setWeightError(`Warning: Sale weight exceeds available weight. Available: ${selectedMaterialInfo.availableWeight} kg`);
+      } else {
+        setWeightError("");
+      }
+    }
+    
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
   };
 
   const handleMaterialSelect = (materialName: string) => {
-    setFormData(prev => ({ ...prev, materialName }));
-    
     const selectedMaterial = materials.find(m => m.materialName === materialName);
+    
     if (selectedMaterial) {
-      if (!formData.supplierName && selectedMaterial.vendor) {
-        setFormData(prev => ({ ...prev, supplierName: selectedMaterial.vendor }));
-      }
+      setFormData(prev => ({ 
+        ...prev, 
+        materialName,
+        supplierName: selectedMaterial.vendor || prev.supplierName,
+        actualPrice: selectedMaterial.price || prev.actualPrice
+      }));
       
-      if (selectedMaterial.materialColor) {
-        setSelectedColor(selectedMaterial.materialColor);
-      }
+      setSelectedColor(selectedMaterial.materialColor || "#FFFFFF");
       
-      if (!formData.actualPrice && selectedMaterial.price) {
-        setFormData(prev => ({ ...prev, actualPrice: selectedMaterial.price }));
-      }
+      // Set material info for weight validation
+      const totalWeight = parseFloat(selectedMaterial.weight) || 0;
+      const soldWeight = selectedMaterial.soldWeight || 0;
+      const availableWeight = selectedMaterial.availableWeight || totalWeight;
+      
+      setSelectedMaterialInfo({
+        totalWeight,
+        availableWeight,
+        soldWeight,
+        purchaseId: selectedMaterial._id,
+        vendor: selectedMaterial.vendor,
+        price: selectedMaterial.price,
+        materialColor: selectedMaterial.materialColor
+      });
+      
+      // Reset weight field
+      setFormData(prev => ({ ...prev, weight: "" }));
+      setWeightError("");
     }
   };
 
   const handleBranchSelect = (materialName: string) => {
-    setFormData(prev => ({ 
-      ...prev, 
-      branch: materialName,
-      materialName: materialName
-    }));
-    
-    const selectedMaterial = materials.find(m => m.materialName === materialName);
-    if (selectedMaterial) {
-      if (!formData.supplierName && selectedMaterial.vendor) {
-        setFormData(prev => ({ ...prev, supplierName: selectedMaterial.vendor }));
-      }
-      
-      if (selectedMaterial.materialColor) {
-        setSelectedColor(selectedMaterial.materialColor);
-      }
-      
-      if (!formData.actualPrice && selectedMaterial.price) {
-        setFormData(prev => ({ ...prev, actualPrice: selectedMaterial.price }));
-      }
-    }
+    handleMaterialSelect(materialName);
+    setFormData(prev => ({ ...prev, branch: materialName }));
   };
 
   const handleSubmit = async () => {
     if (!validateForm()) {
       alert("Please fill in all required fields correctly.");
       return;
+    }
+
+    // Additional weight validation
+    if (selectedMaterialInfo) {
+      const saleWeight = parseFloat(formData.weight);
+      if (saleWeight > selectedMaterialInfo.availableWeight) {
+        alert(`Sale weight cannot exceed available weight (${selectedMaterialInfo.availableWeight} kg)`);
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -353,20 +442,31 @@ export function AddSaleDialog({
       // Prepare FormData for API
       const formDataToSend = new FormData();
       
-      // Add all form fields to FormData
+      // ⭐⭐ FIXED: Map to what controller expects ⭐⭐
+      // Required fields by controller:
+      formDataToSend.append('purchaseId', selectedMaterialInfo?.purchaseId || '');
+      formDataToSend.append('customerName', formData.buyerName); // buyerName → customerName
+      formDataToSend.append('customerPhone', formData.buyerPhone);
+      formDataToSend.append('customerEmail', formData.buyerEmail || '');
+      formDataToSend.append('sellingPrice', formData.sellingPrice);
+      formDataToSend.append('sellingWeight', formData.weight); // weight → sellingWeight
+      formDataToSend.append('saleDate', dateTime);
+      formDataToSend.append('paymentMethod', formData.paymentMethod);
+      formDataToSend.append('paymentStatus', formData.paymentStatus);
+      formDataToSend.append('invoiceNo', formData.invoiceNo);
+      formDataToSend.append('transportationCost', formData.transportationCost);
+      formDataToSend.append('notes', formData.notes);
+
+      // Also include original Sale model fields (optional for backend)
       formDataToSend.append('materialName', formData.materialName);
       formDataToSend.append('supplierName', formData.supplierName);
-      formDataToSend.append('invoiceNo', formData.invoiceNo);
-      formDataToSend.append('weight', formData.weight);
       formDataToSend.append('unit', formData.unit);
-      formDataToSend.append('purchaseDate', dateTime);
       formDataToSend.append('branch', formData.branch);
       formDataToSend.append('materialColor', selectedColor);
       formDataToSend.append('actualPrice', formData.actualPrice);
       formDataToSend.append('productionCost', formData.productionCost || '0');
-      formDataToSend.append('sellingPrice', formData.sellingPrice);
       formDataToSend.append('discount', formData.discount);
-      formDataToSend.append('advancePayment', formData.advancePayment || '0'); // ADDED THIS LINE
+      formDataToSend.append('advancePayment', formData.advancePayment || '0');
       formDataToSend.append('buyerName', formData.buyerName);
       formDataToSend.append('buyerAddress', formData.buyerAddress || '');
       formDataToSend.append('buyerPhone', formData.buyerPhone);
@@ -464,17 +564,23 @@ export function AddSaleDialog({
       productionCost: "",
       sellingPrice: "",
       discount: "0",
-      advancePayment: "", // ADDED THIS LINE
+      advancePayment: "",
       buyerName: "",
       buyerAddress: "",
       buyerPhone: "",
       buyerEmail: "",
       buyerCnic: "",
       buyerCompany: "",
+      paymentMethod: "Cash",
+      paymentStatus: "Completed",
+      transportationCost: "0",
+      notes: "",
     });
     setSelectedColor("#FFFFFF");
     setReceiptFile(null);
     setReceiptPreview(null);
+    setSelectedMaterialInfo(null);
+    setWeightError("");
     setErrors({});
   };
 
@@ -510,6 +616,31 @@ export function AddSaleDialog({
         {/* Product Details Section */}
         <div className="mb-6">
           <h3 className="text-base font-semibold text-foreground mb-4">Product Details</h3>
+          
+          {/* Material Info Card */}
+          {selectedMaterialInfo && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+              <div className="flex items-center gap-2 mb-2">
+                <Package className="w-4 h-4 text-blue-600" />
+                <h4 className="text-sm font-medium text-blue-800">Material Stock Information</h4>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="text-center p-2 bg-white rounded border">
+                  <p className="text-xs text-gray-600">Total Weight</p>
+                  <p className="text-lg font-bold text-gray-800">{selectedMaterialInfo.totalWeight} kg</p>
+                </div>
+                <div className="text-center p-2 bg-white rounded border">
+                  <p className="text-xs text-gray-600">Already Sold</p>
+                  <p className="text-lg font-bold text-red-600">{selectedMaterialInfo.soldWeight} kg</p>
+                </div>
+                <div className="text-center p-2 bg-white rounded border">
+                  <p className="text-xs text-gray-600">Available for Sale</p>
+                  <p className="text-lg font-bold text-green-600">{selectedMaterialInfo.availableWeight} kg</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Material Name *</label>
@@ -528,7 +659,8 @@ export function AddSaleDialog({
                   ) : (
                     materials.map((material) => (
                       <option key={material._id} value={material.materialName}>
-                        {material.materialName} - {material.quality} ({material.weight} kg)
+                        {material.materialName} - {material.quality} 
+                        (Stock: {material.availableWeight}/{material.weight} kg)
                       </option>
                     ))
                   )}
@@ -571,17 +703,27 @@ export function AddSaleDialog({
 
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Weight *</label>
+              <label className="block text-xs text-muted-foreground mb-1.5">Sale Weight (kg) *</label>
               <input
-                type="text"
+                type="number"
                 name="weight"
-                placeholder="e.g 30KG or 30 kg"
+                placeholder="e.g 200"
                 value={formData.weight}
                 onChange={handleInputChange}
+                min="0.1"
+                step="0.1"
                 className={`w-full bg-cms-input-bg border ${errors.weight ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
               />
               {errors.weight && (
                 <p className="text-xs text-red-500 mt-1">{errors.weight}</p>
+              )}
+              {weightError && !errors.weight && (
+                <p className="text-xs text-amber-600 mt-1">{weightError}</p>
+              )}
+              {selectedMaterialInfo && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Available: {selectedMaterialInfo.availableWeight} kg
+                </p>
               )}
             </div>
             <div>
@@ -652,7 +794,7 @@ export function AddSaleDialog({
                   ) : (
                     materials.map((material) => (
                       <option key={`branch-${material._id}`} value={material.materialName}>
-                        {material.materialName} - Stock: {material.weight} kg
+                        {material.materialName} - Available: {material.availableWeight} kg
                       </option>
                     ))
                   )}
@@ -686,9 +828,66 @@ export function AddSaleDialog({
               </div>
             </div>
           </div>
+
+          {/* Additional fields for controller */}
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Payment Method</label>
+              <select
+                name="paymentMethod"
+                value={formData.paymentMethod}
+                onChange={handleInputChange}
+                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="Cash">Cash</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Credit Card">Credit Card</option>
+                <option value="Check">Check</option>
+                <option value="Online Payment">Online Payment</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Payment Status</label>
+              <select
+                name="paymentStatus"
+                value={formData.paymentStatus}
+                onChange={handleInputChange}
+                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="Pending">Pending</option>
+                <option value="Completed">Completed</option>
+                <option value="Partially Paid">Partially Paid</option>
+                <option value="Failed">Failed</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Transportation Cost</label>
+              <input
+                type="number"
+                name="transportationCost"
+                placeholder="e.g 1500"
+                value={formData.transportationCost}
+                onChange={handleInputChange}
+                min="0"
+                step="0.01"
+                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          </div>
+          <div className="mb-4">
+            <label className="block text-xs text-muted-foreground mb-1.5">Notes</label>
+            <input
+              type="text"
+              name="notes"
+              placeholder="Additional notes..."
+              value={formData.notes}
+              onChange={handleInputChange}
+              className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
         </div>
 
-        {/* Price Details Section - UPDATED with advance payment field */}
+        {/* Price Details Section */}
         <div className="mb-6">
           <h3 className="text-base font-semibold text-foreground mb-4">Price Details</h3>
           <div className="grid grid-cols-3 gap-4 mb-4">

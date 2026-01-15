@@ -52,6 +52,16 @@ const employeeSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    // ADDED: CNIC Front Image
+    cnicFrontImage: {
+        type: String,
+        default: ''
+    },
+    // ADDED: CNIC Back Image
+    cnicBackImage: {
+        type: String,
+        default: ''
+    },
     address: {
         type: String,
         default: '',
@@ -85,7 +95,7 @@ const employeeSchema = new mongoose.Schema({
         default: '',
         trim: true
     },
-      advancePayment: { // ADDED THIS FIELD
+    advancePayment: {
         type: Number,
         default: 0,
         min: [0, 'Advance payment cannot be negative']
@@ -101,7 +111,7 @@ const employeeSchema = new mongoose.Schema({
 });
 
 // Virtual property for schedule
-employeeSchema.virtual('schedule').get(function() {
+employeeSchema.virtual('schedule').get(function () {
     return `${this.startTime || '09:00'} - ${this.endTime || '17:00'}`;
 });
 
@@ -113,15 +123,15 @@ employeeSchema.index({ isActive: 1 });
 employeeSchema.index({ name: 'text', email: 'text', employeeId: 'text' });
 
 // Middleware to trim string fields
-employeeSchema.pre('save', function(next) {
+employeeSchema.pre('save', function (next) {
     const stringFields = ['name', 'title', 'department', 'email', 'phone', 'address', 'cnic', 'emergencyContact', 'reportingManager', 'responsibilities'];
-    
+
     stringFields.forEach(field => {
         if (this[field] && typeof this[field] === 'string') {
             this[field] = this[field].trim();
         }
     });
-    
+
     next();
 });
 

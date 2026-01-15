@@ -1,32 +1,69 @@
 const express = require("express");
-const multer = require("multer");
-const {
-  addPurchase,
-  getPurchases,
-  getPurchaseById,
-  updatePurchase,
-  deletePurchase,
-} = require("../controllers/pop.controller");
-
 const router = express.Router();
+const popController = require("../controllers/pop.controller");
+const multer = require("multer");
+const path = require("path");
 
-// Multer configuration (for vehicleImage)
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/");
+// Multer configuration for vehicle images
+const vehicleStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    // Create vehicles folder if it doesn't exist
+    const vehiclesDir = path.join(__dirname, "../uploads/vehicles");
+    const fs = require("fs");
+    if (!fs.existsSync(vehiclesDir)) {
+      fs.mkdirSync(vehiclesDir, { recursive: true });
+    }
+    cb(null, vehiclesDir);
   },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
+    const extension = path.extname(file.originalname);
+    cb(null, "vehicle-" + uniqueSuffix + extension);
+  }
 });
 
-const upload = multer({ storage });
+// File filter for vehicle images (images only)
+const imageFileFilter = (req, file, cb) => {
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Invalid file type. Only JPEG, PNG, and GIF images are allowed.'), false);
+  }
+};
 
-// Routes
-router.post("/add", upload.single("vehicleImage"), addPurchase);
-router.get("/get-all", getPurchases);
-router.get("/:id", getPurchaseById);
-router.put("/:id", upload.single("vehicleImage"), updatePurchase);
-router.delete("/:id", deletePurchase);
+const vehicleUpload = multer({
+  storage: vehicleStorage,
+  fileFilter: imageFileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
+
+// ✅ PURCHASE ROUTES
+
+// Create new purchase with vehicle image
+router.post("/add", vehicleUpload.single("vehicleImage"), popController.addPurchase);
+
+// Get all purchases
+router.get("/get-all", popController.getPurchases);
+
+// Get purchase statistics
+router.get("/statistics", popController.getPurchaseStatistics);
+
+// Get all purchases with remaining weight calculation
+router.get("/with-remaining", popController.getAllPurchasesWithRemainingWeight);
+
+// Get purchase by ID
+router.get("/:id", popController.getPurchaseById);
+
+// Get purchase by ID with remaining weight
+router.get("/:id/with-remaining", popController.getPurchaseWithRemainingWeight);
+
+// Update purchase with vehicle image
+router.put("/:id", vehicleUpload.single("vehicleImage"), popController.updatePurchase);
+
+// Delete purchase
+router.delete("/:id", popController.deletePurchase);
 
 module.exports = router;

@@ -1,7 +1,20 @@
+// routes/employee.routes.js
 const express = require('express');
 const router = express.Router();
 const employeeController = require('../controllers/employee.controller');
-const { uploadEmployeeAvatar } = require('../utils/upload');
+const { uploadEmployeeFiles } = require('../utils/upload'); // Make sure this is the correct import
+
+// Debug middleware to log requests
+const debugMiddleware = (req, res, next) => {
+    console.log('Request received:', {
+        method: req.method,
+        url: req.url,
+        body: req.body,
+        files: req.files,
+        headers: req.headers
+    });
+    next();
+};
 
 // @route   GET /api/employees
 // @desc    Get all employees
@@ -18,15 +31,15 @@ router.get('/stats', employeeController.getEmployeeStats);
 // @access  Private
 router.get('/:id', employeeController.getEmployeeById);
 
-// @route   POST /api/employees
-// @desc    Create new employee
+// @route   POST /api/employees/create-employee
+// @desc    Create new employee with multiple file uploads
 // @access  Private
-router.post('/create-employee', uploadEmployeeAvatar, employeeController.createEmployee);
+router.post('/create-employee', debugMiddleware, uploadEmployeeFiles, employeeController.createEmployee);
 
 // @route   PUT /api/employees/:id
-// @desc    Update employee
+// @desc    Update employee with multiple file uploads
 // @access  Private
-router.put('/:id', uploadEmployeeAvatar, employeeController.updateEmployee);
+router.put('/:id', uploadEmployeeFiles, employeeController.updateEmployee);
 
 // @route   DELETE /api/employees/:id
 // @desc    Delete employee
