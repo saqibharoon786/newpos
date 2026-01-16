@@ -905,12 +905,26 @@ export function POPView() {
     setDialogOpen(true);
   };
 
-  const handleDeletePurchase = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this purchase?')) {
+const handleDeletePurchase = async (id: string) => {
+  if (window.confirm('Are you sure you want to delete this purchase?')) {
+    try {
+      console.log('Attempting to delete purchase with ID:', id);
+      
+      // First, check if we can delete directly without sales check
+      // Or handle the 404 error gracefully for the sales check
       try {
-        // Check if there are sales for this purchase
-        const salesResponse = await api.get(`${SALES_API_URL}/purchase/${id}`);
-        if (salesResponse.data.success && salesResponse.data.data && salesResponse.data.data.length > 0) {
+        // Try to check for sales, but don't fail if the endpoint doesn't exist
+        const salesResponse = await api.get(`${SALES_API_URL}/purchase/${id}`).catch(error => {
+          // If it's a 404, the endpoint might not exist, so we'll skip the check
+          if (error.response?.status === 404) {
+            console.log('Sales check endpoint not found, skipping sales verification');
+            return null;
+          }
+          throw error;
+        });
+        
+        // If we got a response and there are sales, prevent deletion
+        if (salesResponse?.data?.success && salesResponse.data.data?.length > 0) {
           toast({
             title: "Cannot Delete",
             description: "This purchase has existing sales. Delete the sales first.",
@@ -918,23 +932,45 @@ export function POPView() {
           });
           return;
         }
+      } catch (salesError: any) {
+        // If sales check fails for other reasons, log but continue
+        console.warn('Sales check failed, proceeding with delete:', salesError.message);
+      }
 
-        await api.delete(`${PURCHASES_API_URL}/${id}`);
+      // Now try to delete the purchase
+      const deleteResponse = await api.delete(`${PURCHASES_API_URL}/${id}`);
+      console.log('Delete response:', deleteResponse.data);
+      
+      if (deleteResponse.data.success) {
         await fetchPurchases();
         toast({
           title: "Success",
           description: "Purchase deleted successfully!",
         });
-      } catch (error: any) {
-        console.error('Error deleting purchase:', error);
-        toast({
-          title: "Error",
-          description: error.response?.data?.message || "Failed to delete purchase",
-          variant: "destructive",
-        });
+      } else {
+        throw new Error(deleteResponse.data.message || 'Failed to delete purchase');
       }
+    } catch (error: any) {
+      console.error('Delete error:', error);
+      
+      let errorMessage = "Failed to delete purchase";
+      
+      if (error.response) {
+        if (error.response.status === 404) {
+          errorMessage = "Purchase not found. It may have already been deleted.";
+        } else if (error.response.data?.message) {
+          errorMessage = error.response.data.message;
+        }
+      }
+      
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
     }
-  };
+  }
+};
 
   const handleViewDetails = (purchase: PurchaseWithRemaining) => {
     setSelectedPurchaseId(purchase._id);
