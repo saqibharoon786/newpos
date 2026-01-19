@@ -53,7 +53,6 @@ export function AddExpenseDialog({
   const calendarRef = useRef<HTMLDivElement>(null);
   const timeRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
@@ -63,63 +62,67 @@ export function AddExpenseDialog({
         setShowTimePicker(false);
       }
     };
-
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Initialize form when dialog opens
   useEffect(() => {
     if (open) {
+      const now = new Date();
+
       if (editData) {
-        // Populate form with edit data
         setFormData({
-          subject: editData.subject,
-          description: editData.description,
-          purpose: editData.purpose,
-          price: editData.price,
-          personResponsible: editData.personResponsible,
-          usage: editData.usage,
-          date: editData.date,
-          time: editData.time,
+          subject: editData.subject || "",
+          description: editData.description || "",
+          purpose: editData.purpose || "Car",
+          price: editData.price || "",
+          personResponsible: editData.personResponsible || "HR",
+          usage: editData.usage || "Personal",
+          date: editData.date || "",
+          time: editData.time || "",
         });
 
-        // Parse date from editData - Now expecting DD/MM/YYYY format
         if (editData.date) {
-          const dateParts = editData.date.split('/');
-          if (dateParts.length === 3) {
-            const date = new Date(
-              parseInt(dateParts[2]), // Year
-              parseInt(dateParts[1]) - 1, // Month (0-based)
-              parseInt(dateParts[0]) // Day
-            );
-            if (!isNaN(date.getTime())) {
-              setSelectedDate(date);
-              setCurrentMonth(date.getMonth());
-              setCurrentYear(date.getFullYear());
+          const [dd, mm, yyyy] = editData.date.split('/').map(Number);
+          if (dd && mm && yyyy) {
+            const parsed = new Date(yyyy, mm - 1, dd);
+            if (!isNaN(parsed.getTime())) {
+              setSelectedDate(parsed);
+              setCurrentMonth(parsed.getMonth());
+              setCurrentYear(parsed.getFullYear());
             }
           }
         }
 
-        // Parse time from editData
         if (editData.time) {
-          const timeMatch = editData.time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
-          if (timeMatch) {
-            let hour = parseInt(timeMatch[1]);
-            const minute = timeMatch[2];
-            const ampm = timeMatch[3]?.toUpperCase() || "PM";
-            
-            // Convert to 12-hour format for display
-            if (ampm === 'PM' && hour > 12) hour -= 12;
-            if (ampm === 'AM' && hour === 0) hour = 12;
-            
-            setSelectedHour(hour.toString().padStart(2, '0'));
-            setSelectedMinute(minute);
-            setSelectedAmPm(ampm as "AM" | "PM");
+          const match = editData.time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+          if (match) {
+            let h = parseInt(match[1]);
+            const m = match[2];
+            let ampm = (match[3] || "PM").toUpperCase() as "AM" | "PM";
+
+            if (ampm === "PM" && h < 12) h += 12;
+            if (ampm === "AM" && h === 12) h = 0;
+
+            const hour12 = (h % 12) || 12;
+            setSelectedHour(hour12.toString().padStart(2, '0'));
+            setSelectedMinute(m);
+            setSelectedAmPm(ampm);
           }
         }
       } else {
-        // Reset form for new entry
+        const dd = String(now.getDate()).padStart(2, '0');
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const yyyy = now.getFullYear();
+        const dateStr = `${dd}/${mm}/${yyyy}`;
+
+        let hour = now.getHours();
+        const minute = String(now.getMinutes()).padStart(2, '0');
+        const ampm: "AM" | "PM" = hour >= 12 ? "PM" : "AM";
+        const hour12 = hour % 12 || 12;
+
+        const timeStr = `${hour12.toString().padStart(2, '0')}:${minute} ${ampm}`;
+
         setFormData({
           subject: "",
           description: "",
@@ -127,71 +130,61 @@ export function AddExpenseDialog({
           price: "",
           personResponsible: "HR",
           usage: "Personal",
-          date: "",
-          time: "",
+          date: dateStr,
+          time: timeStr,
         });
-        setSelectedDate(null);
-        setSelectedHour("12");
-        setSelectedMinute("00");
-        setSelectedAmPm("PM");
-        const now = new Date();
+
+        setSelectedDate(now);
         setCurrentMonth(now.getMonth());
         setCurrentYear(now.getFullYear());
+        setSelectedHour(hour12.toString().padStart(2, '0'));
+        setSelectedMinute(minute);
+        setSelectedAmPm(ampm);
       }
+
       setError("");
     }
   }, [open, editData]);
 
-  // Update form data when selected date changes
   useEffect(() => {
     if (selectedDate) {
-      // Format as DD/MM/YYYY
-      const formattedDate = `${selectedDate.getDate().toString().padStart(2, '0')}/${(selectedDate.getMonth() + 1).toString().padStart(2, '0')}/${selectedDate.getFullYear()}`;
-      setFormData(prev => ({ ...prev, date: formattedDate }));
+      const dd = String(selectedDate.getDate()).padStart(2, '0');
+      const mm = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const yyyy = selectedDate.getFullYear();
+      setFormData(prev => ({ ...prev, date: `${dd}/${mm}/${yyyy}` }));
     }
   }, [selectedDate]);
 
-  // Update form data when time changes
   useEffect(() => {
-    let hour24 = parseInt(selectedHour);
-    if (selectedAmPm === 'PM' && hour24 < 12) hour24 += 12;
-    if (selectedAmPm === 'AM' && hour24 === 12) hour24 = 0;
-    
-    const formattedTime = `${hour24.toString().padStart(2, '0')}:${selectedMinute} ${selectedAmPm}`;
-    setFormData(prev => ({ ...prev, time: formattedTime }));
+    let h = parseInt(selectedHour);
+    if (selectedAmPm === "PM" && h < 12) h += 12;
+    if (selectedAmPm === "AM" && h === 12) h = 0;
+
+    const timeStr = `${h.toString().padStart(2, '0')}:${selectedMinute} ${selectedAmPm}`;
+    setFormData(prev => ({ ...prev, time: timeStr }));
   }, [selectedHour, selectedMinute, selectedAmPm]);
 
-  // Calendar functions
-  const monthNames = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"
-  ];
-
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-  const getDaysInMonth = (year: number, month: number) => {
-    return new Date(year, month + 1, 0).getDate();
-  };
-
-  const getFirstDayOfMonth = (year: number, month: number) => {
-    return new Date(year, month, 1).getDay();
-  };
+  const getDaysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
+  const getFirstDayOfMonth = (y: number, m: number) => new Date(y, m, 1).getDay();
 
   const handlePrevMonth = () => {
     if (currentMonth === 0) {
       setCurrentMonth(11);
-      setCurrentYear(currentYear - 1);
+      setCurrentYear(y => y - 1);
     } else {
-      setCurrentMonth(currentMonth - 1);
+      setCurrentMonth(m => m - 1);
     }
   };
 
   const handleNextMonth = () => {
     if (currentMonth === 11) {
       setCurrentMonth(0);
-      setCurrentYear(currentYear + 1);
+      setCurrentYear(y => y + 1);
     } else {
-      setCurrentMonth(currentMonth + 1);
+      setCurrentMonth(m => m + 1);
     }
   };
 
@@ -209,12 +202,6 @@ export function AddExpenseDialog({
     setShowCalendar(false);
   };
 
-  // Generate calendar days
-  const daysInMonth = getDaysInMonth(currentYear, currentMonth);
-  const firstDayOfMonth = getFirstDayOfMonth(currentYear, currentMonth);
-  const today = new Date();
-
-  // Time options
   const hours = Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0'));
   const minutes = ['00', '15', '30', '45'];
 
@@ -224,27 +211,11 @@ export function AddExpenseDialog({
   };
 
   const handleSubmit = async () => {
-    // Basic validation
-    if (!formData.subject.trim()) {
-      setError("Subject is required");
-      return;
-    }
-    if (!formData.description.trim()) {
-      setError("Description is required");
-      return;
-    }
-    if (!formData.price.trim()) {
-      setError("Price is required");
-      return;
-    }
-    if (!formData.date.trim()) {
-      setError("Date is required");
-      return;
-    }
-    if (!formData.time.trim()) {
-      setError("Time is required");
-      return;
-    }
+    if (!formData.subject.trim()) return setError("Subject likhna zaroori hai");
+    if (!formData.description.trim()) return setError("Description likhna zaroori hai");
+    if (!formData.price.trim()) return setError("Price dalna zaroori hai");
+    if (!formData.date.trim()) return setError("Date select karen");
+    if (!formData.time.trim()) return setError("Time select karen");
 
     setLoading(true);
     setError("");
@@ -253,8 +224,7 @@ export function AddExpenseDialog({
       await onSave(formData);
       onOpenChange(false);
     } catch (err: any) {
-      console.error("Error saving expense:", err);
-      setError(err.message || "Failed to save expense. Please try again.");
+      setError(err.message || "Save nahi ho paya, dobara try karen");
     } finally {
       setLoading(false);
     }
@@ -280,11 +250,10 @@ export function AddExpenseDialog({
           )}
 
           <div className="space-y-4">
-            {/* Subject */}
+            {/* Subject, Description, Purpose, Price, Person Responsible, Usage */}
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Subject *</label>
               <input
-                type="text"
                 name="subject"
                 placeholder="e.g Fuel"
                 value={formData.subject}
@@ -293,7 +262,6 @@ export function AddExpenseDialog({
               />
             </div>
 
-            {/* Description */}
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Description *</label>
               <textarea
@@ -306,7 +274,6 @@ export function AddExpenseDialog({
               />
             </div>
 
-            {/* Purpose and Price */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Purpose</label>
@@ -338,7 +305,6 @@ export function AddExpenseDialog({
               </div>
             </div>
 
-            {/* Person Responsible and Usage */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Person Responsible</label>
@@ -374,50 +340,50 @@ export function AddExpenseDialog({
               </div>
             </div>
 
-            {/* Date & Time */}
+            {/* Date & Time – Yeh section ab jump nahi karega */}
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Date & Time *</label>
               <div className="flex gap-2">
-                {/* Calendar Input */}
                 <div className="relative flex-1" ref={calendarRef}>
                   <div 
-                    className="relative cursor-pointer"
-                    onClick={() => setShowCalendar(!showCalendar)}
+                    className="relative cursor-pointer select-none touch-manipulation"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowCalendar(prev => !prev);
+                    }}
                   >
                     <input
                       type="text"
                       readOnly
                       placeholder="dd/mm/yyyy"
                       value={formData.date}
-                      className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                      className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer select-none"
                     />
-                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                   </div>
-                  
-                  {/* Calendar Popup */}
+
                   {showCalendar && (
-                    <div className="absolute z-50 mt-1 w-72 bg-background border border-border rounded-lg shadow-lg">
-                      {/* Calendar Header */}
+                    <div 
+                      className="absolute z-[999] mt-1 w-72 bg-background border border-border rounded-lg shadow-2xl"
+                      style={{ 
+                        top: '100%',
+                        left: 0,
+                        marginTop: '4px',
+                      }}
+                    >
                       <div className="p-4 border-b border-border">
                         <div className="flex items-center justify-between mb-3">
-                          <button
-                            onClick={handlePrevMonth}
-                            className="p-1 hover:bg-cms-input-bg rounded"
-                          >
+                          <button onClick={handlePrevMonth} className="p-1 hover:bg-muted rounded">
                             <ChevronLeft className="w-5 h-5 text-muted-foreground" />
                           </button>
                           <div className="text-sm font-semibold text-foreground">
                             {monthNames[currentMonth]} {currentYear}
                           </div>
-                          <button
-                            onClick={handleNextMonth}
-                            className="p-1 hover:bg-cms-input-bg rounded"
-                          >
+                          <button onClick={handleNextMonth} className="p-1 hover:bg-muted rounded">
                             <ChevronRight className="w-5 h-5 text-muted-foreground" />
                           </button>
                         </div>
-                        
-                        {/* Today Button */}
                         <button
                           onClick={handleToday}
                           className="w-full py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
@@ -426,9 +392,7 @@ export function AddExpenseDialog({
                         </button>
                       </div>
 
-                      {/* Calendar Body */}
                       <div className="p-4">
-                        {/* Day Headers */}
                         <div className="grid grid-cols-7 mb-2">
                           {dayNames.map(day => (
                             <div key={day} className="text-center text-xs text-muted-foreground font-medium">
@@ -437,19 +401,16 @@ export function AddExpenseDialog({
                           ))}
                         </div>
 
-                        {/* Calendar Grid */}
                         <div className="grid grid-cols-7 gap-1">
-                          {/* Empty cells for days before first day of month */}
-                          {Array.from({ length: firstDayOfMonth }).map((_, index) => (
-                            <div key={`empty-${index}`} className="h-9" />
+                          {Array.from({ length: getFirstDayOfMonth(currentYear, currentMonth) }).map((_, i) => (
+                            <div key={`empty-${i}`} className="h-9" />
                           ))}
 
-                          {/* Days of the month */}
-                          {Array.from({ length: daysInMonth }).map((_, index) => {
+                          {Array.from({ length: getDaysInMonth(currentYear, currentMonth) }).map((_, index) => {
                             const day = index + 1;
-                            const isToday = today.getDate() === day && 
-                                            today.getMonth() === currentMonth &&
-                                            today.getFullYear() === currentYear;
+                            const isToday = new Date().getDate() === day && 
+                                            new Date().getMonth() === currentMonth &&
+                                            new Date().getFullYear() === currentYear;
                             const isSelected = selectedDate && 
                                               selectedDate.getDate() === day &&
                                               selectedDate.getMonth() === currentMonth &&
@@ -465,7 +426,7 @@ export function AddExpenseDialog({
                                     ? 'bg-primary text-primary-foreground' 
                                     : isToday 
                                     ? 'bg-blue-100 text-blue-600 font-semibold' 
-                                    : 'hover:bg-cms-input-bg text-foreground'
+                                    : 'hover:bg-muted text-foreground'
                                   }
                                 `}
                               >
@@ -479,88 +440,72 @@ export function AddExpenseDialog({
                   )}
                 </div>
 
-                {/* Time Input */}
+                {/* Time picker wahi rahega – agar isme bhi jump ho to bata dena */}
                 <div className="relative" ref={timeRef}>
                   <div 
-                    className="relative cursor-pointer"
-                    onClick={() => setShowTimePicker(!showTimePicker)}
+                    className="relative cursor-pointer select-none touch-manipulation"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowTimePicker(prev => !prev);
+                    }}
                   >
                     <input
                       type="text"
                       readOnly
                       placeholder="-- : --"
                       value={formData.time}
-                      className="w-32 bg-cms-input-bg border border-border rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                      className="w-32 bg-cms-input-bg border border-border rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer select-none"
                     />
-                    <Clock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Clock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                   </div>
 
-                  {/* Time Picker Popup */}
+                  {/* Time picker popup – same structure */}
                   {showTimePicker && (
-                    <div className="absolute z-50 mt-1 w-64 bg-background border border-border rounded-lg shadow-lg right-0">
+                    <div className="absolute z-[999] mt-1 w-64 bg-background border border-border rounded-lg shadow-2xl right-0">
+                      {/* time picker content same rahega – yahan change ki zarurat nahi */}
                       <div className="p-4">
-                        {/* Time Selection */}
-                        <div className="flex items-start justify-between mb-4">
-                          {/* Hours */}
+                        <div className="flex gap-3 mb-4">
                           <div className="flex-1">
                             <div className="text-xs text-muted-foreground mb-2">Hour</div>
                             <div className="grid grid-cols-3 gap-1 max-h-40 overflow-y-auto">
-                              {hours.map(hour => (
+                              {hours.map(h => (
                                 <button
-                                  key={hour}
-                                  onClick={() => setSelectedHour(hour)}
-                                  className={`py-2 text-sm rounded transition-colors ${
-                                    selectedHour === hour 
-                                      ? 'bg-primary text-primary-foreground' 
-                                      : 'hover:bg-cms-input-bg text-foreground'
-                                  }`}
+                                  key={h}
+                                  onClick={() => setSelectedHour(h)}
+                                  className={`py-1.5 text-sm rounded ${selectedHour === h ? 'bg-primary text-white' : 'hover:bg-muted'}`}
                                 >
-                                  {hour}
+                                  {h}
                                 </button>
                               ))}
                             </div>
                           </div>
-
-                          {/* Minutes */}
-                          <div className="flex-1 ml-2">
+                          <div className="flex-1">
                             <div className="text-xs text-muted-foreground mb-2">Minute</div>
                             <div className="grid grid-cols-2 gap-1">
-                              {minutes.map(minute => (
+                              {minutes.map(m => (
                                 <button
-                                  key={minute}
-                                  onClick={() => setSelectedMinute(minute)}
-                                  className={`py-2 text-sm rounded transition-colors ${
-                                    selectedMinute === minute 
-                                      ? 'bg-primary text-primary-foreground' 
-                                      : 'hover:bg-cms-input-bg text-foreground'
-                                  }`}
+                                  key={m}
+                                  onClick={() => setSelectedMinute(m)}
+                                  className={`py-1.5 text-sm rounded ${selectedMinute === m ? 'bg-primary text-white' : 'hover:bg-muted'}`}
                                 >
-                                  {minute}
+                                  {m}
                                 </button>
                               ))}
                             </div>
                           </div>
                         </div>
 
-                        {/* AM/PM Selector */}
-                        <div className="flex border border-border rounded-md overflow-hidden">
+                        <div className="flex border rounded overflow-hidden">
                           <button
-                            onClick={() => setSelectedAmPm('AM')}
-                            className={`flex-1 py-2 text-sm transition-colors ${
-                              selectedAmPm === 'AM' 
-                                ? 'bg-primary text-primary-foreground' 
-                                : 'hover:bg-cms-input-bg text-foreground'
-                            }`}
+                            onClick={() => setSelectedAmPm("AM")}
+                            className={`flex-1 py-2 text-sm ${selectedAmPm === "AM" ? "bg-primary text-white" : "hover:bg-muted"}`}
                           >
                             AM
                           </button>
                           <button
-                            onClick={() => setSelectedAmPm('PM')}
-                            className={`flex-1 py-2 text-sm transition-colors ${
-                              selectedAmPm === 'PM' 
-                                ? 'bg-primary text-primary-foreground' 
-                                : 'hover:bg-cms-input-bg text-foreground'
-                            }`}
+                            onClick={() => setSelectedAmPm("PM")}
+                            className={`flex-1 py-2 text-sm ${selectedAmPm === "PM" ? "bg-primary text-white" : "hover:bg-muted"}`}
                           >
                             PM
                           </button>
@@ -573,7 +518,6 @@ export function AddExpenseDialog({
             </div>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex justify-end gap-3 pt-6">
             <button
               onClick={() => onOpenChange(false)}

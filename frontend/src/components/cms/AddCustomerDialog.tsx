@@ -360,6 +360,16 @@ export function AddCustomerDialog({
   return (
     <Dialog open={open} onOpenChange={handleDialogClose}>
       <DialogContent className="bg-background border-border max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto p-0">
+        {/* Cross Icon in Top-Right Corner */}
+        <button
+          onClick={() => onOpenChange(false)}
+          className="absolute right-3 top-3 z-50 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors"
+          type="button"
+          disabled={isSubmitting}
+        >
+          <X className="w-4 h-4 text-white" />
+        </button>
+
         <DialogTitle className="sr-only">
           {isEditMode ? "Edit Customer" : "Add New Customer"}
         </DialogTitle>
