@@ -54,7 +54,7 @@ export default function CustomersView() {
       console.log("📡 Fetching customers from:", apiUrl);
       
       const response = await axios.get(apiUrl, {
-        timeout: 10000,
+        // timeout: 10000,
         headers: {
           'Content-Type': 'application/json',
         }
