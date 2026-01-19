@@ -50,7 +50,7 @@ export default function CustomersView() {
   const fetchCustomers = async () => {
     try {
       setIsLoading(true);
-      const apiUrl = `${CUSTOMERS_API_URL}/getall-customers`;
+      const apiUrl = `${API_BASE_URL}/api/customers/getall-customers`;
       console.log("📡 Fetching customers from:", apiUrl);
       
       const response = await axios.get(apiUrl, {
