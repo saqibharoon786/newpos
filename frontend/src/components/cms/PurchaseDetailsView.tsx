@@ -42,15 +42,11 @@ interface PurchaseDetailsViewProps {
 // Enhanced helper function to get correct image URL
 const getImageUrl = (imagePath: string | undefined): string | null => {
   if (!imagePath || imagePath.trim() === '') {
-    console.log('No image path provided');
     return null;
   }
   
-  console.log('Original image path:', imagePath);
-  
   // If it's already a full URL, return as-is
   if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-    console.log('Already a full URL:', imagePath);
     return imagePath;
   }
   
@@ -63,29 +59,21 @@ const getImageUrl = (imagePath: string | undefined): string | null => {
   // Check common path patterns
   // Pattern 1: starts with uploads/
   if (cleanPath.startsWith('uploads/')) {
-    const url = `${API_BASE_URL}/${cleanPath}`;
-    console.log('Uploads pattern. Generated URL:', url);
-    return url;
+    return `${API_BASE_URL}/${cleanPath}`;
   }
   
   // Pattern 2: If path contains uploads but not at start
   if (cleanPath.includes('uploads/')) {
-    const url = `${API_BASE_URL}/${cleanPath}`;
-    console.log('Contains uploads pattern. Generated URL:', url);
-    return url;
+    return `${API_BASE_URL}/${cleanPath}`;
   }
   
   // Pattern 3: Just a filename with extension
   if (cleanPath.includes('.') && !cleanPath.includes('/')) {
-    const url = `${API_BASE_URL}/uploads/vehicles/${cleanPath}`;
-    console.log('Filename pattern. Generated URL:', url);
-    return url;
+    return `${API_BASE_URL}/uploads/vehicles/${cleanPath}`;
   }
   
   // Default: try to construct URL based on common vehicle image path
-  const url = `${API_BASE_URL}/${cleanPath}`;
-  console.log('Default pattern. Generated URL:', url);
-  return url;
+  return `${API_BASE_URL}/${cleanPath}`;
 };
 
 // Function to test image loading with retries
@@ -119,7 +107,6 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
   const [imageError, setImageError] = useState(false);
   const [showVehicleModal, setShowVehicleModal] = useState(false);
   const [vehicleImageUrl, setVehicleImageUrl] = useState<string | null>(null);
-  const [imageDebugInfo, setImageDebugInfo] = useState<string>('');
   const [imageLoading, setImageLoading] = useState(true);
 
   // Fetch purchase details by ID
@@ -132,25 +119,19 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
   // Update vehicle image URL when purchase data changes
   useEffect(() => {
     if (purchase?.vehicleImage) {
-      console.log('Purchase vehicleImage:', purchase.vehicleImage);
       const url = getImageUrl(purchase.vehicleImage);
-      console.log('Generated vehicle image URL:', url);
       
       // Test if the image loads successfully
       if (url) {
         setImageLoading(true);
         loadImageWithRetry(url)
           .then(() => {
-            console.log('Image loaded successfully:', url);
             setVehicleImageUrl(url);
             setImageError(false);
-            setImageDebugInfo(`Successfully loaded: ${url}`);
           })
-          .catch((error) => {
-            console.error('Image pre-load failed:', error);
+          .catch(() => {
             setVehicleImageUrl(url);
             setImageError(true);
-            setImageDebugInfo(`Failed to load: ${url} | Error: ${error.message}`);
           })
           .finally(() => {
             setImageLoading(false);
@@ -160,10 +141,8 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
         setImageLoading(false);
       }
     } else {
-      console.log('No vehicle image found in purchase data');
       setVehicleImageUrl(null);
       setImageLoading(false);
-      setImageDebugInfo('No vehicle image path in data');
     }
   }, [purchase]);
 
@@ -173,23 +152,12 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
       setError(null);
       setImageError(false);
       setVehicleImageUrl(null);
-      setImageDebugInfo('');
       setImageLoading(true);
       
-      console.log('Fetching purchase details for ID:', purchaseId);
       const response = await api.get(`${PURCHASES_API_URL}/${purchaseId}`);
       
       if (response.data.success) {
         const purchaseData = response.data.data;
-        console.log('Purchase data received:', purchaseData);
-        console.log('Vehicle image property:', purchaseData.vehicleImage);
-        console.log('All properties:', Object.keys(purchaseData));
-        
-        // Check if vehicleImage exists in the data
-        if (!purchaseData.vehicleImage) {
-          console.warn('No vehicleImage property found in response');
-        }
-        
         setPurchase(purchaseData);
       } else {
         throw new Error(response.data.message || 'Failed to fetch purchase details');
@@ -209,14 +177,6 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
 
   const handleImageError = async (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
     const imgElement = e.currentTarget;
-    const src = imgElement.src;
-    
-    console.error('Vehicle image loading failed:', {
-      src,
-      originalPath: purchase?.vehicleImage,
-      vehicleImageUrl,
-      API_BASE_URL
-    });
     
     setImageError(true);
     setImageLoading(false);
@@ -237,16 +197,12 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
         `http://localhost:5000/${originalPath.startsWith('/') ? originalPath.substring(1) : originalPath}`,
       ];
       
-      console.log('Trying alternative patterns:', altPatterns);
-      
       // Try each pattern
       for (const pattern of altPatterns) {
         try {
-          console.log('Testing pattern:', pattern);
           await loadImageWithRetry(pattern, 1);
           
           // If we get here, the pattern works
-          console.log('Found working pattern:', pattern);
           setVehicleImageUrl(pattern);
           setImageError(false);
           
@@ -260,24 +216,13 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
           
           return;
         } catch (error) {
-          console.log(`Pattern failed: ${pattern}`, error);
           continue;
         }
       }
-      
-      // If all patterns fail, show debug info
-      setImageDebugInfo(`
-        Failed to load image.
-        Original path: ${originalPath}
-        API Base URL: ${API_BASE_URL}
-        Tried patterns: ${altPatterns.join(', ')}
-        Current src: ${src}
-      `);
     }
   };
 
   const handleImageLoad = () => {
-    console.log('Image loaded successfully');
     setImageError(false);
     setImageLoading(false);
   };
@@ -338,27 +283,6 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
 
   const handleViewVehicleImage = () => {
     setShowVehicleModal(true);
-  };
-
-  const handleDebugImage = () => {
-    console.log('Debug Image Info:', {
-      originalPath: purchase?.vehicleImage,
-      vehicleImageUrl,
-      API_BASE_URL,
-      fullUrl: `${API_BASE_URL}/${purchase?.vehicleImage?.startsWith('/') ? purchase?.vehicleImage?.substring(1) : purchase?.vehicleImage}`
-    });
-    
-    // Open in new tab
-    if (vehicleImageUrl) {
-      window.open(vehicleImageUrl, '_blank');
-    }
-    
-    // Also test direct URL
-    if (purchase?.vehicleImage) {
-      const directUrl = `http://localhost:5000/${purchase.vehicleImage.startsWith('/') ? purchase.vehicleImage.substring(1) : purchase.vehicleImage}`;
-      console.log('Direct URL:', directUrl);
-      window.open(directUrl, '_blank');
-    }
   };
 
   const formatDate = (dateString: string) => {
@@ -518,20 +442,6 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
                       <div className="text-center p-6">
                         <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
                         <p className="text-foreground font-medium mb-2">Failed to load vehicle image</p>
-                        <div className="text-left bg-cms-card-hover p-4 rounded-lg mb-4">
-                          <p className="text-sm text-muted-foreground mb-1">
-                            <span className="font-medium">API Base URL:</span> {API_BASE_URL}
-                          </p>
-                          <p className="text-sm text-muted-foreground mb-1">
-                            <span className="font-medium">Image Path:</span> {purchase.vehicleImage || 'Not provided'}
-                          </p>
-                          <p className="text-sm text-muted-foreground mb-1">
-                            <span className="font-medium">Generated URL:</span> {vehicleImageUrl}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            <span className="font-medium">Debug Info:</span> {imageDebugInfo}
-                          </p>
-                        </div>
                         <div className="flex gap-2 mt-4 justify-center">
                           <button
                             onClick={() => {
@@ -552,12 +462,6 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
                             className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm"
                           >
                             Open in Browser
-                          </button>
-                          <button
-                            onClick={handleDebugImage}
-                            className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm"
-                          >
-                            Debug
                           </button>
                         </div>
                       </div>
@@ -629,14 +533,6 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {import.meta.env.DEV && (
-            <button
-              onClick={handleDebugImage}
-              className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium"
-            >
-              Debug Image
-            </button>
-          )}
           {vehicleImageUrl && (
             <>
               <button
@@ -683,23 +579,6 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
           </button>
         </div>
       </div>
-
-      {/* Debug Information (only show in development) */}
-      {import.meta.env.DEV && purchase.vehicleImage && (
-        <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <h4 className="text-sm font-medium text-yellow-800 mb-2 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4" />
-            Image Debug Info (Development Only)
-          </h4>
-          <div className="text-xs text-yellow-700 space-y-1">
-            <p><strong>API Base URL:</strong> {API_BASE_URL}</p>
-            <p><strong>Image Path from API:</strong> {purchase.vehicleImage}</p>
-            <p><strong>Generated URL:</strong> {vehicleImageUrl}</p>
-            <p><strong>Debug Info:</strong> {imageDebugInfo}</p>
-            <p><strong>Full Test URL:</strong> {`http://localhost:5000/${purchase.vehicleImage.startsWith('/') ? purchase.vehicleImage.substring(1) : purchase.vehicleImage}`}</p>
-          </div>
-        </div>
-      )}
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
@@ -830,7 +709,7 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
         {/* Vehicle Image Section */}
         <div className="bg-cms-card rounded-xl p-5 border border-border">
           <h3 className="text-base font-semibold text-foreground mb-4 pb-3 border-b border-border">
-            Vehicle Image
+            Recepit Image
             {imageError && (
               <span className="ml-2 text-xs bg-red-500/10 text-red-600 px-2 py-1 rounded">
                 Error Loading
@@ -939,17 +818,6 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
                   'Vehicle image exists but URL could not be generated.' : 
                   'No vehicle image was uploaded for this purchase.'}
               </p>
-              {purchase.vehicleImage && (
-                <div className="mt-3 p-2 bg-yellow-50 rounded text-xs text-yellow-700">
-                  <p className="break-all">Image path in database: {purchase.vehicleImage}</p>
-                  <button
-                    onClick={handleDebugImage}
-                    className="mt-2 text-xs bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded"
-                  >
-                    Debug This Image
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </div>

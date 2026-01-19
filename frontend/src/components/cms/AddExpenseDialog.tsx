@@ -84,14 +84,14 @@ export function AddExpenseDialog({
           time: editData.time,
         });
 
-        // Parse date from editData
+        // Parse date from editData - Now expecting DD/MM/YYYY format
         if (editData.date) {
           const dateParts = editData.date.split('/');
           if (dateParts.length === 3) {
             const date = new Date(
-              parseInt(dateParts[2]),
-              parseInt(dateParts[0]) - 1,
-              parseInt(dateParts[1])
+              parseInt(dateParts[2]), // Year
+              parseInt(dateParts[1]) - 1, // Month (0-based)
+              parseInt(dateParts[0]) // Day
             );
             if (!isNaN(date.getTime())) {
               setSelectedDate(date);
@@ -145,7 +145,8 @@ export function AddExpenseDialog({
   // Update form data when selected date changes
   useEffect(() => {
     if (selectedDate) {
-      const formattedDate = `${(selectedDate.getMonth() + 1).toString().padStart(2, '0')}/${selectedDate.getDate().toString().padStart(2, '0')}/${selectedDate.getFullYear()}`;
+      // Format as DD/MM/YYYY
+      const formattedDate = `${selectedDate.getDate().toString().padStart(2, '0')}/${(selectedDate.getMonth() + 1).toString().padStart(2, '0')}/${selectedDate.getFullYear()}`;
       setFormData(prev => ({ ...prev, date: formattedDate }));
     }
   }, [selectedDate]);
@@ -386,7 +387,7 @@ export function AddExpenseDialog({
                     <input
                       type="text"
                       readOnly
-                      placeholder="mm/dd/yyyy"
+                      placeholder="dd/mm/yyyy"
                       value={formData.date}
                       className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                     />

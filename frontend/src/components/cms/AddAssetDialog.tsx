@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Save, Calendar, Clock, Loader2 } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Save, Calendar, Clock, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { 
   Dialog, 
   DialogContent,
@@ -27,11 +27,92 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
     purchasePrice: "",
     purchaseFrom: "",
     invoiceNo: "",
-    date: new Date().toISOString().split('T')[0],
+    date: "",  // ab DD/MM/YYYY string
     time: new Date().toLocaleTimeString('en-US', { hour12: false }).slice(0, 5),
   });
   
   const [isLoading, setIsLoading] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+
+  const calendarRef = useRef<HTMLDivElement>(null);
+
+  // Click outside to close calendar
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
+        setShowCalendar(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Dialog open hone pe default date set
+  useEffect(() => {
+    if (open && !formData.date) {
+      const now = new Date();
+      setSelectedDate(now);
+      setCurrentMonth(now.getMonth());
+      setCurrentYear(now.getFullYear());
+      const ddmmyyyy = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+      setFormData(prev => ({ ...prev, date: ddmmyyyy }));
+    }
+  }, [open]);
+
+  // Date select hone pe formData update
+  useEffect(() => {
+    if (selectedDate) {
+      const formatted = `${selectedDate.getDate().toString().padStart(2, '0')}/${
+        (selectedDate.getMonth() + 1).toString().padStart(2, '0')
+      }/${selectedDate.getFullYear()}`;
+      setFormData(prev => ({ ...prev, date: formatted }));
+    }
+  }, [selectedDate]);
+
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
+  const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
+
+  const handlePrevMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear(currentYear - 1);
+    } else {
+      setCurrentMonth(currentMonth - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear(currentYear + 1);
+    } else {
+      setCurrentMonth(currentMonth + 1);
+    }
+  };
+
+  const handleDateSelect = (day: number) => {
+    const date = new Date(currentYear, currentMonth, day);
+    setSelectedDate(date);
+    setShowCalendar(false);
+  };
+
+  const handleToday = () => {
+    const today = new Date();
+    setSelectedDate(today);
+    setCurrentMonth(today.getMonth());
+    setCurrentYear(today.getFullYear());
+    setShowCalendar(false);
+  };
+
+  const daysInMonth = getDaysInMonth(currentYear, currentMonth);
+  const firstDayOfMonth = getFirstDayOfMonth(currentYear, currentMonth);
+  const todayDate = new Date();
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -44,16 +125,19 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
   };
 
   const handleSubmit = async () => {
-    // Simple validation
     if (!formData.assetName || !formData.category || !formData.condition || !formData.department) {
       toast.error("Please fill required fields");
+      return;
+    }
+
+    if (!formData.date) {
+      toast.error("Date is required");
       return;
     }
 
     setIsLoading(true);
     
     try {
-      // FIXED: Handle purchasePrice properly - convert string to number or null
       let purchasePriceValue = null;
       if (formData.purchasePrice && formData.purchasePrice.trim() !== "") {
         const cleanPrice = formData.purchasePrice.replace(/,/g, '').trim();
@@ -62,7 +146,6 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
         }
       }
 
-      // Simple payload
       const payload = {
         assetName: formData.assetName,
         category: formData.category,
@@ -72,10 +155,10 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
         description: formData.description || null,
         department: formData.department,
         assignedTo: formData.assignedTo || null,
-        purchasePrice: purchasePriceValue, // Can be null
+        purchasePrice: purchasePriceValue,
         purchaseFrom: formData.purchaseFrom || null,
         invoiceNo: formData.invoiceNo || null,
-        date: formData.date,
+        date: formData.date,          // DD/MM/YYYY format
         time: formData.time
       };
 
@@ -84,7 +167,6 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
       if (onSave) {
         await onSave(payload);
         
-        // Reset form
         setFormData({
           assetName: "",
           category: "",
@@ -97,7 +179,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
           purchasePrice: "",
           purchaseFrom: "",
           invoiceNo: "",
-          date: new Date().toISOString().split('T')[0],
+          date: "",
           time: new Date().toLocaleTimeString('en-US', { hour12: false }).slice(0, 5),
         });
         
@@ -113,7 +195,6 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
 
   const handleDialogClose = (open: boolean) => {
     if (!open && !isLoading) {
-      // Reset form
       setFormData({
         assetName: "",
         category: "",
@@ -126,7 +207,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
         purchasePrice: "",
         purchaseFrom: "",
         invoiceNo: "",
-        date: new Date().toISOString().split('T')[0],
+        date: "",
         time: new Date().toLocaleTimeString('en-US', { hour12: false }).slice(0, 5),
       });
     }
@@ -136,13 +217,11 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
   return (
     <Dialog open={open} onOpenChange={handleDialogClose}>
       <DialogContent className="bg-background border-border max-w-3xl max-h-[90vh] overflow-y-auto p-0">
-        {/* FIXED: Add DialogTitle and DialogDescription for accessibility */}
         <DialogTitle className="sr-only">Add New Asset</DialogTitle>
         <DialogDescription className="sr-only">
           Form for adding a new asset to the system
         </DialogDescription>
         
-        {/* Breadcrumb Header */}
         <div className="bg-cms-sidebar px-6 py-3 border-b border-border">
           <p className="text-xs text-muted-foreground">Assets/ Add Assets</p>
         </div>
@@ -153,7 +232,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
             <p className="text-sm text-muted-foreground">Enter the details for Asset</p>
           </div>
 
-          {/* Asset Information Section */}
+          {/* Asset Information Section - bilkul same */}
           <div className="mb-6">
             <h3 className="text-base font-semibold text-white mb-4">Asset Information</h3>
             <div className="grid grid-cols-3 gap-4 mb-4">
@@ -234,7 +313,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
             </div>
           </div>
 
-          {/* Assigned Details Section */}
+          {/* Assigned Details Section - same */}
           <div className="mb-6">
             <h3 className="text-base font-semibold text-white mb-4">Assigned Details</h3>
             <div className="grid grid-cols-2 gap-4">
@@ -264,7 +343,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
             </div>
           </div>
 
-          {/* Purchase Details Section */}
+          {/* Purchase Details Section - sirf date change */}
           <div className="mb-6">
             <h3 className="text-base font-semibold text-white mb-4">Purchase Details</h3>
             <div className="grid grid-cols-3 gap-4 mb-4">
@@ -308,16 +387,91 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Date & Time</label>
               <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="date"
-                    name="date"
-                    value={formData.date}
-                    onChange={handleInputChange}
-                    className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <div className="relative flex-1" ref={calendarRef}>
+                  <div 
+                    className="relative cursor-pointer"
+                    onClick={() => setShowCalendar(!showCalendar)}
+                  >
+                    <input
+                      type="text"
+                      readOnly
+                      placeholder="dd/mm/yyyy"
+                      value={formData.date}
+                      className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                    />
+                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  </div>
+                  
+                  {showCalendar && (
+                    <div className="absolute z-50 mt-1 w-72 bg-background border border-border rounded-lg shadow-lg">
+                      <div className="p-4 border-b border-border">
+                        <div className="flex items-center justify-between mb-3">
+                          <button onClick={handlePrevMonth} className="p-1 hover:bg-cms-input-bg rounded">
+                            <ChevronLeft className="w-5 h-5 text-muted-foreground" />
+                          </button>
+                          <div className="text-sm font-semibold text-foreground">
+                            {monthNames[currentMonth]} {currentYear}
+                          </div>
+                          <button onClick={handleNextMonth} className="p-1 hover:bg-cms-input-bg rounded">
+                            <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                          </button>
+                        </div>
+                        <button
+                          onClick={handleToday}
+                          className="w-full py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                        >
+                          Today
+                        </button>
+                      </div>
+
+                      <div className="p-4">
+                        <div className="grid grid-cols-7 mb-2">
+                          {dayNames.map(day => (
+                            <div key={day} className="text-center text-xs text-muted-foreground font-medium">
+                              {day}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-7 gap-1">
+                          {Array.from({ length: firstDayOfMonth }).map((_, index) => (
+                            <div key={`empty-${index}`} className="h-9" />
+                          ))}
+
+                          {Array.from({ length: daysInMonth }).map((_, index) => {
+                            const day = index + 1;
+                            const isToday = todayDate.getDate() === day && 
+                                            todayDate.getMonth() === currentMonth &&
+                                            todayDate.getFullYear() === currentYear;
+                            const isSelected = selectedDate && 
+                                              selectedDate.getDate() === day &&
+                                              selectedDate.getMonth() === currentMonth &&
+                                              selectedDate.getFullYear() === currentYear;
+
+                            return (
+                              <button
+                                key={day}
+                                onClick={() => handleDateSelect(day)}
+                                className={`
+                                  h-9 flex items-center justify-center text-sm rounded-md transition-colors
+                                  ${isSelected 
+                                    ? 'bg-primary text-primary-foreground' 
+                                    : isToday 
+                                    ? 'bg-blue-100 text-blue-600 font-semibold' 
+                                    : 'hover:bg-cms-input-bg text-foreground'
+                                  }
+                                `}
+                              >
+                                {day}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
+
                 <div className="relative">
                   <input
                     type="time"
@@ -332,7 +486,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
             </div>
           </div>
 
-          {/* Action Buttons */}
+          {/* Action Buttons - same */}
           <div className="flex justify-end gap-3 pt-4 border-t border-border">
             <button
               onClick={() => onOpenChange(false)}
