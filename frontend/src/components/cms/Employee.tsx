@@ -1,4 +1,4 @@
-// Employee.tsx - UPDATED WITH CNIC IMAGES AND TABLE VIEW
+// Employee.tsx - UPDATED AND CLEANED VERSION
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
@@ -25,12 +25,14 @@ import {
   Eye,
   MoreVertical,
   Download,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import axios from "axios";
 
 // ==================== API CONFIGURATION ====================
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 const createAPI = () => {
   const instance = axios.create({
@@ -40,12 +42,10 @@ const createAPI = () => {
 
   instance.interceptors.request.use(
     (config) => {
-      // Ensure the URL starts with /api
       if (config.url && !config.url.startsWith('/api/')) {
         config.url = `/api${config.url.startsWith('/') ? '' : '/'}${config.url}`;
       }
       
-      // Handle FormData
       if (config.data instanceof FormData) {
         config.headers['Content-Type'] = 'multipart/form-data';
       }
@@ -63,9 +63,9 @@ const createAPI = () => {
 const API = createAPI();
 
 interface EmployeeType {
-  _id: string; // MongoDB ID (REQUIRED for backend operations)
-  id: string; // Same as _id for frontend compatibility
-  employeeId: string; // Custom employee ID
+  _id: string;
+  id: string;
+  employeeId: string;
   name: string;
   title: string;
   department: string;
@@ -87,16 +87,14 @@ interface EmployeeType {
   createdAt?: string;
   updatedAt?: string;
   advancePayment: number;
-  cnicFrontImage?: string; // ADDED: CNIC Front Image
-  cnicBackImage?: string; // ADDED: CNIC Back Image
+  cnicFrontImage?: string;
+  cnicBackImage?: string;
 }
 
 const Employee = () => {
-  // Router Hooks
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   
-  // State Management
   const [employees, setEmployees] = useState<EmployeeType[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeType | null>(null);
@@ -104,15 +102,26 @@ const Employee = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [view, setView] = useState<"list" | "detail">("list");
   
-  // Photo Previews
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null);
   
-  // CNIC Image Previews
   const [cnicFrontPreview, setCnicFrontPreview] = useState<string | null>(null);
   const [cnicBackPreview, setCnicBackPreview] = useState<string | null>(null);
   const [editCnicFrontPreview, setEditCnicFrontPreview] = useState<string | null>(null);
   const [editCnicBackPreview, setEditCnicBackPreview] = useState<string | null>(null);
+  
+  // Date Picker States
+  const [showDobPicker, setShowDobPicker] = useState(false);
+  const [showHireDatePicker, setShowHireDatePicker] = useState(false);
+  const [showEditDobPicker, setShowEditDobPicker] = useState(false);
+  const [showEditHireDatePicker, setShowEditHireDatePicker] = useState(false);
+  
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const [selectedDobDate, setSelectedDobDate] = useState<Date | null>(null);
+  const [selectedHireDate, setSelectedHireDate] = useState<Date | null>(null);
+  const [selectedEditDobDate, setSelectedEditDobDate] = useState<Date | null>(null);
+  const [selectedEditHireDate, setSelectedEditHireDate] = useState<Date | null>(null);
   
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -122,15 +131,18 @@ const Employee = () => {
     pendingInterviews: 0,
   });
   
-  // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const cnicFrontInputRef = useRef<HTMLInputElement>(null);
   const cnicBackInputRef = useRef<HTMLInputElement>(null);
   const editCnicFrontInputRef = useRef<HTMLInputElement>(null);
   const editCnicBackInputRef = useRef<HTMLInputElement>(null);
+  
+  const dobPickerRef = useRef<HTMLDivElement>(null);
+  const hireDatePickerRef = useRef<HTMLDivElement>(null);
+  const editDobPickerRef = useRef<HTMLDivElement>(null);
+  const editHireDatePickerRef = useRef<HTMLDivElement>(null);
 
-  // Form Data
   const [formData, setFormData] = useState({
     employeeId: "",
     name: "",
@@ -172,13 +184,16 @@ const Employee = () => {
     advancePayment: "0",
   });
 
+  // Date Picker Constants
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
   // ==================== LIFECYCLE ====================
   useEffect(() => {
     fetchEmployees();
     fetchEmployeeStats();
   }, []);
 
-  // URL سے selected employee کا ID پڑھیں
   useEffect(() => {
     const employeeId = searchParams.get("view");
     if (employeeId && employees.length > 0) {
@@ -190,40 +205,47 @@ const Employee = () => {
     }
   }, [employees, searchParams]);
 
+  // Click outside handlers for date pickers
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dobPickerRef.current && !dobPickerRef.current.contains(event.target as Node)) {
+        setShowDobPicker(false);
+      }
+      if (hireDatePickerRef.current && !hireDatePickerRef.current.contains(event.target as Node)) {
+        setShowHireDatePicker(false);
+      }
+      if (editDobPickerRef.current && !editDobPickerRef.current.contains(event.target as Node)) {
+        setShowEditDobPicker(false);
+      }
+      if (editHireDatePickerRef.current && !editHireDatePickerRef.current.contains(event.target as Node)) {
+        setShowEditHireDatePicker(false);
+      }
+    };
+    
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   // ==================== API FUNCTIONS ====================
   const fetchEmployees = async () => {
     try {
       setIsLoading(true);
       const response = await API.get("/employees/get-all");
-      console.log("Backend response for get-all:", response.data);
       
       if (response.data.success) {
-        const employeesData = (response.data.data || []).map((emp: any) => {
-          console.log(`Employee ${emp.name} CNIC images:`, {
-            front: emp.cnicFrontImage,
-            back: emp.cnicBackImage,
-            hasFront: !!emp.cnicFrontImage,
-            hasBack: !!emp.cnicBackImage
-          });
-          
-          return {
-            ...emp,
-            advancePayment: emp.advancePayment || 0,
-            cnicFrontImage: emp.cnicFrontImage || "",
-            cnicBackImage: emp.cnicBackImage || "",
-            // Fix avatar URL if needed
-            avatar: emp.avatar || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face"
-          };
-        });
-        console.log("Mapped employees data with CNIC images:", employeesData);
+        const employeesData = (response.data.data || []).map((emp: any) => ({
+          ...emp,
+          advancePayment: emp.advancePayment || 0,
+          cnicFrontImage: emp.cnicFrontImage || "",
+          cnicBackImage: emp.cnicBackImage || "",
+          avatar: emp.avatar || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face"
+        }));
         setEmployees(employeesData);
       } else {
-        console.warn("Backend returned success: false");
         setEmployees([]);
       }
     } catch (error: any) {
       console.error("Failed to load employees:", error);
-      console.error("Error response:", error.response);
       alert(`Failed to load employees: ${error.response?.data?.message || error.message}`);
       setEmployees([]);
     } finally {
@@ -250,7 +272,21 @@ const Employee = () => {
 
   const createEmployee = async (formDataToSend: FormData) => {
     try {
-      const response = await API.post("/employees/create-employee", formDataToSend);
+      console.log("Sending employee data...");
+      
+      // Direct API call for better debugging
+      const response = await axios.post(
+        `${API_BASE_URL}/api/employees/create-employee`,
+        formDataToSend,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+          timeout: 30000,
+        }
+      );
+      
+      console.log("Create employee response:", response.data);
       
       if (response.data.success) {
         return response.data;
@@ -258,12 +294,16 @@ const Employee = () => {
         throw new Error(response.data.message || 'Failed to create employee');
       }
     } catch (error: any) {
-      console.error("API Create error:", error);
+      console.error("API Create error details:", {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        config: error.config,
+      });
       throw error;
     }
   };
 
-  // UPDATE EMPLOYEE
   const updateEmployee = async (id: string, employeeData: any, files: {
     avatar?: File;
     cnicFront?: File;
@@ -273,15 +313,11 @@ const Employee = () => {
       setIsSubmitting(true);
       
       if (!id || id === "undefined" || id === "") {
-        console.error("Invalid employee ID provided:", id);
         throw new Error("Invalid employee ID");
       }
       
-      console.log("Updating employee with MongoDB _id:", id);
-      
       const formDataToSend = new FormData();
       
-      // Append all form data EXCEPT _id
       Object.keys(employeeData).forEach(key => {
         if (key !== '_id') {
           const value = employeeData[key];
@@ -291,7 +327,6 @@ const Employee = () => {
         }
       });
 
-      // Append files if exists
       if (files.avatar) {
         formDataToSend.append("avatar", files.avatar);
       }
@@ -304,8 +339,6 @@ const Employee = () => {
 
       const response = await API.put(`/employees/${id}`, formDataToSend);
       
-      console.log("Update response:", response.data);
-      
       if (response.data.success) {
         return response.data;
       } else {
@@ -313,21 +346,17 @@ const Employee = () => {
       }
     } catch (error: any) {
       console.error("Update error details:", error);
-      console.error("Error response:", error.response?.data);
       throw error;
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // DELETE EMPLOYEE
   const deleteEmployee = async (id: string) => {
     try {
       if (!id || id === "undefined") {
         throw new Error("Invalid employee ID");
       }
-      
-      console.log("Deleting employee with MongoDB _id:", id);
       
       const response = await API.delete(`/employees/${id}`);
       
@@ -341,6 +370,185 @@ const Employee = () => {
       throw error;
     }
   };
+
+  // ==================== DATE PICKER FUNCTIONS ====================
+  const getDaysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
+  const getFirstDayOfMonth = (y: number, m: number) => new Date(y, m, 1).getDay();
+
+  const handlePrevMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear(y => y - 1);
+    } else {
+      setCurrentMonth(m => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear(y => y + 1);
+    } else {
+      setCurrentMonth(m => m + 1);
+    }
+  };
+
+  // Add Form Date Handling
+  const handleDobDateSelect = (day: number) => {
+    const date = new Date(currentYear, currentMonth, day);
+    setSelectedDobDate(date);
+    setShowDobPicker(false);
+    
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = date.getFullYear();
+    const dateStr = `${dd}/${mm}/${yyyy}`;
+    
+    setFormData(prev => ({ ...prev, dob: dateStr }));
+  };
+
+  const handleHireDateSelect = (day: number) => {
+    const date = new Date(currentYear, currentMonth, day);
+    setSelectedHireDate(date);
+    setShowHireDatePicker(false);
+    
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = date.getFullYear();
+    const dateStr = `${dd}/${mm}/${yyyy}`;
+    
+    setFormData(prev => ({ ...prev, hireDate: dateStr }));
+  };
+
+  const handleTodayDob = () => {
+    const today = new Date();
+    setSelectedDobDate(today);
+    setCurrentMonth(today.getMonth());
+    setCurrentYear(today.getFullYear());
+    setShowDobPicker(false);
+    
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yyyy = today.getFullYear();
+    const dateStr = `${dd}/${mm}/${yyyy}`;
+    
+    setFormData(prev => ({ ...prev, dob: dateStr }));
+  };
+
+  const handleTodayHireDate = () => {
+    const today = new Date();
+    setSelectedHireDate(today);
+    setCurrentMonth(today.getMonth());
+    setCurrentYear(today.getFullYear());
+    setShowHireDatePicker(false);
+    
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yyyy = today.getFullYear();
+    const dateStr = `${dd}/${mm}/${yyyy}`;
+    
+    setFormData(prev => ({ ...prev, hireDate: dateStr }));
+  };
+
+  // Edit Form Date Handling
+  const handleEditDobDateSelect = (day: number) => {
+    const date = new Date(currentYear, currentMonth, day);
+    setSelectedEditDobDate(date);
+    setShowEditDobPicker(false);
+    
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = date.getFullYear();
+    const dateStr = `${dd}/${mm}/${yyyy}`;
+    
+    setEditFormData(prev => ({ ...prev, dob: dateStr }));
+  };
+
+  const handleEditHireDateSelect = (day: number) => {
+    const date = new Date(currentYear, currentMonth, day);
+    setSelectedEditHireDate(date);
+    setShowEditHireDatePicker(false);
+    
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = date.getFullYear();
+    const dateStr = `${dd}/${mm}/${yyyy}`;
+    
+    setEditFormData(prev => ({ ...prev, hireDate: dateStr }));
+  };
+
+  const handleEditTodayDob = () => {
+    const today = new Date();
+    setSelectedEditDobDate(today);
+    setCurrentMonth(today.getMonth());
+    setCurrentYear(today.getFullYear());
+    setShowEditDobPicker(false);
+    
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yyyy = today.getFullYear();
+    const dateStr = `${dd}/${mm}/${yyyy}`;
+    
+    setEditFormData(prev => ({ ...prev, dob: dateStr }));
+  };
+
+  const handleEditTodayHireDate = () => {
+    const today = new Date();
+    setSelectedEditHireDate(today);
+    setCurrentMonth(today.getMonth());
+    setCurrentYear(today.getFullYear());
+    setShowEditHireDatePicker(false);
+    
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yyyy = today.getFullYear();
+    const dateStr = `${dd}/${mm}/${yyyy}`;
+    
+    setEditFormData(prev => ({ ...prev, hireDate: dateStr }));
+  };
+
+  // Initialize dates when modals open
+  useEffect(() => {
+    if (isAddModalOpen) {
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const yyyy = now.getFullYear();
+      const todayStr = `${dd}/${mm}/${yyyy}`;
+      
+      if (!formData.dob) {
+        setFormData(prev => ({ ...prev, dob: todayStr }));
+        setSelectedDobDate(now);
+      }
+      
+      if (!formData.hireDate) {
+        setFormData(prev => ({ ...prev, hireDate: todayStr }));
+        setSelectedHireDate(now);
+      }
+    }
+  }, [isAddModalOpen]);
+
+  useEffect(() => {
+    if (isEditModalOpen && editFormData.dob) {
+      const [dd, mm, yyyy] = editFormData.dob.split('/').map(Number);
+      if (dd && mm && yyyy) {
+        const parsed = new Date(yyyy, mm - 1, dd);
+        if (!isNaN(parsed.getTime())) {
+          setSelectedEditDobDate(parsed);
+        }
+      }
+    }
+    
+    if (isEditModalOpen && editFormData.hireDate) {
+      const [dd, mm, yyyy] = editFormData.hireDate.split('/').map(Number);
+      if (dd && mm && yyyy) {
+        const parsed = new Date(yyyy, mm - 1, dd);
+        if (!isNaN(parsed.getTime())) {
+          setSelectedEditHireDate(parsed);
+        }
+      }
+    }
+  }, [isEditModalOpen, editFormData.dob, editFormData.hireDate]);
 
   // ==================== EVENT HANDLERS ====================
   const filteredEmployees = employees.filter(
@@ -362,7 +570,6 @@ const Employee = () => {
     setEditFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // Handle Photo Upload
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -378,7 +585,6 @@ const Employee = () => {
     reader.readAsDataURL(file);
   };
 
-  // Handle CNIC Front Image Upload
   const handleCnicFrontUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -394,7 +600,6 @@ const Employee = () => {
     reader.readAsDataURL(file);
   };
 
-  // Handle CNIC Back Image Upload
   const handleCnicBackUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -414,45 +619,25 @@ const Employee = () => {
     ref.current?.click();
   };
 
-  const checkEmployeeImages = (employee: EmployeeType) => {
-    console.log("=== Employee Image Debug ===");
-    console.log("Employee ID:", employee.employeeId);
-    console.log("Avatar:", employee.avatar);
-    console.log("CNIC Front:", employee.cnicFrontImage);
-    console.log("CNIC Back:", employee.cnicBackImage);
-    console.log("Type of CNIC Front:", typeof employee.cnicFrontImage);
-    console.log("Type of CNIC Back:", typeof employee.cnicBackImage);
-    
-    // Check if URLs are valid
-    if (employee.cnicFrontImage) {
-      console.log("CNIC Front starts with:", employee.cnicFrontImage.substring(0, 50));
-    }
-    if (employee.cnicBackImage) {
-      console.log("CNIC Back starts with:", employee.cnicBackImage.substring(0, 50));
-    }
-    console.log("=========================");
-  };
-
-  // Helper function to get full image URL
   const getFullImageUrl = (imagePath: string | undefined) => {
     if (!imagePath) return "";
     
-    // If it's already a full URL, return as is
     if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
       return imagePath;
     }
     
-    // If it's a base64 data URL, return as is
     if (imagePath.startsWith('data:')) {
       return imagePath;
     }
     
-    // Otherwise, prepend API base URL
     return `${API_BASE_URL}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
   };
 
+  // ==================== EMPLOYEE OPERATIONS ====================
   const handleSaveEmployee = async () => {
-    // Validate required fields first
+    console.log("Saving employee data...");
+    
+    // Validate required fields
     const requiredFields = ['employeeId', 'name', 'email', 'phone', 'salary'];
     const missingFields = requiredFields.filter(field => {
       const value = formData[field as keyof typeof formData];
@@ -464,7 +649,7 @@ const Employee = () => {
       return;
     }
 
-    // Validate salary is a valid number
+    // Validate salary
     const salaryValue = parseFloat(formData.salary.replace(/[^0-9.-]+/g, ""));
     if (isNaN(salaryValue) || salaryValue <= 0) {
       alert("Please enter a valid salary amount");
@@ -473,9 +658,6 @@ const Employee = () => {
 
     try {
       setIsSubmitting(true);
-      
-      // Debug: Log form data
-      console.log("Form Data to submit:", formData);
       
       // Create FormData for submission
       const formDataToSend = new FormData();
@@ -488,7 +670,7 @@ const Employee = () => {
         }
       });
       
-      // Append files with correct field names
+      // Append files
       if (fileInputRef.current?.files?.[0]) {
         formDataToSend.append("avatar", fileInputRef.current.files[0]);
       }
@@ -499,8 +681,8 @@ const Employee = () => {
         formDataToSend.append("cnicBackImage", cnicBackInputRef.current.files[0]);
       }
       
-      // Debug: Log what's being sent
-      console.log("FormData being sent:");
+      // Log what we're sending
+      console.log("FormData contents:");
       for (let pair of formDataToSend.entries()) {
         console.log(pair[0], pair[1]);
       }
@@ -514,41 +696,30 @@ const Employee = () => {
           advancePayment: response.data.advancePayment || 0,
           cnicFrontImage: response.data.cnicFrontImage || "",
           cnicBackImage: response.data.cnicBackImage || "",
-          // Fix avatar URL if needed
           avatar: response.data.avatar || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face"
         };
         
-        console.log("New employee with CNIC images:", {
-          cnicFrontImage: newEmployee.cnicFrontImage,
-          cnicBackImage: newEmployee.cnicBackImage
-        });
-        
-        // Update employees list (DO NOT navigate to detail view)
         setEmployees(prev => [...prev, newEmployee]);
         setIsAddModalOpen(false);
         resetForm();
         await fetchEmployeeStats();
         alert("✅ Employee created successfully!");
-        
-        // Stay on list view - FIXED: No auto-navigation to detail page
       }
     } catch (error: any) {
-      console.error("Create error details:", {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status
-      });
+      console.error("Create error details:", error);
       
       let errorMessage = "Failed to create employee";
-      
       if (error.response) {
-        if (error.response.data) {
-          errorMessage = error.response.data.message || `Server error: ${error.response.status}`;
+        if (error.response.data?.message) {
+          errorMessage = error.response.data.message;
+        } else if (error.response.status === 400) {
+          errorMessage = "Bad request. Please check all fields.";
+        } else if (error.response.status === 409) {
+          errorMessage = "Employee ID, Email or CNIC already exists.";
         } else {
           errorMessage = `Server error: ${error.response.status}`;
         }
       } else if (error.request) {
-        console.error("No response received:", error.request);
         errorMessage = "No response from server. Please check if backend is running.";
       } else {
         errorMessage = error.message || "Failed to create employee";
@@ -560,11 +731,8 @@ const Employee = () => {
     }
   };
 
-  // HANDLE UPDATE
   const handleUpdateEmployee = async () => {
     const mongoId = editFormData._id;
-    
-    console.log("handleUpdateEmployee - ID:", mongoId);
     
     if (!mongoId || mongoId === "undefined" || mongoId === "") {
       alert("Invalid employee ID. Cannot update.");
@@ -579,8 +747,6 @@ const Employee = () => {
         cnicFront: editCnicFrontInputRef.current?.files?.[0],
         cnicBack: editCnicBackInputRef.current?.files?.[0],
       };
-      
-      console.log(`✏️ Updating employee with MongoDB ID: ${mongoId}...`);
       
       const response = await updateEmployee(mongoId, editFormData, files);
       
@@ -613,7 +779,6 @@ const Employee = () => {
     }
   };
 
-  // HANDLE DELETE
   const handleDeleteEmployee = async (employee: EmployeeType) => {
     if (!employee || !employee._id) {
       alert("Invalid employee");
@@ -625,7 +790,6 @@ const Employee = () => {
     }
 
     try {
-      console.log(`🗑️ Deleting employee with MongoDB ID: ${employee._id}...`);
       const response = await deleteEmployee(employee._id);
       
       if (response.success) {
@@ -701,34 +865,25 @@ const Employee = () => {
     if (editCnicBackInputRef.current) editCnicBackInputRef.current.value = "";
   };
 
-  // Handle View Profile click
   const handleViewProfile = (employee: EmployeeType) => {
     setSelectedEmployee(employee);
     setView("detail");
     setSearchParams({ view: employee._id });
-    
-    // Debug: Check image URLs
-    checkEmployeeImages(employee);
   };
 
-  // Handle Back to List
   const handleBackToList = () => {
     setView("list");
     setSelectedEmployee(null);
     setSearchParams({});
   };
 
-  // Handle Edit click
   const handleEditClick = (employee: EmployeeType) => {
-    console.log("handleEditClick - Employee data:", employee);
-    
     if (!employee) {
       alert("Error: Employee data not found");
       return;
     }
     
     const mongoId = employee._id || employee.id;
-    console.log("MongoDB ID found:", mongoId);
     
     if (!mongoId) {
       alert("Error: Employee ID not found. Cannot edit.");
@@ -737,7 +892,6 @@ const Employee = () => {
     
     setSelectedEmployee(employee);
     
-    // Extract salary number
     let salaryValue = "";
     if (employee.salary) {
       if (typeof employee.salary === 'string') {
@@ -747,7 +901,6 @@ const Employee = () => {
       }
     }
     
-    // Extract advancePayment
     let advancePaymentValue = "";
     if (employee.advancePayment !== undefined) {
       if (typeof employee.advancePayment === 'number') {
@@ -765,20 +918,18 @@ const Employee = () => {
       phone: employee.phone || "",
       email: employee.email || "",
       cnic: employee.cnic || "",
-      dob: formatDateForInput(employee.dob),
+      dob: employee.dob || "",
       emergencyContact: employee.emergencyContact || "",
       title: employee.title || "",
       department: employee.department || "",
       reportingManager: employee.reportingManager || "",
-      hireDate: formatDateForInput(employee.hireDate),
+      hireDate: employee.hireDate || "",
       startTime: formatTimeForInput(employee.startTime || "09:00"),
       endTime: formatTimeForInput(employee.endTime || "17:00"),
       responsibilities: employee.responsibilities || "",
       salary: salaryValue,
       advancePayment: advancePaymentValue || "0",
     };
-    
-    console.log("Edit form data prepared:", formattedData);
     
     setEditFormData(formattedData);
     setEditPhotoPreview(employee.avatar || null);
@@ -787,19 +938,7 @@ const Employee = () => {
     setIsEditModalOpen(true);
   };
 
-  const formatDateForInput = (dateString: string) => {
-    if (!dateString) return "";
-    try {
-      const date = new Date(dateString);
-      if (!isNaN(date.getTime())) {
-        return date.toISOString().split('T')[0];
-      }
-    } catch (error) {
-      console.warn("Date formatting error:", error);
-    }
-    return "";
-  };
-
+  // ==================== HELPER FUNCTIONS ====================
   const formatTimeForInput = (timeString: string) => {
     if (!timeString) return "09:00";
     
@@ -948,7 +1087,6 @@ const Employee = () => {
                 ))}
               </div>
               
-              {/* CNIC Images in Detail View */}
               <div className="mt-8 pt-6 border-t border-border">
                 <h3 className="text-md font-semibold text-foreground mb-4">CNIC Images</h3>
                 <div className="grid grid-cols-2 gap-4">
@@ -963,7 +1101,6 @@ const Employee = () => {
                           alt="CNIC Front" 
                           className="w-full h-40 object-contain rounded-lg border border-border bg-gray-50"
                           onError={(e) => {
-                            console.error("Error loading CNIC front image:", selectedEmployee.cnicFrontImage);
                             (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23f0f0f0'/%3E%3Ctext x='50' y='55' text-anchor='middle' font-size='10' fill='%23999'%3ECNIC Front%3C/text%3E%3C/svg%3E";
                           }}
                         />
@@ -996,7 +1133,6 @@ const Employee = () => {
                           alt="CNIC Back" 
                           className="w-full h-40 object-contain rounded-lg border border-border bg-gray-50"
                           onError={(e) => {
-                            console.error("Error loading CNIC back image:", selectedEmployee.cnicBackImage);
                             (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23f0f0f0'/%3E%3Ctext x='50' y='55' text-anchor='middle' font-size='10' fill='%23999'%3ECNIC Back%3C/text%3E%3C/svg%3E";
                           }}
                         />
@@ -1251,7 +1387,6 @@ const Employee = () => {
                 </table>
               </div>
 
-              {/* Table Footer */}
               <div className="bg-secondary border-t border-border px-4 py-3">
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-muted-foreground">
@@ -1420,7 +1555,6 @@ const Employee = () => {
                     { name: 'phone', label: 'Phone No.', type: 'text', placeholder: 'e.g 03001234567' },
                     { name: 'email', label: 'Email Address', type: 'email', placeholder: 'e.g john@example.com' },
                     { name: 'cnic', label: 'CNIC No.', type: 'text', placeholder: 'e.g 17301-242111-3' },
-                    { name: 'dob', label: 'Date of Birth', type: 'date' },
                     { name: 'emergencyContact', label: 'Emergency Contact', type: 'text', placeholder: 'e.g 83662626' },
                     { name: 'advancePayment', label: 'Advance Payment', type: 'number', placeholder: 'e.g 5000', min: "0" },
                   ].map((field) => (
@@ -1438,6 +1572,104 @@ const Employee = () => {
                       />
                     </div>
                   ))}
+                  
+                  {/* Date of Birth with Custom Picker */}
+                  <div>
+                    <label className="block text-sm text-muted-foreground mb-2">Date of Birth</label>
+                    <div className="relative" ref={dobPickerRef}>
+                      <div 
+                        className="relative cursor-pointer"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setShowDobPicker(prev => !prev);
+                          setShowHireDatePicker(false);
+                        }}
+                      >
+                        <input
+                          type="text"
+                          readOnly
+                          name="dob"
+                          value={formData.dob}
+                          placeholder="dd/mm/yyyy"
+                          className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground cursor-pointer pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                        <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      </div>
+
+                      {showDobPicker && (
+                        <div 
+                          className="absolute z-[999] mt-1 w-72 bg-background border border-border rounded-lg shadow-2xl"
+                          style={{ top: '100%', left: 0 }}
+                        >
+                          <div className="p-4 border-b border-border">
+                            <div className="flex items-center justify-between mb-3">
+                              <button onClick={handlePrevMonth} className="p-1 hover:bg-muted rounded">
+                                <ChevronLeft className="w-5 h-5 text-muted-foreground" />
+                              </button>
+                              <div className="text-sm font-semibold text-foreground">
+                                {monthNames[currentMonth]} {currentYear}
+                              </div>
+                              <button onClick={handleNextMonth} className="p-1 hover:bg-muted rounded">
+                                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                              </button>
+                            </div>
+                            <button
+                              onClick={handleTodayDob}
+                              className="w-full py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                            >
+                              Today
+                            </button>
+                          </div>
+
+                          <div className="p-4">
+                            <div className="grid grid-cols-7 mb-2">
+                              {dayNames.map(day => (
+                                <div key={day} className="text-center text-xs text-muted-foreground font-medium">
+                                  {day}
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="grid grid-cols-7 gap-1">
+                              {Array.from({ length: getFirstDayOfMonth(currentYear, currentMonth) }).map((_, i) => (
+                                <div key={`empty-${i}`} className="h-9" />
+                              ))}
+
+                              {Array.from({ length: getDaysInMonth(currentYear, currentMonth) }).map((_, index) => {
+                                const day = index + 1;
+                                const isToday = new Date().getDate() === day && 
+                                                new Date().getMonth() === currentMonth &&
+                                                new Date().getFullYear() === currentYear;
+                                const isSelected = selectedDobDate && 
+                                                  selectedDobDate.getDate() === day &&
+                                                  selectedDobDate.getMonth() === currentMonth &&
+                                                  selectedDobDate.getFullYear() === currentYear;
+
+                                return (
+                                  <button
+                                    key={day}
+                                    onClick={() => handleDobDateSelect(day)}
+                                    className={`
+                                      h-9 flex items-center justify-center text-sm rounded-md transition-colors
+                                      ${isSelected 
+                                        ? 'bg-primary text-primary-foreground' 
+                                        : isToday 
+                                        ? 'bg-blue-100 text-blue-600 font-semibold' 
+                                        : 'hover:bg-muted text-foreground'
+                                      }
+                                    `}
+                                  >
+                                    {day}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1460,7 +1692,6 @@ const Employee = () => {
                       placeholder: 'e.g IT Department'
                     },
                     { name: 'reportingManager', label: 'Reporting Manager', type: 'text', placeholder: 'e.g Mil young' },
-                    { name: 'hireDate', label: 'Hiring Date', type: 'date' },
                     { name: 'salary', label: 'Salary*', type: 'number', placeholder: 'e.g 40000', min: "0", step: "1" },
                   ].map((field) => (
                     <div key={field.name}>
@@ -1478,6 +1709,104 @@ const Employee = () => {
                       />
                     </div>
                   ))}
+                  
+                  {/* Hiring Date with Custom Picker */}
+                  <div>
+                    <label className="block text-sm text-muted-foreground mb-2">Hiring Date</label>
+                    <div className="relative" ref={hireDatePickerRef}>
+                      <div 
+                        className="relative cursor-pointer"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setShowHireDatePicker(prev => !prev);
+                          setShowDobPicker(false);
+                        }}
+                      >
+                        <input
+                          type="text"
+                          readOnly
+                          name="hireDate"
+                          value={formData.hireDate}
+                          placeholder="dd/mm/yyyy"
+                          className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground cursor-pointer pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                        <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      </div>
+
+                      {showHireDatePicker && (
+                        <div 
+                          className="absolute z-[999] mt-1 w-72 bg-background border border-border rounded-lg shadow-2xl"
+                          style={{ top: '100%', left: 0 }}
+                        >
+                          <div className="p-4 border-b border-border">
+                            <div className="flex items-center justify-between mb-3">
+                              <button onClick={handlePrevMonth} className="p-1 hover:bg-muted rounded">
+                                <ChevronLeft className="w-5 h-5 text-muted-foreground" />
+                              </button>
+                              <div className="text-sm font-semibold text-foreground">
+                                {monthNames[currentMonth]} {currentYear}
+                              </div>
+                              <button onClick={handleNextMonth} className="p-1 hover:bg-muted rounded">
+                                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                              </button>
+                            </div>
+                            <button
+                              onClick={handleTodayHireDate}
+                              className="w-full py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                            >
+                              Today
+                            </button>
+                          </div>
+
+                          <div className="p-4">
+                            <div className="grid grid-cols-7 mb-2">
+                              {dayNames.map(day => (
+                                <div key={day} className="text-center text-xs text-muted-foreground font-medium">
+                                  {day}
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="grid grid-cols-7 gap-1">
+                              {Array.from({ length: getFirstDayOfMonth(currentYear, currentMonth) }).map((_, i) => (
+                                <div key={`empty-${i}`} className="h-9" />
+                              ))}
+
+                              {Array.from({ length: getDaysInMonth(currentYear, currentMonth) }).map((_, index) => {
+                                const day = index + 1;
+                                const isToday = new Date().getDate() === day && 
+                                                new Date().getMonth() === currentMonth &&
+                                                new Date().getFullYear() === currentYear;
+                                const isSelected = selectedHireDate && 
+                                                  selectedHireDate.getDate() === day &&
+                                                  selectedHireDate.getMonth() === currentMonth &&
+                                                  selectedHireDate.getFullYear() === currentYear;
+
+                                return (
+                                  <button
+                                    key={day}
+                                    onClick={() => handleHireDateSelect(day)}
+                                    className={`
+                                      h-9 flex items-center justify-center text-sm rounded-md transition-colors
+                                      ${isSelected 
+                                        ? 'bg-primary text-primary-foreground' 
+                                        : isToday 
+                                        ? 'bg-blue-100 text-blue-600 font-semibold' 
+                                        : 'hover:bg-muted text-foreground'
+                                      }
+                                    `}
+                                  >
+                                    {day}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                   
                   {/* Time Fields */}
                   <div className="col-span-2 grid grid-cols-2 gap-2">
@@ -1675,7 +2004,6 @@ const Employee = () => {
                     { name: 'phone', label: 'Phone No.', type: 'text', placeholder: 'e.g 03001234567' },
                     { name: 'email', label: 'Email Address', type: 'email', placeholder: 'e.g john@example.com' },
                     { name: 'cnic', label: 'CNIC No.', type: 'text', placeholder: 'e.g 17301-242111-3' },
-                    { name: 'dob', label: 'Date of Birth', type: 'date' },
                     { name: 'emergencyContact', label: 'Emergency Contact', type: 'text', placeholder: 'e.g 83662626' },
                     { name: 'advancePayment', label: 'Advance Payment', type: 'number', placeholder: 'e.g 5000', min: "0" },
                   ].map((field) => (
@@ -1693,6 +2021,104 @@ const Employee = () => {
                       />
                     </div>
                   ))}
+                  
+                  {/* Date of Birth with Custom Picker */}
+                  <div>
+                    <label className="block text-sm text-muted-foreground mb-2">Date of Birth</label>
+                    <div className="relative" ref={editDobPickerRef}>
+                      <div 
+                        className="relative cursor-pointer"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setShowEditDobPicker(prev => !prev);
+                          setShowEditHireDatePicker(false);
+                        }}
+                      >
+                        <input
+                          type="text"
+                          readOnly
+                          name="dob"
+                          value={editFormData.dob}
+                          placeholder="dd/mm/yyyy"
+                          className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground cursor-pointer pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                        <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      </div>
+
+                      {showEditDobPicker && (
+                        <div 
+                          className="absolute z-[999] mt-1 w-72 bg-background border border-border rounded-lg shadow-2xl"
+                          style={{ top: '100%', left: 0 }}
+                        >
+                          <div className="p-4 border-b border-border">
+                            <div className="flex items-center justify-between mb-3">
+                              <button onClick={handlePrevMonth} className="p-1 hover:bg-muted rounded">
+                                <ChevronLeft className="w-5 h-5 text-muted-foreground" />
+                              </button>
+                              <div className="text-sm font-semibold text-foreground">
+                                {monthNames[currentMonth]} {currentYear}
+                              </div>
+                              <button onClick={handleNextMonth} className="p-1 hover:bg-muted rounded">
+                                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                              </button>
+                            </div>
+                            <button
+                              onClick={handleEditTodayDob}
+                              className="w-full py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                            >
+                              Today
+                            </button>
+                          </div>
+
+                          <div className="p-4">
+                            <div className="grid grid-cols-7 mb-2">
+                              {dayNames.map(day => (
+                                <div key={day} className="text-center text-xs text-muted-foreground font-medium">
+                                  {day}
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="grid grid-cols-7 gap-1">
+                              {Array.from({ length: getFirstDayOfMonth(currentYear, currentMonth) }).map((_, i) => (
+                                <div key={`empty-${i}`} className="h-9" />
+                              ))}
+
+                              {Array.from({ length: getDaysInMonth(currentYear, currentMonth) }).map((_, index) => {
+                                const day = index + 1;
+                                const isToday = new Date().getDate() === day && 
+                                                new Date().getMonth() === currentMonth &&
+                                                new Date().getFullYear() === currentYear;
+                                const isSelected = selectedEditDobDate && 
+                                                  selectedEditDobDate.getDate() === day &&
+                                                  selectedEditDobDate.getMonth() === currentMonth &&
+                                                  selectedEditDobDate.getFullYear() === currentYear;
+
+                                return (
+                                  <button
+                                    key={day}
+                                    onClick={() => handleEditDobDateSelect(day)}
+                                    className={`
+                                      h-9 flex items-center justify-center text-sm rounded-md transition-colors
+                                      ${isSelected 
+                                        ? 'bg-primary text-primary-foreground' 
+                                        : isToday 
+                                        ? 'bg-blue-100 text-blue-600 font-semibold' 
+                                        : 'hover:bg-muted text-foreground'
+                                      }
+                                    `}
+                                  >
+                                    {day}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1727,7 +2153,6 @@ const Employee = () => {
                       placeholder: 'e.g IT Department'
                     },
                     { name: 'reportingManager', label: 'Reporting Manager', type: 'text', placeholder: 'e.g Mil young' },
-                    { name: 'hireDate', label: 'Hiring Date', type: 'date' },
                     { name: 'salary', label: 'Salary', type: 'number', placeholder: 'e.g 40000', min: "0", step: "1" },
                   ].map((field) => (
                     <div key={field.name}>
@@ -1744,6 +2169,104 @@ const Employee = () => {
                       />
                     </div>
                   ))}
+                  
+                  {/* Hiring Date with Custom Picker */}
+                  <div>
+                    <label className="block text-sm text-muted-foreground mb-2">Hiring Date</label>
+                    <div className="relative" ref={editHireDatePickerRef}>
+                      <div 
+                        className="relative cursor-pointer"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setShowEditHireDatePicker(prev => !prev);
+                          setShowEditDobPicker(false);
+                        }}
+                      >
+                        <input
+                          type="text"
+                          readOnly
+                          name="hireDate"
+                          value={editFormData.hireDate}
+                          placeholder="dd/mm/yyyy"
+                          className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground cursor-pointer pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                        <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      </div>
+
+                      {showEditHireDatePicker && (
+                        <div 
+                          className="absolute z-[999] mt-1 w-72 bg-background border border-border rounded-lg shadow-2xl"
+                          style={{ top: '100%', left: 0 }}
+                        >
+                          <div className="p-4 border-b border-border">
+                            <div className="flex items-center justify-between mb-3">
+                              <button onClick={handlePrevMonth} className="p-1 hover:bg-muted rounded">
+                                <ChevronLeft className="w-5 h-5 text-muted-foreground" />
+                              </button>
+                              <div className="text-sm font-semibold text-foreground">
+                                {monthNames[currentMonth]} {currentYear}
+                              </div>
+                              <button onClick={handleNextMonth} className="p-1 hover:bg-muted rounded">
+                                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                              </button>
+                            </div>
+                            <button
+                              onClick={handleEditTodayHireDate}
+                              className="w-full py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                            >
+                              Today
+                            </button>
+                          </div>
+
+                          <div className="p-4">
+                            <div className="grid grid-cols-7 mb-2">
+                              {dayNames.map(day => (
+                                <div key={day} className="text-center text-xs text-muted-foreground font-medium">
+                                  {day}
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="grid grid-cols-7 gap-1">
+                              {Array.from({ length: getFirstDayOfMonth(currentYear, currentMonth) }).map((_, i) => (
+                                <div key={`empty-${i}`} className="h-9" />
+                              ))}
+
+                              {Array.from({ length: getDaysInMonth(currentYear, currentMonth) }).map((_, index) => {
+                                const day = index + 1;
+                                const isToday = new Date().getDate() === day && 
+                                                new Date().getMonth() === currentMonth &&
+                                                new Date().getFullYear() === currentYear;
+                                const isSelected = selectedEditHireDate && 
+                                                  selectedEditHireDate.getDate() === day &&
+                                                  selectedEditHireDate.getMonth() === currentMonth &&
+                                                  selectedEditHireDate.getFullYear() === currentYear;
+
+                                return (
+                                  <button
+                                    key={day}
+                                    onClick={() => handleEditHireDateSelect(day)}
+                                    className={`
+                                      h-9 flex items-center justify-center text-sm rounded-md transition-colors
+                                      ${isSelected 
+                                        ? 'bg-primary text-primary-foreground' 
+                                        : isToday 
+                                        ? 'bg-blue-100 text-blue-600 font-semibold' 
+                                        : 'hover:bg-muted text-foreground'
+                                      }
+                                    `}
+                                  >
+                                    {day}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                   
                   {/* Time Fields */}
                   <div className="col-span-2 grid grid-cols-2 gap-2">

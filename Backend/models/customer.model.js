@@ -32,10 +32,13 @@ const customerSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
-  registrationDate: {
-    type: Date,
-    default: Date.now
-  },
+registrationDate: {
+  type: String,          // ← Date ki jagah String
+  default: () => {
+    const today = new Date();
+    return today.toLocaleDateString('en-GB').split('/').reverse().join('-'); // ya tumhara format
+  }
+},
   address: {
     type: String,
     trim: true,

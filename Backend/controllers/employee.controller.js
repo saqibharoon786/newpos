@@ -256,6 +256,62 @@ const createEmployee = async (req, res) => {
             }
         }
         
+        // ============= FIXED DATE PARSING FUNCTION =============
+        const parseDateString = (dateString) => {
+            if (!dateString || dateString.trim() === '') return null;
+            
+            dateString = dateString.trim();
+            
+            console.log('Parsing date string:', dateString);
+            
+            // Handle DD/MM/YYYY format
+            if (dateString.includes('/')) {
+                const parts = dateString.split('/');
+                
+                if (parts.length === 3) {
+                    const day = parseInt(parts[0], 10);
+                    const month = parseInt(parts[1], 10);
+                    const year = parseInt(parts[2], 10);
+                    
+                    console.log('DD/MM/YYYY parsed:', { day, month, year });
+                    
+                    if (!isNaN(day) && !isNaN(month) && !isNaN(year) && 
+                        day >= 1 && day <= 31 && 
+                        month >= 1 && month <= 12 &&
+                        year >= 1900 && year <= 2100) {
+                        
+                        // Create date in UTC to avoid timezone issues
+                        const date = new Date(Date.UTC(year, month - 1, day));
+                        
+                        // Additional validation
+                        if (date.getUTCFullYear() === year && 
+                            date.getUTCMonth() === month - 1 && 
+                            date.getUTCDate() === day) {
+                            console.log('Valid date created:', date.toISOString());
+                            return date;
+                        }
+                    }
+                }
+            }
+            
+            console.log('Could not parse date, returning null');
+            return null;
+        };
+
+        console.log('Request body dates:', {
+            dob: req.body.dob,
+            hireDate: req.body.hireDate
+        });
+        
+        // Parse dates
+        const dobDate = parseDateString(req.body.dob);
+        const hireDate = parseDateString(req.body.hireDate) || new Date();
+        
+        console.log('Parsed dates:', {
+            dobDate: dobDate ? dobDate.toISOString() : null,
+            hireDate: hireDate ? hireDate.toISOString() : null
+        });
+        
         // Prepare employee data
         const employeeData = {
             employeeId: req.body.employeeId.trim(),
@@ -269,14 +325,16 @@ const createEmployee = async (req, res) => {
             salary: parseFloat(req.body.salary.replace(/[^0-9.-]+/g, "")) || 0,
             address: req.body.address || '',
             cnic: req.body.cnic || '',
-            dob: req.body.dob ? new Date(req.body.dob) : null,
+            dob: dobDate,
             emergencyContact: req.body.emergencyContact || '',
             reportingManager: req.body.reportingManager || '',
-            hireDate: req.body.hireDate ? new Date(req.body.hireDate) : new Date(),
+            hireDate: hireDate,
             responsibilities: req.body.responsibilities || '',
             advancePayment: parseFloat(req.body.advancePayment) || 0,
             isActive: req.body.isActive !== undefined ? req.body.isActive : true
         };
+        
+        console.log('Final employee data to save:', employeeData);
         
         // Add avatar path if file was uploaded
         if (req.files && req.files.avatar) {
@@ -299,8 +357,19 @@ const createEmployee = async (req, res) => {
         // Default avatar URL
         const defaultAvatar = 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face';
         
-        // Default CNIC image URL (a placeholder for missing CNIC images)
+        // Default CNIC image URL
         const defaultCnicImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect width="100" height="100" fill="%23f0f0f0"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="10" fill="%23999"%3ECNIC Image%3C/text%3E%3C/svg%3E';
+        
+        // Format date for response
+        const formatDateForResponse = (date) => {
+            if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+            
+            const day = date.getUTCDate().toString().padStart(2, '0');
+            const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+            const year = date.getUTCFullYear();
+            
+            return `${day}/${month}/${year}`;
+        };
         
         // Format response
         const formattedEmployee = {
@@ -321,10 +390,10 @@ const createEmployee = async (req, res) => {
             cnicBackImage: employee.cnicBackImage ? getFileUrl(req, employee.cnicBackImage) : defaultCnicImage,
             address: employee.address || '',
             cnic: employee.cnic || '',
-            dob: employee.dob ? employee.dob.toISOString().split('T')[0] : '',
+            dob: formatDateForResponse(employee.dob),
             emergencyContact: employee.emergencyContact || '',
             reportingManager: employee.reportingManager || '',
-            hireDate: employee.hireDate ? employee.hireDate.toISOString().split('T')[0] : '',
+            hireDate: formatDateForResponse(employee.hireDate),
             responsibilities: employee.responsibilities || '',
             advancePayment: employee.advancePayment || 0,
             isActive: employee.isActive,
@@ -348,9 +417,21 @@ const createEmployee = async (req, res) => {
         }
         
         console.error('Error creating employee:', error);
+        
+        let errorMessage = 'Error creating employee';
+        
+        if (error.name === 'ValidationError') {
+            // Handle mongoose validation errors
+            const errors = Object.values(error.errors).map(err => err.message);
+            errorMessage = `Validation error: ${errors.join(', ')}`;
+        } else if (error.code === 11000) {
+            // Handle duplicate key errors
+            errorMessage = 'Duplicate entry found. Employee ID, Email or CNIC already exists.';
+        }
+        
         res.status(500).json({
             success: false,
-            message: 'Error creating employee',
+            message: errorMessage,
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
@@ -362,8 +443,7 @@ const createEmployee = async (req, res) => {
 const updateEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
-
+    
     // Validate MongoDB ObjectId
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -372,31 +452,16 @@ const updateEmployee = async (req, res) => {
       });
     }
 
-    // Handle salary conversion if provided
-    if (updateData.salary && typeof updateData.salary === 'string') {
-      updateData.salary = parseFloat(updateData.salary.replace(/[^0-9.-]+/g, "")) || 0;
-    }
-
-    // Handle advancePayment conversion if provided
-    if (updateData.advancePayment !== undefined) {
-      updateData.advancePayment = parseFloat(updateData.advancePayment) || 0;
-    }
-
-    // Handle file upload if exists
-    if (req.file) {
-      updateData.avatar = req.file.path;
-    }
-
-    // Update employee by MongoDB _id
-    const employee = await Employee.findByIdAndUpdate(id, updateData, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!employee) {
-      // Delete uploaded file if employee not found
-      if (req.file) {
-        deleteFile(req.file.path);
+    // Find existing employee first
+    const existingEmployee = await Employee.findById(id);
+    if (!existingEmployee) {
+      // Delete uploaded files if employee not found
+      if (req.files) {
+        Object.values(req.files).forEach(fileArray => {
+          if (Array.isArray(fileArray)) {
+            fileArray.forEach(file => deleteFile(file.path));
+          }
+        });
       }
       
       return res.status(404).json({
@@ -405,33 +470,224 @@ const updateEmployee = async (req, res) => {
       });
     }
 
-    // Get file URL for avatar
-    const avatarUrl = getFileUrl(req, employee.avatar);
+    console.log('Update request body:', req.body);
+    console.log('Update request files:', req.files);
+
+    // ============= DATE PARSING FUNCTION =============
+    const parseDateString = (dateString) => {
+      if (!dateString || dateString.trim() === '') return null;
+      
+      dateString = dateString.trim();
+      
+      console.log('Parsing date string:', dateString);
+      
+      // Handle DD/MM/YYYY format
+      if (dateString.includes('/')) {
+        const parts = dateString.split('/');
+        
+        if (parts.length === 3) {
+          const day = parseInt(parts[0], 10);
+          const month = parseInt(parts[1], 10);
+          const year = parseInt(parts[2], 10);
+          
+          console.log('DD/MM/YYYY parsed:', { day, month, year });
+          
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year) && 
+              day >= 1 && day <= 31 && 
+              month >= 1 && month <= 12 &&
+              year >= 1900 && year <= 2100) {
+            
+            // Create date in UTC to avoid timezone issues
+            const date = new Date(Date.UTC(year, month - 1, day));
+            
+            // Additional validation
+            if (date.getUTCFullYear() === year && 
+                date.getUTCMonth() === month - 1 && 
+                date.getUTCDate() === day) {
+              console.log('Valid date created:', date.toISOString());
+              return date;
+            }
+          }
+        }
+      }
+      
+      console.log('Could not parse date, returning null');
+      return null;
+    };
+
+    // Prepare update data
+    const updateData = {
+      ...req.body,
+      // Parse dates
+      dob: req.body.dob ? parseDateString(req.body.dob) : existingEmployee.dob,
+      hireDate: req.body.hireDate ? parseDateString(req.body.hireDate) : existingEmployee.hireDate,
+      // Handle numeric conversions
+      salary: req.body.salary ? parseFloat(req.body.salary.replace(/[^0-9.-]+/g, "")) || existingEmployee.salary : existingEmployee.salary,
+      advancePayment: req.body.advancePayment !== undefined ? parseFloat(req.body.advancePayment) || 0 : existingEmployee.advancePayment,
+      // Handle strings
+      name: req.body.name || existingEmployee.name,
+      address: req.body.address !== undefined ? req.body.address : existingEmployee.address,
+      phone: req.body.phone || existingEmployee.phone,
+      email: req.body.email || existingEmployee.email,
+      cnic: req.body.cnic || existingEmployee.cnic,
+      emergencyContact: req.body.emergencyContact !== undefined ? req.body.emergencyContact : existingEmployee.emergencyContact,
+      title: req.body.title !== undefined ? req.body.title : existingEmployee.title,
+      department: req.body.department !== undefined ? req.body.department : existingEmployee.department,
+      reportingManager: req.body.reportingManager !== undefined ? req.body.reportingManager : existingEmployee.reportingManager,
+      responsibilities: req.body.responsibilities !== undefined ? req.body.responsibilities : existingEmployee.responsibilities,
+      startTime: req.body.startTime || existingEmployee.startTime || "09:00",
+      endTime: req.body.endTime || existingEmployee.endTime || "17:00",
+      isActive: req.body.isActive !== undefined ? req.body.isActive : existingEmployee.isActive !== undefined ? existingEmployee.isActive : true,
+    };
+
+    console.log('Update data prepared:', updateData);
+
+    // Handle file uploads
+    if (req.files) {
+      // Handle avatar
+      if (req.files.avatar && req.files.avatar[0]) {
+        // Delete old avatar if exists
+        if (existingEmployee.avatar) {
+          deleteFile(existingEmployee.avatar);
+        }
+        updateData.avatar = req.files.avatar[0].path;
+      }
+      
+      // Handle CNIC Front Image
+      if (req.files.cnicFrontImage && req.files.cnicFrontImage[0]) {
+        // Delete old CNIC front image if exists
+        if (existingEmployee.cnicFrontImage) {
+          deleteFile(existingEmployee.cnicFrontImage);
+        }
+        updateData.cnicFrontImage = req.files.cnicFrontImage[0].path;
+      }
+      
+      // Handle CNIC Back Image
+      if (req.files.cnicBackImage && req.files.cnicBackImage[0]) {
+        // Delete old CNIC back image if exists
+        if (existingEmployee.cnicBackImage) {
+          deleteFile(existingEmployee.cnicBackImage);
+        }
+        updateData.cnicBackImage = req.files.cnicBackImage[0].path;
+      }
+    }
+
+    // Check for duplicate email if email is being changed
+    if (req.body.email && req.body.email !== existingEmployee.email) {
+      const existingEmail = await Employee.findOne({ 
+        email: req.body.email,
+        _id: { $ne: id } // Exclude current employee
+      });
+      
+      if (existingEmail) {
+        // Delete uploaded files if email already exists
+        if (req.files) {
+          Object.values(req.files).forEach(fileArray => {
+            if (Array.isArray(fileArray)) {
+              fileArray.forEach(file => deleteFile(file.path));
+            }
+          });
+        }
+        
+        return res.status(400).json({
+          success: false,
+          message: "Email already exists"
+        });
+      }
+    }
+
+    // Check for duplicate CNIC if CNIC is being changed
+    if (req.body.cnic && req.body.cnic !== existingEmployee.cnic) {
+      const existingCNIC = await Employee.findOne({ 
+        cnic: req.body.cnic,
+        _id: { $ne: id } // Exclude current employee
+      });
+      
+      if (existingCNIC) {
+        // Delete uploaded files if CNIC already exists
+        if (req.files) {
+          Object.values(req.files).forEach(fileArray => {
+            if (Array.isArray(fileArray)) {
+              fileArray.forEach(file => deleteFile(file.path));
+            }
+          });
+        }
+        
+        return res.status(400).json({
+          success: false,
+          message: "CNIC already exists"
+        });
+      }
+    }
+
+    // Update employee
+    const employee = await Employee.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!employee) {
+      // Delete uploaded files if update failed
+      if (req.files) {
+        Object.values(req.files).forEach(fileArray => {
+          if (Array.isArray(fileArray)) {
+            fileArray.forEach(file => deleteFile(file.path));
+          }
+        });
+      }
+      
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update employee",
+      });
+    }
+
+    // Default URLs
+    const defaultAvatar = 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face';
+    const defaultCnicImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect width="100" height="100" fill="%23f0f0f0"/%3E%3Ctext x="50" y="55" text-anchor="middle" font-size="10" fill="%23999"%3ECNIC Image%3C/text%3E%3C/svg%3E';
+
+    // Format date for response
+    const formatDateForResponse = (date) => {
+      if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+      
+      const day = date.getUTCDate().toString().padStart(2, '0');
+      const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+      const year = date.getUTCFullYear();
+      
+      return `${day}/${month}/${year}`;
+    };
 
     // Format the response
     const formattedEmployee = {
       _id: employee._id,
+      id: employee.employeeId,
       employeeId: employee.employeeId,
       name: employee.name,
       title: employee.title || "",
       department: employee.department || "",
       email: employee.email,
       phone: employee.phone,
-      schedule: employee.schedule || "",
-      salary: employee.salary ? `Rs. ${employee.salary.toLocaleString()}` : "Rs. 0",
-      avatar: avatarUrl || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face",
-      address: employee.address || "",
-      cnic: employee.cnic || "",
-      dob: employee.dob ? employee.dob.toISOString().split('T')[0] : "",
-      emergencyContact: employee.emergencyContact || "",
-      reportingManager: employee.reportingManager || "",
-      hireDate: employee.hireDate ? employee.hireDate.toISOString().split('T')[0] : "",
-      responsibilities: employee.responsibilities || "",
-      advancePayment: employee.advancePayment || 0, // ADDED THIS LINE
-      isActive: employee.isActive || true,
       startTime: employee.startTime || "09:00",
       endTime: employee.endTime || "17:00",
+      schedule: employee.schedule || "",
+      salary: `Rs. ${employee.salary?.toLocaleString() || '0'}`,
+      avatar: employee.avatar ? getFileUrl(req, employee.avatar) : defaultAvatar,
+      cnicFrontImage: employee.cnicFrontImage ? getFileUrl(req, employee.cnicFrontImage) : defaultCnicImage,
+      cnicBackImage: employee.cnicBackImage ? getFileUrl(req, employee.cnicBackImage) : defaultCnicImage,
+      address: employee.address || "",
+      cnic: employee.cnic || "",
+      dob: formatDateForResponse(employee.dob),
+      emergencyContact: employee.emergencyContact || "",
+      reportingManager: employee.reportingManager || "",
+      hireDate: formatDateForResponse(employee.hireDate),
+      responsibilities: employee.responsibilities || "",
+      advancePayment: employee.advancePayment || 0,
+      isActive: employee.isActive || true,
+      createdAt: employee.createdAt,
+      updatedAt: employee.updatedAt
     };
+
+    console.log('Employee updated successfully:', formattedEmployee);
 
     res.json({
       success: true,
@@ -441,16 +697,20 @@ const updateEmployee = async (req, res) => {
   } catch (error) {
     console.error("Error updating employee:", error);
 
-    // Delete uploaded file if error occurs
-    if (req.file) {
-      deleteFile(req.file.path);
+    // Delete uploaded files if error occurs
+    if (req.files) {
+      Object.values(req.files).forEach(fileArray => {
+        if (Array.isArray(fileArray)) {
+          fileArray.forEach(file => deleteFile(file.path));
+        }
+      });
     }
 
     if (error.name === "ValidationError") {
       return res.status(400).json({
         success: false,
         message: "Validation error",
-        error: error.message,
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined,
       });
     }
 
