@@ -709,7 +709,7 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
         {/* Vehicle Image Section */}
         <div className="bg-cms-card rounded-xl p-5 border border-border">
           <h3 className="text-base font-semibold text-foreground mb-4 pb-3 border-b border-border">
-            Recepit Image
+            Recepits Image
             {imageError && (
               <span className="ml-2 text-xs bg-red-500/10 text-red-600 px-2 py-1 rounded">
                 Error Loading
