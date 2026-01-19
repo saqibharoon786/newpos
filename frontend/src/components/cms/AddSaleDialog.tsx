@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Save, Upload, Calendar, Edit, Trash2, Eye, Loader2, ChevronDown, Clock, Image as ImageIcon, X, Package } from "lucide-react";
+import { Save, Upload, Calendar, Edit, Trash2, Eye, Loader2, ChevronDown, Clock, Image as ImageIcon, X, Package, ChevronLeft, ChevronRight } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import axios from "axios";
 
@@ -108,6 +108,22 @@ export function AddSaleDialog({
   isEdit = false, 
   editData = null 
 }: AddSaleDialogProps) {
+  // Date picker states
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  
+  // Time states
+  const [selectedHour, setSelectedHour] = useState("12");
+  const [selectedMinute, setSelectedMinute] = useState("00");
+  const [selectedAmPm, setSelectedAmPm] = useState<"AM" | "PM">("PM");
+
+  // Refs for click outside handling
+  const calendarRef = useRef<HTMLDivElement>(null);
+  const timeRef = useRef<HTMLDivElement>(null);
+
   const [formData, setFormData] = useState({
     materialName: "",
     supplierName: "",
@@ -155,48 +171,131 @@ export function AddSaleDialog({
   const [weightError, setWeightError] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch materials from purchases when dialog opens
+  // Calendar helper functions
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const getDaysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
+  const getFirstDayOfMonth = (y: number, m: number) => new Date(y, m, 1).getDay();
+
+  const handlePrevMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear(y => y - 1);
+    } else {
+      setCurrentMonth(m => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear(y => y + 1);
+    } else {
+      setCurrentMonth(m => m + 1);
+    }
+  };
+
+  const handleDateSelect = (day: number) => {
+    const date = new Date(currentYear, currentMonth, day);
+    setSelectedDate(date);
+    setShowCalendar(false);
+  };
+
+  const handleToday = () => {
+    const today = new Date();
+    setSelectedDate(today);
+    setCurrentMonth(today.getMonth());
+    setCurrentYear(today.getFullYear());
+    setShowCalendar(false);
+  };
+
+  // Time picker options
+  const hours = Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0'));
+  const minutes = ['00', '15', '30', '45'];
+
+  // Click outside handlers
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
+        setShowCalendar(false);
+      }
+      if (timeRef.current && !timeRef.current.contains(event.target as Node)) {
+        setShowTimePicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Helper function to get today's date in dd/mm/yyyy format
+  const getTodayDate = (): string => {
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yyyy = today.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
+
+  // Helper function to get current time in HH:MM AM/PM format
+  const getCurrentTime = (): string => {
+    const now = new Date();
+    let hour = now.getHours();
+    const minute = String(now.getMinutes()).padStart(2, '0');
+    const ampm: "AM" | "PM" = hour >= 12 ? "PM" : "AM";
+    const hour12 = hour % 12 || 12;
+    return `${hour12.toString().padStart(2, '0')}:${minute} ${ampm}`;
+  };
+
+  // Populate form when editing
   useEffect(() => {
     if (open) {
-      fetchMaterials();
-      
+      const todayStr = getTodayDate();
+      const currentTimeStr = getCurrentTime();
+
       if (isEdit && editData) {
-        // Format dates for input
-        const formatDateForInput = (dateString: string) => {
-          if (!dateString) return "";
+        // Parse sale date
+        let saleDateParsed: Date | null = null;
+        let saleDateStr = todayStr;
+        if (editData.purchaseDate) {
           try {
-            const date = new Date(dateString);
-            return date.toISOString().split('T')[0];
+            saleDateParsed = new Date(editData.purchaseDate);
+            if (!isNaN(saleDateParsed.getTime())) {
+              const dd = String(saleDateParsed.getDate()).padStart(2, '0');
+              const mm = String(saleDateParsed.getMonth() + 1).padStart(2, '0');
+              const yyyy = saleDateParsed.getFullYear();
+              saleDateStr = `${dd}/${mm}/${yyyy}`;
+            }
           } catch (error) {
-            return "";
+            console.error("Error parsing sale date:", error);
           }
-        };
+        }
 
-        const formatTimeForInput = (dateString: string) => {
-          if (!dateString) return "";
+        // Parse sale time
+        let saleTimeStr = currentTimeStr;
+        if (editData.purchaseDate) {
           try {
-            const date = new Date(dateString);
-            return date.toLocaleTimeString('en-US', { 
-              hour12: false, 
-              hour: '2-digit', 
-              minute: '2-digit' 
-            });
+            const saleTimeParsed = new Date(editData.purchaseDate);
+            if (!isNaN(saleTimeParsed.getTime())) {
+              let hour = saleTimeParsed.getHours();
+              const minute = String(saleTimeParsed.getMinutes()).padStart(2, '0');
+              const ampm: "AM" | "PM" = hour >= 12 ? "PM" : "AM";
+              const hour12 = hour % 12 || 12;
+              saleTimeStr = `${hour12.toString().padStart(2, '0')}:${minute} ${ampm}`;
+            }
           } catch (error) {
-            return "";
+            console.error("Error parsing sale time:", error);
           }
-        };
+        }
 
-        const purchaseDate = editData.purchaseDate ? formatDateForInput(editData.purchaseDate) : "";
-        const purchaseTime = editData.purchaseDate ? formatTimeForInput(editData.purchaseDate) : "";
-        
         setFormData({
           materialName: editData.materialName || "",
           supplierName: editData.supplierName || "",
           invoiceNo: editData.invoiceNo || "",
           weight: editData.weight || "",
           unit: editData.unit || "",
-          purchaseDate: purchaseDate,
-          purchaseTime: purchaseTime,
+          purchaseDate: saleDateStr,
+          purchaseTime: saleTimeStr,
           branch: editData.branch || "",
           materialColor: editData.materialColor || "#FFFFFF",
           actualPrice: editData.actualPrice || "",
@@ -218,6 +317,26 @@ export function AddSaleDialog({
         
         setSelectedColor(editData.materialColor || "#FFFFFF");
         
+        // Set date picker states
+        if (saleDateParsed) {
+          setSelectedDate(saleDateParsed);
+          setCurrentMonth(saleDateParsed.getMonth());
+          setCurrentYear(saleDateParsed.getFullYear());
+        } else {
+          const now = new Date();
+          setSelectedDate(now);
+          setCurrentMonth(now.getMonth());
+          setCurrentYear(now.getFullYear());
+        }
+
+        // Set time picker states
+        const saleTimeMatch = saleTimeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (saleTimeMatch) {
+          setSelectedHour(saleTimeMatch[1].padStart(2, '0'));
+          setSelectedMinute(saleTimeMatch[2]);
+          setSelectedAmPm((saleTimeMatch[3] as "AM" | "PM") || "AM");
+        }
+        
         // Set receipt preview if exists
         if (editData.receiptImage) {
           setReceiptPreview(`${API_BASE_URL}${editData.receiptImage}`);
@@ -225,8 +344,27 @@ export function AddSaleDialog({
       } else {
         resetForm();
       }
+      
+      // Fetch materials
+      fetchMaterials();
     }
   }, [open, isEdit, editData]);
+
+  // Update form data when date changes
+  useEffect(() => {
+    if (selectedDate) {
+      const dd = String(selectedDate.getDate()).padStart(2, '0');
+      const mm = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const yyyy = selectedDate.getFullYear();
+      setFormData(prev => ({ ...prev, purchaseDate: `${dd}/${mm}/${yyyy}` }));
+    }
+  }, [selectedDate]);
+
+  // Update form data when time changes
+  useEffect(() => {
+    const timeStr = `${selectedHour}:${selectedMinute} ${selectedAmPm}`;
+    setFormData(prev => ({ ...prev, purchaseTime: timeStr }));
+  }, [selectedHour, selectedMinute, selectedAmPm]);
 
   const fetchMaterials = async () => {
     try {
@@ -301,8 +439,8 @@ export function AddSaleDialog({
     }
     
     if (!formData.unit.trim()) newErrors.unit = "Unit is required";
-    if (!formData.purchaseDate) newErrors.purchaseDate = "Purchase date is required";
-    if (!formData.purchaseTime) newErrors.purchaseTime = "Purchase time is required";
+    if (!formData.purchaseDate) newErrors.purchaseDate = "Sale date is required";
+    if (!formData.purchaseTime) newErrors.purchaseTime = "Sale time is required";
     if (!formData.branch) newErrors.branch = "Branch is required";
     if (!formData.actualPrice || parseFloat(formData.actualPrice.replace(/,/g, '')) <= 0) newErrors.actualPrice = "Valid actual price is required";
     if (!formData.sellingPrice || parseFloat(formData.sellingPrice.replace(/,/g, '')) <= 0) newErrors.sellingPrice = "Valid selling price is required";
@@ -429,10 +567,24 @@ export function AddSaleDialog({
     setIsSubmitting(true);
     
     try {
-      // Combine date and time
-      const dateTime = formData.purchaseDate && formData.purchaseTime 
-        ? `${formData.purchaseDate}T${formData.purchaseTime}:00`
-        : new Date().toISOString();
+      // Parse date from dd/mm/yyyy format
+      const parseDate = (dateStr: string, timeStr: string): string => {
+        const [dd, mm, yyyy] = dateStr.split('/').map(Number);
+        const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (!timeMatch) return new Date().toISOString();
+        
+        let hour = parseInt(timeMatch[1]);
+        const minute = parseInt(timeMatch[2]);
+        const ampm = timeMatch[3];
+        
+        if (ampm.toUpperCase() === "PM" && hour < 12) hour += 12;
+        if (ampm.toUpperCase() === "AM" && hour === 12) hour = 0;
+        
+        const date = new Date(yyyy, mm - 1, dd, hour, minute);
+        return date.toISOString();
+      };
+
+      const dateTime = parseDate(formData.purchaseDate, formData.purchaseTime);
 
       // Calculate final amount
       const selling = parseFloat(formData.sellingPrice.replace(/,/g, '')) || 0;
@@ -550,14 +702,18 @@ export function AddSaleDialog({
   };
 
   const resetForm = () => {
+    const now = new Date();
+    const todayStr = getTodayDate();
+    const currentTimeStr = getCurrentTime();
+
     setFormData({
       materialName: "",
       supplierName: "",
       invoiceNo: "",
       weight: "",
       unit: "",
-      purchaseDate: "",
-      purchaseTime: "",
+      purchaseDate: todayStr,
+      purchaseTime: currentTimeStr,
       branch: "",
       materialColor: "#FFFFFF",
       actualPrice: "",
@@ -576,7 +732,19 @@ export function AddSaleDialog({
       transportationCost: "0",
       notes: "",
     });
+    
     setSelectedColor("#FFFFFF");
+    setSelectedDate(now);
+    setCurrentMonth(now.getMonth());
+    setCurrentYear(now.getFullYear());
+    
+    const currentTimeMatch = currentTimeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (currentTimeMatch) {
+      setSelectedHour(currentTimeMatch[1].padStart(2, '0'));
+      setSelectedMinute(currentTimeMatch[2]);
+      setSelectedAmPm((currentTimeMatch[3] as "AM" | "PM") || "AM");
+    }
+    
     setReceiptFile(null);
     setReceiptPreview(null);
     setSelectedMaterialInfo(null);
@@ -593,6 +761,150 @@ export function AddSaleDialog({
   const handleClose = () => {
     resetForm();
     onOpenChange(false);
+  };
+
+  // Render calendar popup
+  const renderCalendar = () => {
+    return showCalendar && (
+      <div 
+        ref={calendarRef}
+        className="absolute z-[999] mt-1 w-72 bg-background border border-border rounded-lg shadow-2xl"
+        style={{ 
+          top: '100%',
+          left: 0,
+          marginTop: '4px',
+        }}
+      >
+        <div className="p-4 border-b border-border">
+          <div className="flex items-center justify-between mb-3">
+            <button 
+              onClick={handlePrevMonth} 
+              className="p-1 hover:bg-muted rounded"
+            >
+              <ChevronLeft className="w-5 h-5 text-muted-foreground" />
+            </button>
+            <div className="text-sm font-semibold text-foreground">
+              {monthNames[currentMonth]} {currentYear}
+            </div>
+            <button 
+              onClick={handleNextMonth} 
+              className="p-1 hover:bg-muted rounded"
+            >
+              <ChevronRight className="w-5 h-5 text-muted-foreground" />
+            </button>
+          </div>
+          <button
+            onClick={handleToday}
+            className="w-full py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+          >
+            Today
+          </button>
+        </div>
+
+        <div className="p-4">
+          <div className="grid grid-cols-7 mb-2">
+            {dayNames.map(day => (
+              <div key={day} className="text-center text-xs text-muted-foreground font-medium">
+                {day}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: getFirstDayOfMonth(currentYear, currentMonth) }).map((_, i) => (
+              <div key={`empty-${i}`} className="h-9" />
+            ))}
+
+            {Array.from({ length: getDaysInMonth(currentYear, currentMonth) }).map((_, index) => {
+              const day = index + 1;
+              const isToday = new Date().getDate() === day && 
+                              new Date().getMonth() === currentMonth &&
+                              new Date().getFullYear() === currentYear;
+              const isSelected = selectedDate && 
+                                selectedDate.getDate() === day &&
+                                selectedDate.getMonth() === currentMonth &&
+                                selectedDate.getFullYear() === currentYear;
+
+              return (
+                <button
+                  key={day}
+                  onClick={() => handleDateSelect(day)}
+                  className={`
+                    h-9 flex items-center justify-center text-sm rounded-md transition-colors
+                    ${isSelected 
+                      ? 'bg-primary text-primary-foreground' 
+                      : isToday 
+                      ? 'bg-blue-100 text-blue-600 font-semibold' 
+                      : 'hover:bg-muted text-foreground'
+                    }
+                  `}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Render time picker popup
+  const renderTimePicker = () => {
+    return showTimePicker && (
+      <div 
+        ref={timeRef}
+        className="absolute z-[999] mt-1 w-64 bg-background border border-border rounded-lg shadow-2xl right-0"
+      >
+        <div className="p-4">
+          <div className="flex gap-3 mb-4">
+            <div className="flex-1">
+              <div className="text-xs text-muted-foreground mb-2">Hour</div>
+              <div className="grid grid-cols-3 gap-1 max-h-40 overflow-y-auto">
+                {hours.map(h => (
+                  <button
+                    key={h}
+                    onClick={() => setSelectedHour(h)}
+                    className={`py-1.5 text-sm rounded ${selectedHour === h ? 'bg-primary text-white' : 'hover:bg-muted text-foreground'}`}
+                  >
+                    {h}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex-1">
+              <div className="text-xs text-muted-foreground mb-2">Minute</div>
+              <div className="grid grid-cols-2 gap-1">
+                {minutes.map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setSelectedMinute(m)}
+                    className={`py-1.5 text-sm rounded ${selectedMinute === m ? 'bg-primary text-white' : 'hover:bg-muted text-foreground'}`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex border rounded overflow-hidden">
+            <button
+              onClick={() => setSelectedAmPm("AM")}
+              className={`flex-1 py-2 text-sm ${selectedAmPm === "AM" ? "bg-primary text-white" : "hover:bg-muted text-foreground"}`}
+            >
+              AM
+            </button>
+            <button
+              onClick={() => setSelectedAmPm("PM")}
+              className={`flex-1 py-2 text-sm ${selectedAmPm === "PM" ? "bg-primary text-white" : "hover:bg-muted text-foreground"}`}
+            >
+              PM
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -741,38 +1053,56 @@ export function AddSaleDialog({
               )}
             </div>
             <div>
-              <div className="flex flex-col gap-1.5">
-                <label className="block text-xs text-muted-foreground">Sale Date *</label>
-                <div className="relative">
-                  <input
-                    type="date"
-                    name="purchaseDate"
-                    value={formData.purchaseDate}
-                    onChange={handleInputChange}
-                    className={`w-full bg-cms-input-bg border ${errors.purchaseDate ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-                  />
-                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <label className="block text-xs text-muted-foreground mb-1.5">Sale Date & Time *</label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <div 
+                    className="relative cursor-pointer select-none touch-manipulation"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowCalendar(prev => !prev);
+                      setShowTimePicker(false);
+                    }}
+                  >
+                    <input
+                      type="text"
+                      readOnly
+                      placeholder="dd/mm/yyyy"
+                      value={formData.purchaseDate}
+                      className={`w-full bg-cms-input-bg border ${errors.purchaseDate ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer select-none`}
+                    />
+                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  </div>
+                  {renderCalendar()}
                 </div>
-                {errors.purchaseDate && (
-                  <p className="text-xs text-red-500">{errors.purchaseDate}</p>
-                )}
-              </div>
-              <div className="flex flex-col gap-1.5 mt-2">
-                <label className="block text-xs text-muted-foreground">Sale Time *</label>
-                <div className="relative">
-                  <input
-                    type="time"
-                    name="purchaseTime"
-                    value={formData.purchaseTime}
-                    onChange={handleInputChange}
-                    className={`w-full bg-cms-input-bg border ${errors.purchaseTime ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-                  />
-                  <Clock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <div className="relative flex-1">
+                  <div 
+                    className="relative cursor-pointer select-none touch-manipulation"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowTimePicker(prev => !prev);
+                      setShowCalendar(false);
+                    }}
+                  >
+                    <input
+                      type="text"
+                      readOnly
+                      placeholder="-- : --"
+                      value={formData.purchaseTime}
+                      className={`w-full bg-cms-input-bg border ${errors.purchaseTime ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer select-none`}
+                    />
+                    <Clock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  </div>
+                  {renderTimePicker()}
                 </div>
-                {errors.purchaseTime && (
-                  <p className="text-xs text-red-500">{errors.purchaseTime}</p>
-                )}
               </div>
+              {(errors.purchaseDate || errors.purchaseTime) && (
+                <p className="text-xs text-red-500 mt-1">
+                  {errors.purchaseDate || errors.purchaseTime}
+                </p>
+              )}
             </div>
           </div>
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package } from "lucide-react";
 import { PurchaseDetailsView } from "./PurchaseDetailsView";
 import { toast } from "@/hooks/use-toast";
@@ -77,17 +77,35 @@ interface DialogProps {
 }
 
 function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData = null }: DialogProps) {
-  // Helper function to get today's date in YYYY-MM-DD format
-  const getTodayDate = () => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  };
+  // Date picker states for purchase
+  const [showPurchaseCalendar, setShowPurchaseCalendar] = useState(false);
+  const [showPurchaseTimePicker, setShowPurchaseTimePicker] = useState(false);
+  const [purchaseCurrentMonth, setPurchaseCurrentMonth] = useState(new Date().getMonth());
+  const [purchaseCurrentYear, setPurchaseCurrentYear] = useState(new Date().getFullYear());
+  const [selectedPurchaseDate, setSelectedPurchaseDate] = useState<Date | null>(null);
+  
+  // Date picker states for delivery
+  const [showDeliveryCalendar, setShowDeliveryCalendar] = useState(false);
+  const [showDeliveryTimePicker, setShowDeliveryTimePicker] = useState(false);
+  const [deliveryCurrentMonth, setDeliveryCurrentMonth] = useState(new Date().getMonth());
+  const [deliveryCurrentYear, setDeliveryCurrentYear] = useState(new Date().getFullYear());
+  const [selectedDeliveryDate, setSelectedDeliveryDate] = useState<Date | null>(null);
+  
+  // Time states for purchase
+  const [selectedPurchaseHour, setSelectedPurchaseHour] = useState("12");
+  const [selectedPurchaseMinute, setSelectedPurchaseMinute] = useState("00");
+  const [selectedPurchaseAmPm, setSelectedPurchaseAmPm] = useState<"AM" | "PM">("PM");
+  
+  // Time states for delivery
+  const [selectedDeliveryHour, setSelectedDeliveryHour] = useState("09");
+  const [selectedDeliveryMinute, setSelectedDeliveryMinute] = useState("00");
+  const [selectedDeliveryAmPm, setSelectedDeliveryAmPm] = useState<"AM" | "PM">("AM");
 
-  // Helper function to get current time in HH:MM format
-  const getCurrentTime = () => {
-    const now = new Date();
-    return now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-  };
+  // Refs for click outside handling
+  const purchaseCalendarRef = useRef<HTMLDivElement>(null);
+  const purchaseTimeRef = useRef<HTMLDivElement>(null);
+  const deliveryCalendarRef = useRef<HTMLDivElement>(null);
+  const deliveryTimeRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState({
     materialName: "",
@@ -95,8 +113,8 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     price: "",
     weight: "",
     quality: "PP750",
-    purchaseDate: getTodayDate(),
-    purchaseTime: getCurrentTime(),
+    purchaseDate: "",
+    purchaseTime: "",
     materialColor: "#FFFFFF",
     vehicleName: "",
     vehicleType: "",
@@ -104,7 +122,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     driverName: "",
     vehicleColor: "",
     deliveryDate: "",
-    deliveryTime: "09:00",
+    deliveryTime: "",
     receiptNo: "",
     advancePayment: "",
     vehicleImage: null as File | null,
@@ -115,6 +133,45 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(null);
+
+  // Click outside handlers
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (purchaseCalendarRef.current && !purchaseCalendarRef.current.contains(event.target as Node)) {
+        setShowPurchaseCalendar(false);
+      }
+      if (purchaseTimeRef.current && !purchaseTimeRef.current.contains(event.target as Node)) {
+        setShowPurchaseTimePicker(false);
+      }
+      if (deliveryCalendarRef.current && !deliveryCalendarRef.current.contains(event.target as Node)) {
+        setShowDeliveryCalendar(false);
+      }
+      if (deliveryTimeRef.current && !deliveryTimeRef.current.contains(event.target as Node)) {
+        setShowDeliveryTimePicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Helper function to get today's date in dd/mm/yyyy format
+  const getTodayDate = (): string => {
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yyyy = today.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
+
+  // Helper function to get current time in HH:MM AM/PM format
+  const getCurrentTime = (): string => {
+    const now = new Date();
+    let hour = now.getHours();
+    const minute = String(now.getMinutes()).padStart(2, '0');
+    const ampm: "AM" | "PM" = hour >= 12 ? "PM" : "AM";
+    const hour12 = hour % 12 || 12;
+    return `${hour12.toString().padStart(2, '0')}:${minute} ${ampm}`;
+  };
 
   // Helper function to construct image URL
   const getImageUrl = (imagePath: string | undefined): string | null => {
@@ -140,54 +197,121 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   // Populate form when editing
   useEffect(() => {
     if (open) {
+      const now = new Date();
+      const todayStr = getTodayDate();
+      const currentTimeStr = getCurrentTime();
+
       if (isEdit && editData) {
-        const formatDateForInput = (dateString: string) => {
-          if (!dateString) return "";
+        // Parse purchase date
+        let purchaseDateParsed: Date | null = null;
+        let purchaseDateStr = todayStr;
+        if (editData.purchaseDate) {
           try {
-            const date = new Date(dateString);
-            return date.toISOString().split('T')[0];
+            purchaseDateParsed = new Date(editData.purchaseDate);
+            if (!isNaN(purchaseDateParsed.getTime())) {
+              const dd = String(purchaseDateParsed.getDate()).padStart(2, '0');
+              const mm = String(purchaseDateParsed.getMonth() + 1).padStart(2, '0');
+              const yyyy = purchaseDateParsed.getFullYear();
+              purchaseDateStr = `${dd}/${mm}/${yyyy}`;
+            }
           } catch (error) {
-            return "";
+            console.error("Error parsing purchase date:", error);
           }
-        };
+        }
 
-        const extractTimeFromDate = (dateString: string) => {
-          if (!dateString) return getCurrentTime();
+        // Parse delivery date
+        let deliveryDateParsed: Date | null = null;
+        let deliveryDateStr = "";
+        if (editData.deliveryDate) {
           try {
-            const date = new Date(dateString);
-            return date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
+            deliveryDateParsed = new Date(editData.deliveryDate);
+            if (!isNaN(deliveryDateParsed.getTime())) {
+              const dd = String(deliveryDateParsed.getDate()).padStart(2, '0');
+              const mm = String(deliveryDateParsed.getMonth() + 1).padStart(2, '0');
+              const yyyy = deliveryDateParsed.getFullYear();
+              deliveryDateStr = `${dd}/${mm}/${yyyy}`;
+            }
           } catch (error) {
-            return getCurrentTime();
+            console.error("Error parsing delivery date:", error);
           }
-        };
+        }
 
-        const purchaseDate = formatDateForInput(editData.purchaseDate);
-        const deliveryDate = formatDateForInput(editData.deliveryDate);
-        const purchaseTime = editData.purchaseTime || extractTimeFromDate(editData.purchaseDate);
-        const deliveryTime = editData.deliveryTime || extractTimeFromDate(editData.deliveryDate);
-        
+        // Parse purchase time
+        let purchaseTimeStr = currentTimeStr;
+        if (editData.purchaseTime) {
+          const match = editData.purchaseTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+          if (match) {
+            purchaseTimeStr = `${match[1].padStart(2, '0')}:${match[2]} ${(match[3] || 'AM').toUpperCase()}`;
+          }
+        }
+
+        // Parse delivery time
+        let deliveryTimeStr = "09:00 AM";
+        if (editData.deliveryTime) {
+          const match = editData.deliveryTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+          if (match) {
+            deliveryTimeStr = `${match[1].padStart(2, '0')}:${match[2]} ${(match[3] || 'AM').toUpperCase()}`;
+          }
+        }
+
         setFormData({
           materialName: editData.materialName || "",
           vendor: editData.vendor || "",
           price: editData.price || "",
           weight: editData.weight || "",
           quality: editData.quality || "PP750",
-          purchaseDate: purchaseDate || getTodayDate(),
-          purchaseTime: purchaseTime,
+          purchaseDate: purchaseDateStr,
+          purchaseTime: purchaseTimeStr,
           materialColor: editData.materialColor || "#FFFFFF",
           vehicleName: editData.vehicleName || "",
           vehicleType: editData.vehicleType || "",
           vehicleNumber: editData.vehicleNumber || "",
           driverName: editData.driverName || "",
           vehicleColor: editData.vehicleColor || "",
-          deliveryDate: deliveryDate || "",
-          deliveryTime: deliveryTime,
+          deliveryDate: deliveryDateStr,
+          deliveryTime: deliveryTimeStr,
           receiptNo: editData.receiptNo || "",
           advancePayment: editData.advancePayment?.toString() || "",
           vehicleImage: null,
         });
         
         setSelectedMaterialColor(editData.materialColor || "#FFFFFF");
+        
+        // Set date picker states for purchase
+        if (purchaseDateParsed) {
+          setSelectedPurchaseDate(purchaseDateParsed);
+          setPurchaseCurrentMonth(purchaseDateParsed.getMonth());
+          setPurchaseCurrentYear(purchaseDateParsed.getFullYear());
+        } else {
+          setSelectedPurchaseDate(now);
+          setPurchaseCurrentMonth(now.getMonth());
+          setPurchaseCurrentYear(now.getFullYear());
+        }
+
+        // Set date picker states for delivery
+        if (deliveryDateParsed) {
+          setSelectedDeliveryDate(deliveryDateParsed);
+          setDeliveryCurrentMonth(deliveryDateParsed.getMonth());
+          setDeliveryCurrentYear(deliveryDateParsed.getFullYear());
+        } else {
+          setSelectedDeliveryDate(null);
+        }
+
+        // Set time picker states for purchase
+        const purchaseTimeMatch = purchaseTimeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (purchaseTimeMatch) {
+          setSelectedPurchaseHour(purchaseTimeMatch[1].padStart(2, '0'));
+          setSelectedPurchaseMinute(purchaseTimeMatch[2]);
+          setSelectedPurchaseAmPm((purchaseTimeMatch[3] as "AM" | "PM") || "AM");
+        }
+
+        // Set time picker states for delivery
+        const deliveryTimeMatch = deliveryTimeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (deliveryTimeMatch) {
+          setSelectedDeliveryHour(deliveryTimeMatch[1].padStart(2, '0'));
+          setSelectedDeliveryMinute(deliveryTimeMatch[2]);
+          setSelectedDeliveryAmPm((deliveryTimeMatch[3] as "AM" | "PM") || "AM");
+        }
         
         if (editData.vehicleImage) {
           const imageUrl = getImageUrl(editData.vehicleImage);
@@ -202,6 +326,117 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       }
     }
   }, [open, isEdit, editData]);
+
+  // Update form data when purchase date changes
+  useEffect(() => {
+    if (selectedPurchaseDate) {
+      const dd = String(selectedPurchaseDate.getDate()).padStart(2, '0');
+      const mm = String(selectedPurchaseDate.getMonth() + 1).padStart(2, '0');
+      const yyyy = selectedPurchaseDate.getFullYear();
+      setFormData(prev => ({ ...prev, purchaseDate: `${dd}/${mm}/${yyyy}` }));
+    }
+  }, [selectedPurchaseDate]);
+
+  // Update form data when delivery date changes
+  useEffect(() => {
+    if (selectedDeliveryDate) {
+      const dd = String(selectedDeliveryDate.getDate()).padStart(2, '0');
+      const mm = String(selectedDeliveryDate.getMonth() + 1).padStart(2, '0');
+      const yyyy = selectedDeliveryDate.getFullYear();
+      setFormData(prev => ({ ...prev, deliveryDate: `${dd}/${mm}/${yyyy}` }));
+    } else {
+      setFormData(prev => ({ ...prev, deliveryDate: "" }));
+    }
+  }, [selectedDeliveryDate]);
+
+  // Update form data when purchase time changes
+  useEffect(() => {
+    const timeStr = `${selectedPurchaseHour}:${selectedPurchaseMinute} ${selectedPurchaseAmPm}`;
+    setFormData(prev => ({ ...prev, purchaseTime: timeStr }));
+  }, [selectedPurchaseHour, selectedPurchaseMinute, selectedPurchaseAmPm]);
+
+  // Update form data when delivery time changes
+  useEffect(() => {
+    const timeStr = `${selectedDeliveryHour}:${selectedDeliveryMinute} ${selectedDeliveryAmPm}`;
+    setFormData(prev => ({ ...prev, deliveryTime: timeStr }));
+  }, [selectedDeliveryHour, selectedDeliveryMinute, selectedDeliveryAmPm]);
+
+  // Calendar helper functions
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const getDaysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
+  const getFirstDayOfMonth = (y: number, m: number) => new Date(y, m, 1).getDay();
+
+  // Purchase calendar handlers
+  const handlePurchasePrevMonth = () => {
+    if (purchaseCurrentMonth === 0) {
+      setPurchaseCurrentMonth(11);
+      setPurchaseCurrentYear(y => y - 1);
+    } else {
+      setPurchaseCurrentMonth(m => m - 1);
+    }
+  };
+
+  const handlePurchaseNextMonth = () => {
+    if (purchaseCurrentMonth === 11) {
+      setPurchaseCurrentMonth(0);
+      setPurchaseCurrentYear(y => y + 1);
+    } else {
+      setPurchaseCurrentMonth(m => m + 1);
+    }
+  };
+
+  const handlePurchaseDateSelect = (day: number) => {
+    const date = new Date(purchaseCurrentYear, purchaseCurrentMonth, day);
+    setSelectedPurchaseDate(date);
+    setShowPurchaseCalendar(false);
+  };
+
+  const handlePurchaseToday = () => {
+    const today = new Date();
+    setSelectedPurchaseDate(today);
+    setPurchaseCurrentMonth(today.getMonth());
+    setPurchaseCurrentYear(today.getFullYear());
+    setShowPurchaseCalendar(false);
+  };
+
+  // Delivery calendar handlers
+  const handleDeliveryPrevMonth = () => {
+    if (deliveryCurrentMonth === 0) {
+      setDeliveryCurrentMonth(11);
+      setDeliveryCurrentYear(y => y - 1);
+    } else {
+      setDeliveryCurrentMonth(m => m - 1);
+    }
+  };
+
+  const handleDeliveryNextMonth = () => {
+    if (deliveryCurrentMonth === 11) {
+      setDeliveryCurrentMonth(0);
+      setDeliveryCurrentYear(y => y + 1);
+    } else {
+      setDeliveryCurrentMonth(m => m + 1);
+    }
+  };
+
+  const handleDeliveryDateSelect = (day: number) => {
+    const date = new Date(deliveryCurrentYear, deliveryCurrentMonth, day);
+    setSelectedDeliveryDate(date);
+    setShowDeliveryCalendar(false);
+  };
+
+  const handleDeliveryToday = () => {
+    const today = new Date();
+    setSelectedDeliveryDate(today);
+    setDeliveryCurrentMonth(today.getMonth());
+    setDeliveryCurrentYear(today.getFullYear());
+    setShowDeliveryCalendar(false);
+  };
+
+  // Time picker options
+  const hours = Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0'));
+  const minutes = ['00', '15', '30', '45'];
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -274,8 +509,25 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     try {
       const formDataToSend = new FormData();
       
-      const purchaseDateTime = `${formData.purchaseDate}T${formData.purchaseTime}:00`;
-      const deliveryDateTime = `${formData.deliveryDate}T${formData.deliveryTime}:00`;
+      // Convert date strings to ISO format for backend
+      const parseDate = (dateStr: string, timeStr: string): string => {
+        const [dd, mm, yyyy] = dateStr.split('/').map(Number);
+        const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (!timeMatch) return new Date().toISOString();
+        
+        let hour = parseInt(timeMatch[1]);
+        const minute = parseInt(timeMatch[2]);
+        const ampm = timeMatch[3];
+        
+        if (ampm.toUpperCase() === "PM" && hour < 12) hour += 12;
+        if (ampm.toUpperCase() === "AM" && hour === 12) hour = 0;
+        
+        const date = new Date(yyyy, mm - 1, dd, hour, minute);
+        return date.toISOString();
+      };
+
+      const purchaseDateTime = parseDate(formData.purchaseDate, formData.purchaseTime);
+      const deliveryDateTime = parseDate(formData.deliveryDate, formData.deliveryTime);
 
       const fields = {
         materialName: formData.materialName,
@@ -386,14 +638,18 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   };
 
   const resetForm = () => {
+    const now = new Date();
+    const todayStr = getTodayDate();
+    const currentTimeStr = getCurrentTime();
+
     setFormData({
       materialName: "",
       vendor: "",
       price: "",
       weight: "",
       quality: "PP750",
-      purchaseDate: getTodayDate(),
-      purchaseTime: getCurrentTime(),
+      purchaseDate: todayStr,
+      purchaseTime: currentTimeStr,
       materialColor: "#FFFFFF",
       vehicleName: "",
       vehicleType: "",
@@ -401,12 +657,31 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       driverName: "",
       vehicleColor: "",
       deliveryDate: "",
-      deliveryTime: "09:00",
+      deliveryTime: "09:00 AM",
       receiptNo: "",
       advancePayment: "",
       vehicleImage: null,
     });
+    
     setSelectedMaterialColor("#FFFFFF");
+    setSelectedPurchaseDate(now);
+    setSelectedDeliveryDate(null);
+    setPurchaseCurrentMonth(now.getMonth());
+    setPurchaseCurrentYear(now.getFullYear());
+    setDeliveryCurrentMonth(now.getMonth());
+    setDeliveryCurrentYear(now.getFullYear());
+    
+    const currentTimeMatch = currentTimeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (currentTimeMatch) {
+      setSelectedPurchaseHour(currentTimeMatch[1].padStart(2, '0'));
+      setSelectedPurchaseMinute(currentTimeMatch[2]);
+      setSelectedPurchaseAmPm((currentTimeMatch[3] as "AM" | "PM") || "AM");
+    }
+    
+    setSelectedDeliveryHour("09");
+    setSelectedDeliveryMinute("00");
+    setSelectedDeliveryAmPm("AM");
+    
     setImagePreview(null);
     setOriginalImageUrl(null);
     setErrors({});
@@ -419,6 +694,169 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   const handleClose = () => {
     resetForm();
     onOpenChange(false);
+  };
+
+  // Render calendar popup
+  const renderCalendar = (type: 'purchase' | 'delivery') => {
+    const showCalendar = type === 'purchase' ? showPurchaseCalendar : showDeliveryCalendar;
+    const calendarRef = type === 'purchase' ? purchaseCalendarRef : deliveryCalendarRef;
+    const currentMonth = type === 'purchase' ? purchaseCurrentMonth : deliveryCurrentMonth;
+    const currentYear = type === 'purchase' ? purchaseCurrentYear : deliveryCurrentYear;
+    const handlePrevMonth = type === 'purchase' ? handlePurchasePrevMonth : handleDeliveryPrevMonth;
+    const handleNextMonth = type === 'purchase' ? handlePurchaseNextMonth : handleDeliveryNextMonth;
+    const handleToday = type === 'purchase' ? handlePurchaseToday : handleDeliveryToday;
+    const handleDateSelect = type === 'purchase' ? handlePurchaseDateSelect : handleDeliveryDateSelect;
+    const selectedDate = type === 'purchase' ? selectedPurchaseDate : selectedDeliveryDate;
+
+    return showCalendar && (
+      <div 
+        ref={calendarRef}
+        className="absolute z-[999] mt-1 w-72 bg-background border border-border rounded-lg shadow-2xl"
+        style={{ 
+          top: '100%',
+          left: 0,
+          marginTop: '4px',
+        }}
+      >
+        <div className="p-4 border-b border-border">
+          <div className="flex items-center justify-between mb-3">
+            <button 
+              onClick={handlePrevMonth} 
+              className="p-1 hover:bg-muted rounded"
+            >
+              <ChevronLeft className="w-5 h-5 text-muted-foreground" />
+            </button>
+            <div className="text-sm font-semibold text-foreground">
+              {monthNames[currentMonth]} {currentYear}
+            </div>
+            <button 
+              onClick={handleNextMonth} 
+              className="p-1 hover:bg-muted rounded"
+            >
+              <ChevronRight className="w-5 h-5 text-muted-foreground" />
+            </button>
+          </div>
+          <button
+            onClick={handleToday}
+            className="w-full py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+          >
+            Today
+          </button>
+        </div>
+
+        <div className="p-4">
+          <div className="grid grid-cols-7 mb-2">
+            {dayNames.map(day => (
+              <div key={day} className="text-center text-xs text-muted-foreground font-medium">
+                {day}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: getFirstDayOfMonth(currentYear, currentMonth) }).map((_, i) => (
+              <div key={`empty-${i}`} className="h-9" />
+            ))}
+
+            {Array.from({ length: getDaysInMonth(currentYear, currentMonth) }).map((_, index) => {
+              const day = index + 1;
+              const isToday = new Date().getDate() === day && 
+                              new Date().getMonth() === currentMonth &&
+                              new Date().getFullYear() === currentYear;
+              const isSelected = selectedDate && 
+                                selectedDate.getDate() === day &&
+                                selectedDate.getMonth() === currentMonth &&
+                                selectedDate.getFullYear() === currentYear;
+
+              return (
+                <button
+                  key={day}
+                  onClick={() => handleDateSelect(day)}
+                  className={`
+                    h-9 flex items-center justify-center text-sm rounded-md transition-colors
+                    ${isSelected 
+                      ? 'bg-primary text-primary-foreground' 
+                      : isToday 
+                      ? 'bg-blue-100 text-blue-600 font-semibold' 
+                      : 'hover:bg-muted text-foreground'
+                    }
+                  `}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Render time picker popup
+  const renderTimePicker = (type: 'purchase' | 'delivery') => {
+    const showTimePicker = type === 'purchase' ? showPurchaseTimePicker : showDeliveryTimePicker;
+    const timeRef = type === 'purchase' ? purchaseTimeRef : deliveryTimeRef;
+    const selectedHour = type === 'purchase' ? selectedPurchaseHour : selectedDeliveryHour;
+    const selectedMinute = type === 'purchase' ? selectedPurchaseMinute : selectedDeliveryMinute;
+    const selectedAmPm = type === 'purchase' ? selectedPurchaseAmPm : selectedDeliveryAmPm;
+    const setSelectedHour = type === 'purchase' ? setSelectedPurchaseHour : setSelectedDeliveryHour;
+    const setSelectedMinute = type === 'purchase' ? setSelectedPurchaseMinute : setSelectedDeliveryMinute;
+    const setSelectedAmPm = type === 'purchase' ? setSelectedPurchaseAmPm : setSelectedDeliveryAmPm;
+
+    return showTimePicker && (
+      <div 
+        ref={timeRef}
+        className="absolute z-[999] mt-1 w-64 bg-background border border-border rounded-lg shadow-2xl right-0"
+      >
+        <div className="p-4">
+          <div className="flex gap-3 mb-4">
+            <div className="flex-1">
+              <div className="text-xs text-muted-foreground mb-2">Hour</div>
+              <div className="grid grid-cols-3 gap-1 max-h-40 overflow-y-auto">
+                {hours.map(h => (
+                  <button
+                    key={h}
+                    onClick={() => setSelectedHour(h)}
+                    className={`py-1.5 text-sm rounded ${selectedHour === h ? 'bg-primary text-white' : 'hover:bg-muted text-foreground'}`}
+                  >
+                    {h}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex-1">
+              <div className="text-xs text-muted-foreground mb-2">Minute</div>
+              <div className="grid grid-cols-2 gap-1">
+                {minutes.map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setSelectedMinute(m)}
+                    className={`py-1.5 text-sm rounded ${selectedMinute === m ? 'bg-primary text-white' : 'hover:bg-muted text-foreground'}`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex border rounded overflow-hidden">
+            <button
+              onClick={() => setSelectedAmPm("AM")}
+              className={`flex-1 py-2 text-sm ${selectedAmPm === "AM" ? "bg-primary text-white" : "hover:bg-muted text-foreground"}`}
+            >
+              AM
+            </button>
+            <button
+              onClick={() => setSelectedAmPm("PM")}
+              className={`flex-1 py-2 text-sm ${selectedAmPm === "PM" ? "bg-primary text-white" : "hover:bg-muted text-foreground"}`}
+            >
+              PM
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (!open) return null;
@@ -546,24 +984,48 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Purchase Date & Time *</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="relative">
-                    <input
-                      type="date"
-                      name="purchaseDate"
-                      value={formData.purchaseDate}
-                      onChange={handleInputChange}
-                      className={`w-full bg-cms-card border ${errors.purchaseDate ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-                    />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <div 
+                      className="relative cursor-pointer select-none touch-manipulation"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setShowPurchaseCalendar(prev => !prev);
+                        setShowPurchaseTimePicker(false);
+                      }}
+                    >
+                      <input
+                        type="text"
+                        readOnly
+                        placeholder="dd/mm/yyyy"
+                        value={formData.purchaseDate}
+                        className={`w-full bg-cms-card border ${errors.purchaseDate ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer select-none`}
+                      />
+                      <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                    </div>
+                    {renderCalendar('purchase')}
                   </div>
-                  <div className="relative">
-                    <input
-                      type="time"
-                      name="purchaseTime"
-                      value={formData.purchaseTime}
-                      onChange={handleInputChange}
-                      className={`w-full bg-cms-card border ${errors.purchaseTime ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-                    />
+                  <div className="relative flex-1">
+                    <div 
+                      className="relative cursor-pointer select-none touch-manipulation"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setShowPurchaseTimePicker(prev => !prev);
+                        setShowPurchaseCalendar(false);
+                      }}
+                    >
+                      <input
+                        type="text"
+                        readOnly
+                        placeholder="-- : --"
+                        value={formData.purchaseTime}
+                        className={`w-full bg-cms-card border ${errors.purchaseTime ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer select-none`}
+                      />
+                      <Clock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                    </div>
+                    {renderTimePicker('purchase')}
                   </div>
                 </div>
                 {(errors.purchaseDate || errors.purchaseTime) && (
@@ -701,24 +1163,48 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Delivery Date & Time *</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="relative">
-                    <input
-                      type="date"
-                      name="deliveryDate"
-                      value={formData.deliveryDate}
-                      onChange={handleInputChange}
-                      className={`w-full bg-cms-card border ${errors.deliveryDate ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-                    />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <div 
+                      className="relative cursor-pointer select-none touch-manipulation"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setShowDeliveryCalendar(prev => !prev);
+                        setShowDeliveryTimePicker(false);
+                      }}
+                    >
+                      <input
+                        type="text"
+                        readOnly
+                        placeholder="dd/mm/yyyy"
+                        value={formData.deliveryDate}
+                        className={`w-full bg-cms-card border ${errors.deliveryDate ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer select-none`}
+                      />
+                      <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                    </div>
+                    {renderCalendar('delivery')}
                   </div>
-                  <div className="relative">
-                    <input
-                      type="time"
-                      name="deliveryTime"
-                      value={formData.deliveryTime}
-                      onChange={handleInputChange}
-                      className={`w-full bg-cms-card border ${errors.deliveryTime ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-                    />
+                  <div className="relative flex-1">
+                    <div 
+                      className="relative cursor-pointer select-none touch-manipulation"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setShowDeliveryTimePicker(prev => !prev);
+                        setShowDeliveryCalendar(false);
+                      }}
+                    >
+                      <input
+                        type="text"
+                        readOnly
+                        placeholder="-- : --"
+                        value={formData.deliveryTime}
+                        className={`w-full bg-cms-card border ${errors.deliveryTime ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer select-none`}
+                      />
+                      <Clock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                    </div>
+                    {renderTimePicker('delivery')}
                   </div>
                 </div>
                 {(errors.deliveryDate || errors.deliveryTime) && (
@@ -745,7 +1231,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                 )}
               </div>
               <div className="col-span-2">
-                <label className="block text-xs text-muted-foreground mb-1.5">Vehicle Image</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Recepiet Image</label>
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 px-4 py-2 bg-cms-card border border-border rounded-md cursor-pointer hover:bg-cms-card-hover transition-colors">
                     <Upload className="w-4 h-4" />
