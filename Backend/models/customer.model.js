@@ -34,7 +34,6 @@ const customerSchema = new mongoose.Schema({
   },
   registrationDate: {
     type: Date,
-    default: Date.now
   },
   address: {
     type: String,

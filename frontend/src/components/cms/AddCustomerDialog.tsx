@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Save, ChevronDown, Upload, Plus, X } from "lucide-react";
+import { Save, ChevronDown, Upload, Plus, X, Calendar } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import axios from "axios";
@@ -19,7 +19,7 @@ export interface CustomerFormData {
   phoneNo: string;
   email: string;
   cnicNo: string;
-  registrationDate: string;
+  registrationDate: string; // Display format: DD-MM-YYYY
   address: string;
   province: string;
   city: string;
@@ -32,27 +32,85 @@ export interface CustomerFormData {
 }
 
 // Get base URL from environment and append /api/customers
-const BACKEND_URL = import.meta.env.VITE_API_BASE_URL ;
+const BACKEND_URL = import.meta.env.VITE_API_BASE_URL;
 const API_BASE_URL = `${BACKEND_URL}/api/customers`;
 
-const provinces = [
-  "Punjab",
-  "Sindh",
-  "Khyber Pakhtunkhwa",
-  "Balochistan",
-  "Islamabad Capital Territory",
-  "Gilgit-Baltistan",
-  "Azad Kashmir",
-];
+// Helper function to format date as DD-MM-YYYY for display
+const formatDateToDDMMYYYY = (date: Date | string): string => {
+  if (!date) return "";
+  
+  let d: Date;
+  
+  if (typeof date === 'string') {
+    // Check if it's already in DD-MM-YYYY format
+    const parts = date.split('-');
+    if (parts.length === 3) {
+      if (parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
+        return date; // Already in correct format
+      }
+      // Check if it's in YYYY-MM-DD format
+      if (parts[0].length === 4 && parts[1].length === 2 && parts[2].length === 2) {
+        return `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+    }
+    
+    // Try parsing as Date
+    d = new Date(date);
+    if (isNaN(d.getTime())) {
+      return "";
+    }
+  } else {
+    d = date;
+  }
+  
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
+};
 
-const cities: Record<string, string[]> = {
-  "Punjab": ["Lahore", "Faisalabad", "Rawalpindi", "Multan", "Gujranwala"],
-  "Sindh": ["Karachi", "Hyderabad", "Sukkur", "Larkana"],
-  "Khyber Pakhtunkhwa": ["Peshawar", "Mardan", "Abbottabad", "Swat"],
-  "Balochistan": ["Quetta", "Gwadar", "Turbat"],
-  "Islamabad Capital Territory": ["Islamabad"],
-  "Gilgit-Baltistan": ["Gilgit", "Skardu"],
-  "Azad Kashmir": ["Muzaffarabad", "Mirpur"],
+// Helper function to convert DD-MM-YYYY to Date object
+const parseDDMMYYYYToDate = (dateStr: string): Date | null => {
+  if (!dateStr) return null;
+  
+  const [day, month, year] = dateStr.split('-').map(Number);
+  
+  // Validate the date
+  if (!day || !month || !year) return null;
+  if (day < 1 || day > 31) return null;
+  if (month < 1 || month > 12) return null;
+  if (year < 1900 || year > 2100) return null;
+  
+  const date = new Date(year, month - 1, day);
+  
+  // Check if date is valid
+  if (isNaN(date.getTime())) {
+    return null;
+  }
+  
+  // Check if the parsed date matches the input (handles invalid dates like 31-02-2023)
+  if (date.getDate() !== day || date.getMonth() + 1 !== month || date.getFullYear() !== year) {
+    return null;
+  }
+  
+  return date;
+};
+
+// Helper function to format date for backend (ISO string)
+const formatDateForBackend = (dateStr: string): string => {
+  const date = parseDDMMYYYYToDate(dateStr);
+  if (!date) return new Date().toISOString();
+  return date.toISOString();
+};
+
+// Generate years array (from 1900 to current year + 10)
+const generateYears = () => {
+  const currentYear = new Date().getFullYear();
+  const years = [];
+  for (let year = 1900; year <= currentYear + 10; year++) {
+    years.push(year);
+  }
+  return years.reverse(); // Show most recent years first
 };
 
 export function AddCustomerDialog({ 
@@ -69,7 +127,7 @@ export function AddCustomerDialog({
     phoneNo: "",
     email: "",
     cnicNo: "",
-    registrationDate: new Date().toISOString().split('T')[0],
+    registrationDate: formatDateToDDMMYYYY(new Date()), // Default to today in DD-MM-YYYY format
     address: "",
     province: "",
     city: "",
@@ -79,8 +137,19 @@ export function AddCustomerDialog({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [backendStatus, setBackendStatus] = useState<"checking" | "connected" | "disconnected">("checking");
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const photoInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+  
+  const years = generateYears();
+  const months = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
+  const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   // Initialize form with edit data when in edit mode
   useEffect(() => {
@@ -91,13 +160,20 @@ export function AddCustomerDialog({
         phoneNo: customerToEdit.phoneNo || "",
         email: customerToEdit.email || "",
         cnicNo: customerToEdit.cnicNo || "",
-        registrationDate: customerToEdit.registrationDate || new Date().toISOString().split('T')[0],
+        registrationDate: formatDateToDDMMYYYY(customerToEdit.registrationDate),
         address: customerToEdit.address || "",
         province: customerToEdit.province || "",
         city: customerToEdit.city || "",
         photo: customerToEdit.photo || null,
         documents: customerToEdit.documents || [],
       });
+      
+      // Set selected date for calendar picker
+      const parsedDate = parseDDMMYYYYToDate(formatDateToDDMMYYYY(customerToEdit.registrationDate));
+      if (parsedDate) {
+        setSelectedDate(parsedDate);
+        setSelectedYear(parsedDate.getFullYear());
+      }
     } else if (!open) {
       // Reset form when dialog closes (not in edit mode)
       resetForm();
@@ -126,13 +202,38 @@ export function AddCustomerDialog({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => {
-      const updated = { ...prev, [name]: value };
-      if (name === "province") {
-        updated.city = "";
+    setFormData(prev => ({ ...prev, [name]: value }));
+    
+    // If registrationDate changes, update selectedDate for calendar
+    if (name === "registrationDate") {
+      const parsedDate = parseDDMMYYYYToDate(value);
+      if (parsedDate) {
+        setSelectedDate(parsedDate);
+        setSelectedYear(parsedDate.getFullYear());
       }
-      return updated;
-    });
+    }
+  };
+
+  const handleDateSelect = (date: Date) => {
+    const formattedDate = formatDateToDDMMYYYY(date);
+    setFormData(prev => ({ ...prev, registrationDate: formattedDate }));
+    setSelectedDate(date);
+    setSelectedYear(date.getFullYear());
+    setShowDatePicker(false);
+  };
+
+  const handleYearChange = (year: number) => {
+    setSelectedYear(year);
+    const newDate = new Date(selectedDate);
+    newDate.setFullYear(year);
+    setSelectedDate(newDate);
+  };
+
+  const handleMonthChange = (increment: number) => {
+    const newDate = new Date(selectedDate);
+    newDate.setMonth(newDate.getMonth() + increment);
+    setSelectedDate(newDate);
+    setSelectedYear(newDate.getFullYear());
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -187,13 +288,15 @@ export function AddCustomerDialog({
       phoneNo: "",
       email: "",
       cnicNo: "",
-      registrationDate: new Date().toISOString().split('T')[0],
+      registrationDate: formatDateToDDMMYYYY(new Date()),
       address: "",
       province: "",
       city: "",
       photo: null,
       documents: [],
     });
+    setSelectedDate(new Date());
+    setSelectedYear(new Date().getFullYear());
   };
 
   const validateForm = (): boolean => {
@@ -227,6 +330,22 @@ export function AddCustomerDialog({
       return false;
     }
     
+    // Date validation (DD-MM-YYYY format)
+    if (formData.registrationDate) {
+      const dateRegex = /^\d{2}-\d{2}-\d{4}$/;
+      if (!dateRegex.test(formData.registrationDate)) {
+        toast.error("Registration date must be in DD-MM-YYYY format (e.g., 25-12-2023)");
+        return false;
+      }
+      
+      // Validate the actual date
+      const parsedDate = parseDDMMYYYYToDate(formData.registrationDate);
+      if (!parsedDate) {
+        toast.error("Invalid registration date. Please enter a valid date in DD-MM-YYYY format");
+        return false;
+      }
+    }
+    
     return true;
   };
 
@@ -243,12 +362,15 @@ export function AddCustomerDialog({
     setIsSubmitting(true);
     
     try {
+      // Convert DD-MM-YYYY to ISO string for backend
+      const registrationDateForBackend = formatDateForBackend(formData.registrationDate);
+
       const requestData = {
         customerName: formData.customerName.trim(),
         phoneNo: formData.phoneNo.trim(),
         email: formData.email?.trim() || "",
         cnicNo: formData.cnicNo?.trim() || "",
-        registrationDate: formData.registrationDate,
+        registrationDate: registrationDateForBackend, // Send as ISO string
         address: formData.address?.trim() || "",
         province: formData.province || "",
         city: formData.city || "",
@@ -266,7 +388,7 @@ export function AddCustomerDialog({
 
       console.log("📤 Sending to:", url);
       console.log("📦 Method:", method);
-      console.log("📦 Data:", requestData);
+      console.log("📦 Request Data:", requestData);
 
       const response = await axios[method](
         url,
@@ -302,11 +424,7 @@ export function AddCustomerDialog({
     } catch (error: any) {
       console.error("❌ Error saving customer:", error);
       
-      if (error.code === 'ECONNREFUSED') {
-        toast.error(`Cannot connect to backend server at ${BACKEND_URL}. Please check if it's running.`);
-      } else if (error.code === 'ERR_NETWORK') {
-        toast.error("Network error. Please check your connection.");
-      } else if (error.response) {
+      if (error.response) {
         const status = error.response.status;
         const errorData = error.response.data;
         
@@ -321,14 +439,29 @@ export function AddCustomerDialog({
             </div>
           );
         } else if (status === 400) {
-          toast.error(errorData.message || "Validation failed. Please check your input.");
+          // Handle validation errors
+          console.error("Validation errors:", errorData.errors || errorData);
           
-          if (errorData.message?.includes("Phone number")) {
-            toast.error("This phone number is already registered");
-          } else if (errorData.message?.includes("CNIC")) {
-            toast.error("This CNIC number is already registered");
-          } else if (errorData.message?.includes("Email")) {
-            toast.error("This email is already registered");
+          if (errorData.errors) {
+            // Handle Mongoose validation errors
+            const errors = errorData.errors;
+            Object.keys(errors).forEach(key => {
+              const err = errors[key];
+              toast.error(`${key}: ${err.message || err}`);
+            });
+          } else if (errorData.message) {
+            toast.error(errorData.message);
+            
+            // Check for specific error messages
+            if (errorData.message.includes("Phone number")) {
+              toast.error("This phone number is already registered");
+            } else if (errorData.message.includes("CNIC")) {
+              toast.error("This CNIC number is already registered");
+            } else if (errorData.message.includes("Email")) {
+              toast.error("This email is already registered");
+            }
+          } else {
+            toast.error("Validation failed. Please check your input.");
           }
         } else if (status === 500) {
           toast.error("Server error. Please try again later.");
@@ -338,6 +471,10 @@ export function AddCustomerDialog({
       } else if (error.request) {
         console.error("No response received:", error.request);
         toast.error(`No response from server at ${BACKEND_URL}. Backend might be down.`);
+      } else if (error.code === 'ECONNREFUSED') {
+        toast.error(`Cannot connect to backend server at ${BACKEND_URL}. Please check if it's running.`);
+      } else if (error.code === 'ERR_NETWORK') {
+        toast.error("Network error. Please check your connection.");
       } else {
         toast.error("An unexpected error occurred");
       }
@@ -345,8 +482,6 @@ export function AddCustomerDialog({
       setIsSubmitting(false);
     }
   };
-
-  const availableCities = formData.province ? cities[formData.province] || [] : [];
 
   const handleDialogClose = (open: boolean) => {
     if (!open && !isSubmitting) {
@@ -357,9 +492,24 @@ export function AddCustomerDialog({
     onOpenChange(open);
   };
 
+  // Generate days in month for custom date picker
+  const getDaysInMonth = (year: number, month: number) => {
+    return new Date(year, month + 1, 0).getDate();
+  };
+
   return (
     <Dialog open={open} onOpenChange={handleDialogClose}>
       <DialogContent className="bg-background border-border max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto p-0">
+        {/* Close Button - Red X icon in top right corner */}
+        <button
+          onClick={() => onOpenChange(false)}
+          className="absolute right-4 top-4 z-50 w-8 h-8 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={isSubmitting}
+          type="button"
+        >
+          <X className="w-4 h-4 text-white" />
+        </button>
+
         <DialogTitle className="sr-only">
           {isEditMode ? "Edit Customer" : "Add New Customer"}
         </DialogTitle>
@@ -536,16 +686,127 @@ export function AddCustomerDialog({
                 />
                 <p className="text-xs text-muted-foreground mt-1">Format: 12345-6789012-3</p>
               </div>
-              <div>
+              <div className="relative">
                 <label className="block text-xs text-muted-foreground mb-1.5">Registration Date</label>
-                <input
-                  type="date"
-                  name="registrationDate"
-                  value={formData.registrationDate}
-                  onChange={handleInputChange}
-                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  disabled={isSubmitting}
-                />
+                <div className="relative">
+                  <input
+                    ref={dateInputRef}
+                    type="text"
+                    name="registrationDate"
+                    placeholder="DD-MM-YYYY"
+                    value={formData.registrationDate}
+                    onChange={handleInputChange}
+                    className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary pr-10"
+                    disabled={isSubmitting}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowDatePicker(!showDatePicker)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Format: DD-MM-YYYY (e.g., 25-12-2023)</p>
+                
+                {/* Custom Date Picker */}
+                {showDatePicker && (
+                  <div className="absolute z-50 mt-1 bg-background border border-border rounded-lg shadow-lg p-4 w-72">
+                    <div className="flex justify-between items-center mb-3">
+                      <button
+                        type="button"
+                        onClick={() => handleMonthChange(-1)}
+                        className="p-1 hover:bg-muted rounded"
+                      >
+                        <ChevronDown className="w-4 h-4 rotate-90" />
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <div className="relative">
+                          <select
+                            value={selectedYear}
+                            onChange={(e) => handleYearChange(Number(e.target.value))}
+                            className="bg-background border border-border rounded px-2 py-1 text-sm appearance-none focus:outline-none focus:ring-1 focus:ring-primary pr-6"
+                          >
+                            {years.map((year) => (
+                              <option key={year} value={year}>
+                                {year}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+                        </div>
+                        <div className="font-medium">
+                          {months[selectedDate.getMonth()]}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleMonthChange(1)}
+                        className="p-1 hover:bg-muted rounded"
+                      >
+                        <ChevronDown className="w-4 h-4 -rotate-90" />
+                      </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-7 gap-1 mb-2">
+                      {daysOfWeek.map(day => (
+                        <div key={day} className="text-center text-xs text-muted-foreground py-1">
+                          {day}
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <div className="grid grid-cols-7 gap-1">
+                      {Array.from({ length: new Date(selectedYear, selectedDate.getMonth(), 1).getDay() }).map((_, i) => (
+                        <div key={`empty-${i}`} className="h-8"></div>
+                      ))}
+                      
+                      {Array.from({ length: getDaysInMonth(selectedYear, selectedDate.getMonth()) }).map((_, i) => {
+                        const day = i + 1;
+                        const currentDate = new Date(selectedYear, selectedDate.getMonth(), day);
+                        const isSelected = 
+                          currentDate.getDate() === selectedDate.getDate() &&
+                          currentDate.getMonth() === selectedDate.getMonth() &&
+                          currentDate.getFullYear() === selectedYear;
+                        
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => handleDateSelect(currentDate)}
+                            className={`h-8 rounded text-sm hover:bg-primary/10 ${
+                              isSelected 
+                                ? 'bg-primary text-primary-foreground' 
+                                : 'hover:text-foreground'
+                            }`}
+                          >
+                            {day}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    
+                    <div className="flex justify-between mt-3 pt-3 border-t">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const today = new Date();
+                          handleDateSelect(today);
+                        }}
+                        className="text-xs px-3 py-1 bg-muted hover:bg-border rounded"
+                      >
+                        Today
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowDatePicker(false)}
+                        className="text-xs px-3 py-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded"
+                      >
+                        Select
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -568,39 +829,27 @@ export function AddCustomerDialog({
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Province</label>
-                <div className="relative">
-                  <select
-                    name="province"
-                    value={formData.province}
-                    onChange={handleInputChange}
-                    className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary"
-                    disabled={isSubmitting}
-                  >
-                    <option value="">Select Province</option>
-                    {provinces.map(province => (
-                      <option key={province} value={province}>{province}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                </div>
+                <input
+                  type="text"
+                  name="province"
+                  placeholder="e.g Punjab, Sindh, etc."
+                  value={formData.province}
+                  onChange={handleInputChange}
+                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  disabled={isSubmitting}
+                />
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">City</label>
-                <div className="relative">
-                  <select
-                    name="city"
-                    value={formData.city}
-                    onChange={handleInputChange}
-                    disabled={!formData.province || isSubmitting}
-                    className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
-                  >
-                    <option value="">Select City</option>
-                    {availableCities.map(city => (
-                      <option key={city} value={city}>{city}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                </div>
+                <input
+                  type="text"
+                  name="city"
+                  placeholder="e.g Lahore, Karachi, etc."
+                  value={formData.city}
+                  onChange={handleInputChange}
+                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  disabled={isSubmitting}
+                />
               </div>
             </div>
           </div>
@@ -648,13 +897,13 @@ export function AddCustomerDialog({
                       />
                       <button
                         onClick={() => !isSubmitting && removeDocument(index)}
-                        className={`absolute -top-2 -right-2 w-5 h-5 bg-destructive rounded-full flex items-center justify-center hover:bg-destructive/90 transition-colors ${
+                        className={`absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-600 transition-colors ${
                           isSubmitting ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
                         disabled={isSubmitting}
                         type="button"
                       >
-                        <X className="w-3 h-3 text-destructive-foreground" />
+                        <X className="w-3 h-3 text-white" />
                       </button>
                       <span className="absolute bottom-1 right-1 bg-black/50 text-white text-xs px-1 rounded">
                         {index + 1}

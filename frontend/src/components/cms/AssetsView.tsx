@@ -46,7 +46,6 @@ export function AssetsView() {
     totalValue: 0,
   });
 
-  // ✅ Updated to use ASSETS_API_URL
   // Fetch all assets
   const fetchAssets = async () => {
     try {
@@ -74,7 +73,6 @@ export function AssetsView() {
     }
   };
 
-  // ✅ Updated to use ASSETS_API_URL
   // Fetch statistics
   const fetchStats = async () => {
     try {
@@ -104,96 +102,133 @@ export function AssetsView() {
     }
   }, [data]);
 
-  const handleAddAsset = async (assetData: any) => {
-    try {
-      setAdding(true);
+  // ✅ FIXED: Handle date format conversion
+const handleAddAsset = async (assetData: any) => {
+  try {
+    setAdding(true);
+    
+    console.log("📤 Received data from dialog:", assetData);
+    console.log("📤 Is it FormData?", assetData instanceof FormData);
+    
+    if (assetData instanceof FormData) {
+      // Debug: Log FormData contents
+      console.log("=== DEBUG: FormData Contents ===");
+      let hasFile = false;
       
-      console.log("📤 Received asset data:", assetData);
-      console.log("🔍 purchasePrice type:", typeof assetData.purchasePrice);
-      console.log("🔍 purchasePrice value:", assetData.purchasePrice);
-
-      // ✅ SIMPLIFIED FIX: Check if purchasePrice is a string before using .replace()
-      let purchasePriceValue = null;
-      if (assetData.purchasePrice !== null && assetData.purchasePrice !== undefined && assetData.purchasePrice !== "") {
-        if (typeof assetData.purchasePrice === 'number') {
-          purchasePriceValue = assetData.purchasePrice;
-        } else if (typeof assetData.purchasePrice === 'string') {
-          // ✅ SAFE: Only call .replace() if it's definitely a string
-          const cleanedPrice = assetData.purchasePrice.replace(/,/g, '').trim();
-          if (cleanedPrice && !isNaN(parseFloat(cleanedPrice))) {
-            purchasePriceValue = parseFloat(cleanedPrice);
-          }
+      for (let [key, value] of assetData.entries()) {
+        console.log(`${key}:`, value instanceof File ? `File (${value.name}, ${value.type}, ${value.size} bytes)` : value);
+        if (key === 'receiptImage' && value instanceof File) {
+          hasFile = true;
+          console.log("✅ File found in FormData!");
         }
       }
+      console.log("=== END DEBUG ===");
 
-      const formattedData = {
-        assetName: assetData.assetName,
-        category: assetData.category,
-        quantity: parseInt(assetData.quantity) || 1,
-        sizeModel: assetData.sizeModel || null,
-        condition: assetData.condition,
-        description: assetData.description || null,
-        department: assetData.department,
-        assignedTo: assetData.assignedTo || null,
-        purchasePrice: purchasePriceValue,
-        purchaseFrom: assetData.purchaseFrom || null,
-        invoiceNo: assetData.invoiceNo || null,
-        date: assetData.date || new Date().toISOString().split('T')[0],
-        time: assetData.time || new Date().toLocaleTimeString('en-US', { hour12: false })
-      };
-
-      console.log("📤 Sending formatted data:", formattedData);
-
-      // ✅ Use ASSETS_API_URL
+      // Send FormData to backend
+      console.log("🚀 Sending request to:", `${ASSETS_API_URL}/create-assets`);
+      
       const response = await fetch(`${ASSETS_API_URL}/create-assets`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formattedData)
+        body: assetData,
       });
 
       console.log("📥 Add response status:", response.status);
       
+      // Get response as text first
       const responseText = await response.text();
-      console.log("📥 Add response text:", responseText);
+      console.log("📥 Raw response text:", responseText);
       
       let result;
       try {
         result = JSON.parse(responseText);
+        console.log("📥 Parsed response:", result);
       } catch (e) {
-        console.error("Failed to parse response as JSON:", e);
-        throw new Error("Invalid response from server");
+        console.error("❌ Failed to parse JSON:", e);
+        
+        // ✅ FIXED: Create a proper Error object
+        const error = new Error(`Invalid JSON response from server. Status: ${response.status}`);
+        (error as any).responseText = responseText;
+        (error as any).status = response.status;
+        throw error;
       }
 
       if (response.ok && result.success) {
+        console.log("✅ Success! Created asset:", result.data);
+        
         toast({
           title: "✅ Asset Added",
           description: `${result.data.assetName} has been added successfully.`,
         });
         
-        if (result.data) {
-          setData(prev => [result.data, ...prev]);
-        }
-        
+        // Refresh the list
         await fetchAssets();
         setDialogOpen(false);
       } else {
-        const errorMsg = result.error || result.message || "Failed to create asset";
-        console.error("❌ Backend error:", result);
-        throw new Error(errorMsg);
+        console.error("❌ Backend error response:", result);
+        
+        // ✅ FIXED: Create a proper Error object with string message
+        let errorMsg = "Failed to create asset";
+        if (result.error) {
+          errorMsg = typeof result.error === 'string' ? result.error : JSON.stringify(result.error);
+        } else if (result.message) {
+          errorMsg = typeof result.message === 'string' ? result.message : JSON.stringify(result.message);
+        } else {
+          errorMsg = `Server error: ${response.status}`;
+        }
+        
+        const error = new Error(errorMsg);
+        (error as any).response = result;
+        (error as any).status = response.status;
+        throw error;
       }
-    } catch (error: any) {
-      console.error("❌ Error adding asset:", error);
-      toast({
-        title: "❌ Error",
-        description: error.message || "Failed to add asset",
-        variant: "destructive",
-      });
-    } finally {
-      setAdding(false);
+    } else {
+      console.error("❌ Expected FormData but got:", typeof assetData);
+      throw new Error("Invalid data format: Expected FormData");
     }
-  };
+  } catch (error: any) {
+    console.error("❌ Full error in handleAddAsset:", {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      originalError: error
+    });
+    
+    // ✅ FIXED: Extract error message properly
+    let errorMessage = "Failed to add asset";
+    
+    if (error && error.message) {
+      if (typeof error.message === 'string') {
+        errorMessage = error.message;
+      } else {
+        // If message is an object, stringify it
+        try {
+          errorMessage = JSON.stringify(error.message);
+        } catch {
+          errorMessage = "Unknown error occurred";
+        }
+      }
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    } else if (error && typeof error === 'object') {
+      try {
+        errorMessage = JSON.stringify(error);
+      } catch {
+        errorMessage = "Unknown error occurred";
+      }
+    }
+    
+    toast({
+      title: "❌ Error",
+      description: errorMessage,
+      variant: "destructive",
+    });
+    
+    // ✅ FIXED: Re-throw a proper Error object with string message
+    throw new Error(errorMessage);
+  } finally {
+    setAdding(false);
+  }
+};
 
   // Start editing an asset
   const handleEditStart = (asset: AssetItem) => {
@@ -210,7 +245,9 @@ export function AssetsView() {
       description: asset.description,
       purchaseFrom: asset.purchaseFrom,
       invoiceNo: asset.invoiceNo,
-      status: asset.status || "Active"
+      status: asset.status || "Active",
+      purchaseDate: asset.purchaseDate,
+      purchaseTime: asset.purchaseTime
     });
     setEditDialogOpen(true);
   };
@@ -224,7 +261,6 @@ export function AssetsView() {
     }));
   };
 
-  // ✅ Updated to use ASSETS_API_URL
   const handleUpdateAsset = async () => {
     if (!editingAsset) return;
     
@@ -236,22 +272,22 @@ export function AssetsView() {
       
       const updateData = { ...editForm };
       
-      // ✅ FIXED: Check type before calling .replace()
+      // Convert price to number if it's a string
       if (updateData.purchasePrice !== undefined) {
         if (typeof updateData.purchasePrice === 'string') {
           const cleanedPrice = updateData.purchasePrice.replace(/,/g, '').trim();
           updateData.purchasePrice = cleanedPrice ? parseFloat(cleanedPrice) : null;
         } else if (typeof updateData.purchasePrice === 'number') {
-          // Already a number, keep as is
           updateData.purchasePrice = updateData.purchasePrice;
         }
       }
       
+      // Convert quantity to number if it's a string
       if (typeof updateData.quantity === 'string') {
         updateData.quantity = parseInt(updateData.quantity) || 1;
       }
 
-      // ✅ Use ASSETS_API_URL
+      // Send update request
       const response = await fetch(`${ASSETS_API_URL}/${editingAsset._id}`, {
         method: 'PUT',
         headers: {
@@ -303,12 +339,10 @@ export function AssetsView() {
     }
   };
 
-  // ✅ Updated to use ASSETS_API_URL
   const handleDeleteAsset = async (id: string, assetName: string) => {
     if (!confirm(`Are you sure you want to delete "${assetName}"?`)) return;
 
     try {
-      // ✅ Use ASSETS_API_URL
       const response = await fetch(`${ASSETS_API_URL}/${id}`, {
         method: 'DELETE',
       });
@@ -355,12 +389,16 @@ export function AssetsView() {
   }
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: '2-digit',
-      day: '2-digit',
-      year: 'numeric'
-    });
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', {
+        month: '2-digit',
+        day: '2-digit',
+        year: 'numeric'
+      });
+    } catch (e) {
+      return dateString;
+    }
   };
 
   return (
@@ -687,7 +725,7 @@ export function AssetsView() {
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1.5">Purchase Price</label>
                   <input
-                    type="text" // Changed from number to text for safer handling
+                    type="text"
                     name="purchasePrice"
                     placeholder="70000"
                     value={editForm.purchasePrice || ''}

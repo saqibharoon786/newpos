@@ -1,8 +1,13 @@
+const multer = require('multer');
 const Asset = require('../models/assets.model');
 
 // @desc    Create a new asset
 // @route   POST /api/assets
 // @access  Private
+// In your assets.controller.js, update the createAsset function:
+
+
+
 exports.createAsset = async (req, res) => {
   try {
     const {
@@ -21,7 +26,9 @@ exports.createAsset = async (req, res) => {
       time
     } = req.body;
 
-    console.log('📥 Received asset data:', req.body); // DEBUG LOG
+    console.log('📥 Received asset data:', req.body);
+    // console.log('📥 File received from Multer:', a);
+    console.log('📥 Files received:', req.files);
 
     // Basic validation
     if (!assetName || !category || !condition || !department) {
@@ -31,28 +38,41 @@ exports.createAsset = async (req, res) => {
       });
     }
 
-    // Parse date and time if provided
+    // Parse date and time
     let purchaseDate = new Date();
     if (date) {
-      purchaseDate = new Date(date);
+      if (typeof date === 'string' && date.includes('/')) {
+        const [day, month, year] = date.split('/').map(Number);
+        purchaseDate = new Date(year, month - 1, day);
+      } else {
+        purchaseDate = new Date(date);
+      }
     }
 
-    // FIXED: Properly handle purchasePrice
+    // Parse purchasePrice properly
     let parsedPurchasePrice = null;
     if (purchasePrice && purchasePrice !== "" && purchasePrice !== null) {
       try {
-        // Remove commas and convert to number
         const cleanPrice = String(purchasePrice).replace(/,/g, '').trim();
         if (cleanPrice && !isNaN(cleanPrice)) {
           parsedPurchasePrice = parseFloat(cleanPrice);
         }
       } catch (e) {
         console.log('Warning: Could not parse purchasePrice:', purchasePrice);
-        parsedPurchasePrice = null;
       }
     }
 
-    // Create asset object - SIMPLIFIED
+    // IMPORTANT: Receipt image ka FULL PATH save karo
+    let receiptImagePath = null;
+    if (req.file) {
+      // Yeh path frontend ke liye perfect hai
+      // Agar tumne app.js mein app.use('/uploads', express.static('uploads')) kiya hai
+      receiptImagePath = `/uploads/general/${req.file.filename}`;
+      
+      // Optional: Agar full URL chahiye (production ke liye better)
+      // receiptImagePath = `${req.protocol}://${req.get('host')}/uploads/receipts/${req.file.filename}`;
+    }
+
     const assetData = {
       assetName: String(assetName).trim(),
       category: String(category).trim(),
@@ -62,20 +82,29 @@ exports.createAsset = async (req, res) => {
       description: description ? String(description).trim() : null,
       department: String(department).trim(),
       assignedTo: assignedTo ? String(assignedTo).trim() : null,
-      purchasePrice: parsedPurchasePrice, // Can be null
+      purchasePrice: parsedPurchasePrice,
       purchaseFrom: purchaseFrom ? String(purchaseFrom).trim() : null,
       invoiceNo: invoiceNo ? String(invoiceNo).trim() : null,
       purchaseDate,
       purchaseTime: time || null,
+      receiptImage: receiptImagePath,   // ← Yeh line fix ki hai
       status: 'Active'
     };
 
-    console.log('📤 Creating asset with data:', assetData); // DEBUG LOG
-
-    // Set createdBy from authenticated user
     if (req.user) {
       assetData.createdBy = req.user.id;
     }
+
+    console.log('📤 Creating asset with data:', {
+      ...assetData,
+      fileInfo: req.file ? {
+        filename: req.file.filename,
+        originalname: req.file.originalname,
+        size: req.file.size,
+        path: req.file.path,
+        savedUrl: receiptImagePath
+      } : 'No file uploaded'
+    });
 
     const asset = await Asset.create(assetData);
 
@@ -86,23 +115,22 @@ exports.createAsset = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error creating asset:', error);
-    
+
+    if (error instanceof multer.MulterError) {
+      if (error.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ success: false, error: 'File too large. Maximum size is 5MB' });
+      }
+      return res.status(400).json({ success: false, error: `File upload error: ${error.message}` });
+    }
+
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(val => val.message);
-      console.error('Validation errors:', messages);
-      return res.status(400).json({
-        success: false,
-        error: messages.join(', ')
-      });
+      return res.status(400).json({ success: false, error: messages.join(', ') });
     }
-    
-    res.status(500).json({
-      success: false,
-      error: 'Server error: ' + error.message
-    });
+
+    res.status(500).json({ success: false, error: 'Server error: ' + error.message });
   }
 };
-
 // @desc    Get all assets
 // @route   GET /api/assets
 // @access  Private
@@ -224,6 +252,11 @@ exports.updateAsset = async (req, res) => {
     // Handle quantity conversion
     if (updateData.quantity !== undefined) {
       updateData.quantity = parseInt(updateData.quantity) || 1;
+    }
+
+    // Handle receiptImage (ensure it's properly set or removed)
+    if (updateData.receiptImage !== undefined) {
+      updateData.receiptImage = updateData.receiptImage || null;
     }
 
     console.log('📤 Final update data:', updateData);

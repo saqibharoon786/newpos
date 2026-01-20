@@ -12,18 +12,23 @@ if (!fs.existsSync(uploadDir)) {
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     let folder = "general"
-
+console.log("jhsdfkhkdhkdjfdfkljd lkdf ljdlkf k sdklf jlkdfj lkdfjlkjd ::", file)
     // Organize files by type/feature
+
     if (file.fieldname === "avatar" || file.fieldname === "profilePicture") {
       folder = "employees/profiles"
     } else if (file.fieldname === "cnicFrontImage" || file.fieldname === "cnicBackImage") {
       folder = "employees/cnic"
-    } else if (file.fieldname === "membershipDocument") {
+    } else if (file.fieldname === "membershipDocument" || file.fieldname === "employeeDocument") {
       folder = "employees/documents"
-    } else if (file.fieldname === "paymentReceipt") {
-      folder = "employees/receipts"
-    } else if (file.fieldname === "employeeDocument") {
-      folder = "employees/documents"
+    } else if (file.fieldname === "paymentReceipt" || file.fieldname === "receipt") {
+      // Check route to determine destination
+      const url = req.originalUrl || req.baseUrl || '';
+      if (url.includes('/assets') || url.includes('/create-assets') || url.includes('/receiptImage')) {
+        folder = "assets/receipts"  // Assets receipts
+      } else {
+        folder = "employees/receipts"  // Employee receipts
+      }
     }
 
     const fullPath = path.join(uploadDir, folder)
@@ -52,6 +57,19 @@ const storage = multer.diskStorage({
       const cnicType = file.fieldname === "cnicFrontImage" ? "front" : "back"
       const employeeId = req.body.employeeId || "unknown"
       cb(null, `employee-${employeeId}-cnic-${cnicType}-${uniqueSuffix}${extension}`)
+    }
+    // For ASSET receipts - IMPORTANT FIX HERE
+    else if ((file.fieldname === "paymentReceipt" || file.fieldname === "receipt") && (req.body.invoiceNo || req.body.assetName)) {
+      const invoiceNo = req.body.invoiceNo || req.body.assetName.replace(/\s+/g, '-').toLowerCase()
+      cb(null, `asset-receipt-${invoiceNo}-${uniqueSuffix}${extension}`)
+    }
+    // For EMPLOYEE receipts
+    else if ((file.fieldname === "paymentReceipt" || file.fieldname === "receipt") && req.body.employeeId) {
+      cb(null, `employee-${req.body.employeeId}-receipt-${uniqueSuffix}${extension}`)
+    }
+    // For generic receipts
+    else if (file.fieldname === "paymentReceipt" || file.fieldname === "receipt") {
+      cb(null, `receipt-${uniqueSuffix}${extension}`)
     }
     else {
       cb(null, file.fieldname + "-" + uniqueSuffix + extension)
@@ -107,7 +125,15 @@ const fileFilter = (req, file, cb) => {
       "application/pdf",
       "image/jpeg", 
       "image/jpg", 
-      "image/png"
+      "image/png",
+      "image/webp"
+    ],
+    "receipt": [
+      "application/pdf",
+      "image/jpeg", 
+      "image/jpg", 
+      "image/png",
+      "image/webp"
     ]
   }
 
@@ -144,6 +170,8 @@ const upload = multer({
       "cnicFrontImage": 3 * 1024 * 1024, // 3MB for CNIC images
       "cnicBackImage": 3 * 1024 * 1024, // 3MB for CNIC images
       "employeeDocument": 10 * 1024 * 1024, // 10MB for documents
+      "paymentReceipt": 5 * 1024 * 1024, // 5MB for payment receipts
+      "receipt": 5 * 1024 * 1024, // 5MB for receipts
       "default": 5 * 1024 * 1024 // 5MB default
     }
     
@@ -199,14 +227,22 @@ const uploadEmployeeAvatar = upload.single('avatar')
 // Middleware for employee documents (multiple files)
 const uploadEmployeeDocuments = upload.array('documents', 5) // Max 5 documents
 
+// Middleware for receipt uploads
+const uploadReceipt = upload.single('receipt')
+
+// Middleware for payment receipt uploads (alternative name)
+const uploadPaymentReceipt = upload.single('paymentReceipt')
+
 // Middleware for general file uploads
 const uploadGeneral = upload.single('file')
 
 module.exports = {
   upload,
-  uploadEmployeeFiles, // New: For multiple employee file uploads
-  uploadEmployeeAvatar, // Kept for backward compatibility
+  uploadEmployeeFiles,
+  uploadEmployeeAvatar,
   uploadEmployeeDocuments,
+  uploadReceipt,
+  uploadPaymentReceipt,
   uploadGeneral,
   deleteFile,
   getFileUrl

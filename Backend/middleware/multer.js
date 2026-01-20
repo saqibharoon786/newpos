@@ -12,6 +12,7 @@ if (!fs.existsSync(uploadDir)) {
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     let folder = "general"
+    console.log("📁 File name:", file)
 
     // Organize files by type
     if (file.fieldname === "profilePicture") {
@@ -33,7 +34,6 @@ const storage = multer.diskStorage({
     // Generate unique filename
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9)
     const extension = path.extname(file.originalname)
-    
     // Use a more descriptive filename
     if (file.fieldname === "receiptImage") {
       // Generate filename with invoice number if available

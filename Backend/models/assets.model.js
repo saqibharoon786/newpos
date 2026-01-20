@@ -49,9 +49,20 @@ const assetSchema = new mongoose.Schema({
   status: {
     type: String,
     default: 'Active'
+  },
+  receiptImage: {
+    type: String, // This will store the image URL or Base64 string
+    default: null
   }
 }, {
   timestamps: true
 });
+
+// Create indexes for better performance
+assetSchema.index({ assetName: 1 });
+assetSchema.index({ category: 1 });
+assetSchema.index({ department: 1 });
+assetSchema.index({ status: 1 });
+assetSchema.index({ assignedTo: 1 });
 
 module.exports = mongoose.model('Asset', assetSchema);

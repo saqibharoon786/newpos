@@ -22,8 +22,25 @@ interface Customer {
   updatedAt: string;
 }
 
+// Add this date formatting function
+const formatDateToDDMMYYYY = (dateString: string | Date): string => {
+  if (!dateString) return "N/A";
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "Invalid Date";
+    
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    
+    return `${day}-${month}-${year}`;
+  } catch (error) {
+    return "N/A";
+  }
+};
+
 // Use environment variable for API base URL
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const CUSTOMERS_API_URL = `${API_BASE_URL}/api/customers`;
 
 export default function CustomersView() {
@@ -54,7 +71,6 @@ export default function CustomersView() {
       console.log("📡 Fetching customers from:", apiUrl);
       
       const response = await axios.get(apiUrl, {
-        // timeout: 10000,
         headers: {
           'Content-Type': 'application/json',
         }
@@ -218,7 +234,7 @@ export default function CustomersView() {
     setSearchTerm("");
   };
 
-  // Render Customer Detail View (remains the same)
+  // Render Customer Detail View
   const renderCustomerDetailView = () => {
     if (!selectedCustomer) return null;
 
@@ -306,7 +322,7 @@ export default function CustomersView() {
               <div>
                 <p className="text-xs text-muted-foreground">Registration Date</p>
                 <p className="text-sm text-foreground">
-                  {new Date(selectedCustomer.registrationDate).toLocaleDateString()}
+                  {formatDateToDDMMYYYY(selectedCustomer.registrationDate)}
                 </p>
               </div>
             </div>
@@ -325,13 +341,13 @@ export default function CustomersView() {
               <div>
                 <p className="text-xs text-muted-foreground">Member Since</p>
                 <p className="text-sm text-foreground">
-                  {new Date(selectedCustomer.createdAt).toLocaleDateString()}
+                  {formatDateToDDMMYYYY(selectedCustomer.createdAt)}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Last Updated</p>
                 <p className="text-sm text-foreground">
-                  {new Date(selectedCustomer.updatedAt).toLocaleDateString()}
+                  {formatDateToDDMMYYYY(selectedCustomer.updatedAt)}
                 </p>
               </div>
               <div>
@@ -570,7 +586,7 @@ export default function CustomersView() {
                           </td>
                           <td className="py-3 px-4">
                             <p className="text-sm text-foreground">
-                              {new Date(customer.registrationDate).toLocaleDateString()}
+                              {formatDateToDDMMYYYY(customer.registrationDate)}
                             </p>
                           </td>
                           <td className="py-3 px-4">

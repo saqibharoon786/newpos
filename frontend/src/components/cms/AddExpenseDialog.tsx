@@ -363,81 +363,103 @@ export function AddExpenseDialog({
                     <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                   </div>
 
-                  {showCalendar && (
-                    <div 
-                      className="absolute z-[999] mt-1 w-72 bg-background border border-border rounded-lg shadow-2xl"
-                      style={{ 
-                        top: '100%',
-                        left: 0,
-                        marginTop: '4px',
-                      }}
-                    >
-                      <div className="p-4 border-b border-border">
-                        <div className="flex items-center justify-between mb-3">
-                          <button onClick={handlePrevMonth} className="p-1 hover:bg-muted rounded">
-                            <ChevronLeft className="w-5 h-5 text-muted-foreground" />
-                          </button>
-                          <div className="text-sm font-semibold text-foreground">
-                            {monthNames[currentMonth]} {currentYear}
-                          </div>
-                          <button onClick={handleNextMonth} className="p-1 hover:bg-muted rounded">
-                            <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                          </button>
-                        </div>
-                        <button
-                          onClick={handleToday}
-                          className="w-full py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-                        >
-                          Today
-                        </button>
-                      </div>
+                {showCalendar && (
+  <div 
+    className="absolute z-[999] mt-1 w-80 bg-background border border-border rounded-lg shadow-2xl" // width badhaya hai w-72 se w-80
+    style={{ 
+      top: '100%',
+      left: 0,
+      marginTop: '4px',
+    }}
+  >
+    <div className="p-4 border-b border-border">
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={handlePrevMonth} className="p-1 hover:bg-muted rounded">
+          <ChevronLeft className="w-5 h-5 text-muted-foreground" />
+        </button>
+        
+        <div className="flex items-center gap-2">
+          {/* ✅ Month Display */}
+          <div className="text-sm font-semibold text-foreground">
+            {monthNames[currentMonth]}
+          </div>
+          
+          {/* ✅ ADDED: Year Dropdown */}
+          <select
+            value={currentYear}
+            onChange={(e) => setCurrentYear(parseInt(e.target.value))}
+            className="text-sm font-semibold text-foreground bg-cms-input-bg border border-border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            {Array.from({ length: 21 }, (_, i) => {
+              const year = new Date().getFullYear() - 10 + i;
+              return (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              );
+            })}
+          </select>
+        </div>
+        
+        <button onClick={handleNextMonth} className="p-1 hover:bg-muted rounded">
+          <ChevronRight className="w-5 h-5 text-muted-foreground" />
+        </button>
+      </div>
+      
+      <button
+        onClick={handleToday}
+        className="w-full py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+      >
+        Today
+      </button>
+    </div>
 
-                      <div className="p-4">
-                        <div className="grid grid-cols-7 mb-2">
-                          {dayNames.map(day => (
-                            <div key={day} className="text-center text-xs text-muted-foreground font-medium">
-                              {day}
-                            </div>
-                          ))}
-                        </div>
+    <div className="p-4">
+      <div className="grid grid-cols-7 mb-2">
+        {dayNames.map(day => (
+          <div key={day} className="text-center text-xs text-muted-foreground font-medium">
+            {day}
+          </div>
+        ))}
+      </div>
 
-                        <div className="grid grid-cols-7 gap-1">
-                          {Array.from({ length: getFirstDayOfMonth(currentYear, currentMonth) }).map((_, i) => (
-                            <div key={`empty-${i}`} className="h-9" />
-                          ))}
+      <div className="grid grid-cols-7 gap-1">
+        {Array.from({ length: getFirstDayOfMonth(currentYear, currentMonth) }).map((_, i) => (
+          <div key={`empty-${i}`} className="h-9" />
+        ))}
 
-                          {Array.from({ length: getDaysInMonth(currentYear, currentMonth) }).map((_, index) => {
-                            const day = index + 1;
-                            const isToday = new Date().getDate() === day && 
-                                            new Date().getMonth() === currentMonth &&
-                                            new Date().getFullYear() === currentYear;
-                            const isSelected = selectedDate && 
-                                              selectedDate.getDate() === day &&
-                                              selectedDate.getMonth() === currentMonth &&
-                                              selectedDate.getFullYear() === currentYear;
+        {Array.from({ length: getDaysInMonth(currentYear, currentMonth) }).map((_, index) => {
+          const day = index + 1;
+          const isToday = new Date().getDate() === day && 
+                          new Date().getMonth() === currentMonth &&
+                          new Date().getFullYear() === currentYear;
+          const isSelected = selectedDate && 
+                            selectedDate.getDate() === day &&
+                            selectedDate.getMonth() === currentMonth &&
+                            selectedDate.getFullYear() === currentYear;
 
-                            return (
-                              <button
-                                key={day}
-                                onClick={() => handleDateSelect(day)}
-                                className={`
-                                  h-9 flex items-center justify-center text-sm rounded-md transition-colors
-                                  ${isSelected 
-                                    ? 'bg-primary text-primary-foreground' 
-                                    : isToday 
-                                    ? 'bg-blue-100 text-blue-600 font-semibold' 
-                                    : 'hover:bg-muted text-foreground'
-                                  }
-                                `}
-                              >
-                                {day}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  )}
+          return (
+            <button
+              key={day}
+              onClick={() => handleDateSelect(day)}
+              className={`
+                h-9 flex items-center justify-center text-sm rounded-md transition-colors
+                ${isSelected 
+                  ? 'bg-primary text-primary-foreground' 
+                  : isToday 
+                  ? 'bg-blue-100 text-blue-600 font-semibold' 
+                  : 'hover:bg-muted text-foreground'
+                }
+              `}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  </div>
+)}
                 </div>
 
                 {/* Time picker wahi rahega – agar isme bhi jump ho to bata dena */}
