@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Pencil, Printer, Trash2, IndianRupee, Building2, FileText, Calendar, Package, Settings, Box, Cpu, CheckCircle, AlignLeft, Building, User, ArrowLeft, Loader2, Image, Download, Eye } from "lucide-react";
+import { Printer, IndianRupee, Building2, FileText, Calendar, Package, Settings, Box, Cpu, CheckCircle, AlignLeft, Building, User, ArrowLeft, Loader2, Image, Download, Eye } from "lucide-react";
 
 interface AssetItem {
   _id: string;
@@ -17,7 +17,7 @@ interface AssetItem {
   invoiceNo?: string;
   status?: string;
   quantity: number;
-  receiptImage?: string; // ✅ ADDED
+  receiptImage?: string;
   receiptImageDetails?: {
     originalName?: string;
     path?: string;
@@ -44,62 +44,60 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
   const [showReceiptPreview, setShowReceiptPreview] = useState(false);
 
   // Helper function to get receipt image URL
- // Helper function to get receipt image URL - FIXED VERSION
-// Helper function to get receipt image URL - ROBUST VERSION
-const getReceiptImageUrl = (filename?: string) => {
-  if (!filename) {
-    console.log("📸 No filename provided");
-    return null;
-  }
-  
-  console.log("📸 Raw filename from database:", filename);
-  
-  let cleanFilename = filename;
-  
-  // Case 1: If it's a full URL (shouldn't happen, but handle it)
-  if (filename.startsWith('http://') || filename.startsWith('https://')) {
-    console.log("📸 Already a full URL, returning as-is");
-    return filename;
-  }
-  
-  // Case 2: If it's an absolute path on filesystem
-  if (filename.includes('\\')) {
-    // Windows path, extract filename
-    const parts = filename.split('\\');
-    cleanFilename = parts[parts.length - 1];
-    console.log("📸 Extracted from Windows path:", cleanFilename);
-  }
-  
-  // Case 3: If it's a Unix path
-  if (filename.includes('/')) {
-    const parts = filename.split('/');
-    cleanFilename = parts[parts.length - 1];
-    console.log("📸 Extracted from Unix path:", cleanFilename);
-  }
-  
-  // Remove any directory prefixes
-  const prefixesToRemove = [
-    'uploads/receipts/',
-    'uploads\\receipts\\',
-    'receipts/',
-    'receipts\\',
-    './uploads/receipts/',
-    './uploads\\receipts\\'
-  ];
-  
-  for (const prefix of prefixesToRemove) {
-    if (cleanFilename.startsWith(prefix)) {
-      cleanFilename = cleanFilename.substring(prefix.length);
-      console.log(`📸 Removed prefix "${prefix}":`, cleanFilename);
+  const getReceiptImageUrl = (filename?: string) => {
+    if (!filename) {
+      console.log("📸 No filename provided");
+      return null;
     }
-  }
-  
-  // Construct the URL
-  const receiptUrl = `${BACKEND_URL}/uploads/general/${cleanFilename}`;
-  console.log("📸 Final URL:", receiptUrl);
-  
-  return receiptUrl;
-};
+    
+    console.log("📸 Raw filename from database:", filename);
+    
+    let cleanFilename = filename;
+    
+    // Case 1: If it's a full URL (shouldn't happen, but handle it)
+    if (filename.startsWith('http://') || filename.startsWith('https://')) {
+      console.log("📸 Already a full URL, returning as-is");
+      return filename;
+    }
+    
+    // Case 2: If it's an absolute path on filesystem
+    if (filename.includes('\\')) {
+      // Windows path, extract filename
+      const parts = filename.split('\\');
+      cleanFilename = parts[parts.length - 1];
+      console.log("📸 Extracted from Windows path:", cleanFilename);
+    }
+    
+    // Case 3: If it's a Unix path
+    if (filename.includes('/')) {
+      const parts = filename.split('/');
+      cleanFilename = parts[parts.length - 1];
+      console.log("📸 Extracted from Unix path:", cleanFilename);
+    }
+    
+    // Remove any directory prefixes
+    const prefixesToRemove = [
+      'uploads/receipts/',
+      'uploads\\receipts\\',
+      'receipts/',
+      'receipts\\',
+      './uploads/receipts/',
+      './uploads\\receipts\\'
+    ];
+    
+    for (const prefix of prefixesToRemove) {
+      if (cleanFilename.startsWith(prefix)) {
+        cleanFilename = cleanFilename.substring(prefix.length);
+        console.log(`📸 Removed prefix "${prefix}":`, cleanFilename);
+      }
+    }
+    
+    // Construct the URL
+    const receiptUrl = `${BACKEND_URL}/uploads/general/${cleanFilename}`;
+    console.log("📸 Final URL:", receiptUrl);
+    
+    return receiptUrl;
+  };
 
   // Function to download receipt
   const downloadReceipt = () => {
@@ -115,6 +113,420 @@ const getReceiptImageUrl = (filename?: string) => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Professional Print Function - One Page
+  const handleProfessionalPrint = () => {
+    if (!asset) return;
+    
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const currentDate = new Date().toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+    const currentTime = new Date().toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    // Format date for printing
+    const formatDateForPrint = (dateString: string) => {
+      try {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric'
+        });
+      } catch (error) {
+        return dateString;
+      }
+    };
+
+    // Format price for printing
+    const formatPrice = (price?: number) => {
+      if (!price) return 'N/A';
+      return `Rs. ${price.toLocaleString()}`;
+    };
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Asset Details - ${asset.assetName}</title>
+        <style>
+          @media print {
+            @page {
+              margin: 10mm;
+              size: A4 portrait;
+            }
+            
+            body {
+              margin: 0;
+              padding: 0;
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              font-size: 9pt;
+              line-height: 1.3;
+              color: #333;
+              background: white;
+            }
+            
+            .print-header {
+              text-align: center;
+              margin-bottom: 12px;
+              padding-bottom: 10px;
+              border-bottom: 1.5px solid #333;
+            }
+            
+            .report-title {
+              font-size: 14pt;
+              font-weight: bold;
+              color: #1a365d;
+              margin: 0 0 5px 0;
+            }
+            
+            .asset-name {
+              font-size: 11pt;
+              color: #4a5568;
+              margin: 0 0 8px 0;
+            }
+            
+            .report-meta {
+              font-size: 8pt;
+              color: #718096;
+              margin-bottom: 5px;
+            }
+            
+            /* Compact grid for one page */
+            .details-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 10px;
+              margin: 15px 0;
+            }
+            
+            .details-section {
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 4px;
+              padding: 12px;
+              page-break-inside: avoid;
+            }
+            
+            .section-title {
+              font-size: 10pt;
+              font-weight: 600;
+              color: #2d3748;
+              margin: 0 0 8px 0;
+              padding-bottom: 5px;
+              border-bottom: 1px solid #cbd5e0;
+            }
+            
+            .detail-row {
+              display: flex;
+              justify-content: space-between;
+              margin-bottom: 6px;
+              font-size: 8.5pt;
+            }
+            
+            .detail-row:last-child {
+              margin-bottom: 0;
+            }
+            
+            .detail-label {
+              color: #4a5568;
+              font-weight: 500;
+              min-width: 120px;
+            }
+            
+            .detail-value {
+              color: #1a202c;
+              font-weight: 600;
+              text-align: right;
+              max-width: 150px;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+            
+            /* Status badges - compact */
+            .status-badge {
+              padding: 2px 6px;
+              border-radius: 3px;
+              font-size: 7.5pt;
+              font-weight: 500;
+              display: inline-block;
+            }
+            
+            .condition-new { background: #c6f6d5; color: #22543d; }
+            .condition-good { background: #bee3f8; color: #2c5282; }
+            .condition-fair { background: #fefcbf; color: #744210; }
+            .condition-poor { background: #fed7d7; color: #9b2c2c; }
+            
+            .status-active { background: #c6f6d5; color: #22543d; }
+            .status-inactive { background: #fed7d7; color: #9b2c2c; }
+            
+            /* Receipt section - compact */
+            .receipt-section {
+              margin: 12px 0;
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 4px;
+              padding: 12px;
+              page-break-inside: avoid;
+            }
+            
+            .receipt-info {
+              display: flex;
+              justify-content: space-between;
+              font-size: 8pt;
+              margin-bottom: 8px;
+            }
+            
+            .receipt-placeholder {
+              background: white;
+              border: 1px solid #e2e8f0;
+              border-radius: 3px;
+              padding: 15px;
+              text-align: center;
+              font-size: 8pt;
+              color: #718096;
+              margin: 8px 0;
+            }
+            
+            /* Additional info section */
+            .additional-section {
+              margin: 12px 0;
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 4px;
+              padding: 12px;
+              page-break-inside: avoid;
+            }
+            
+            /* Signature area - compact */
+            .signature-area {
+              margin-top: 20px;
+              padding-top: 10px;
+              border-top: 1px solid #cbd5e0;
+              display: flex;
+              justify-content: space-between;
+              font-size: 8pt;
+            }
+            
+            .signature-box {
+              text-align: center;
+              width: 48%;
+            }
+            
+            .signature-line {
+              margin-top: 25px;
+              border-top: 1px solid #666;
+              padding-top: 8px;
+              font-size: 8pt;
+            }
+            
+            /* Footer */
+            .footer {
+              margin-top: 15px;
+              padding-top: 10px;
+              border-top: 1px solid #cbd5e0;
+              text-align: center;
+              font-size: 7pt;
+              color: #718096;
+            }
+            
+            /* Hide unnecessary elements */
+            .no-print, button, nav, .print-button, .back-button {
+              display: none !important;
+            }
+            
+            /* Prevent page breaks */
+            * {
+              page-break-inside: avoid;
+            }
+            
+            /* Control spacing */
+            .spacing-control {
+              margin: 0;
+              padding: 0;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-container spacing-control">
+          <!-- Header - No Company Name -->
+          <div class="print-header">
+            <h1 class="report-title">Asset Details Report</h1>
+            <h2 class="asset-name">${asset.assetName}</h2>
+            <div class="report-meta">
+              Generated: ${currentDate} ${currentTime} | Asset ID: ${asset._id.substring(0, 12)}
+            </div>
+          </div>
+          
+          <!-- Main Content Grid - Compact -->
+          <div class="details-grid">
+            <!-- Asset Details -->
+            <div class="details-section">
+              <div class="section-title">Asset Information</div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Asset Name:</span>
+                <span class="detail-value">${asset.assetName}</span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Category:</span>
+                <span class="detail-value">${asset.category}</span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Quantity:</span>
+                <span class="detail-value">${asset.quantity}</span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Model/Size:</span>
+                <span class="detail-value">${asset.sizeModel || 'N/A'}</span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Description:</span>
+                <span class="detail-value">${asset.description || 'N/A'}</span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Condition:</span>
+                <span class="detail-value">
+                  <span class="status-badge condition-${asset.condition.toLowerCase()}">
+                    ${asset.condition}
+                  </span>
+                </span>
+              </div>
+            </div>
+            
+            <!-- Purchase Details -->
+            <div class="details-section">
+              <div class="section-title">Purchase Details</div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Purchase Price:</span>
+                <span class="detail-value">${formatPrice(asset.purchasePrice)}</span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Purchased From:</span>
+                <span class="detail-value">${asset.purchaseFrom || 'N/A'}</span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Invoice Number:</span>
+                <span class="detail-value">${asset.invoiceNo || 'N/A'}</span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Purchase Date:</span>
+                <span class="detail-value">${formatDateForPrint(asset.purchaseDate)} ${asset.purchaseTime || ''}</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Assigned Details -->
+          <div class="details-section">
+            <div class="section-title">Assignment Information</div>
+            
+            <div class="detail-row">
+              <span class="detail-label">Department:</span>
+              <span class="detail-value">${asset.department}</span>
+            </div>
+            
+            <div class="detail-row">
+              <span class="detail-label">Assigned To:</span>
+              <span class="detail-value">${asset.assignedTo}</span>
+            </div>
+            
+            <div class="detail-row">
+              <span class="detail-label">Status:</span>
+              <span class="detail-value">
+                <span class="status-badge status-${(asset.status || 'Active').toLowerCase()}">
+                  ${asset.status || 'Active'}
+                </span>
+              </span>
+            </div>
+          </div>
+          
+          <!-- Receipt Section -->
+          <div class="receipt-section">
+            <div class="section-title">Receipt / Proof of Purchase</div>
+            
+            <div class="receipt-info">
+              <div>
+                <strong>File:</strong> ${asset.receiptImage || 'No receipt uploaded'}
+              </div>
+              ${asset.receiptImageDetails?.size ? `
+              <div>
+                <strong>Size:</strong> ${formatFileSize(asset.receiptImageDetails.size)}
+              </div>
+              ` : ''}
+            </div>
+            
+            <div class="receipt-placeholder">
+              ${asset.receiptImage ? 'Receipt image would appear here' : 'No receipt available'}
+            </div>
+          </div>
+          
+          <!-- Additional Information -->
+          <div class="additional-section">
+            <div class="section-title">Additional Information</div>
+            
+            <div class="detail-row">
+              <span class="detail-label">Created At:</span>
+              <span class="detail-value">${formatDateForPrint(asset.createdAt)}</span>
+            </div>
+            
+            <div class="detail-row">
+              <span class="detail-label">Last Updated:</span>
+              <span class="detail-value">${formatDateForPrint(asset.updatedAt)}</span>
+            </div>
+            
+            <div class="detail-row">
+              <span class="detail-label">Database ID:</span>
+              <span class="detail-value" style="font-family: monospace; font-size: 7.5pt;">${asset._id}</span>
+            </div>
+          </div>
+          
+          <!-- Signature Area - Compact -->
+          <div class="signature-area">
+            <div class="signature-box">
+              <div class="signature-line"></div>
+              <div style="margin-top: 4px;">Prepared By</div>
+            </div>
+            
+            <div class="signature-box">
+              <div class="signature-line"></div>
+              <div style="margin-top: 4px;">Authorized By</div>
+            </div>
+          </div>
+          
+          <!-- Footer -->
+          <div class="footer">
+            <p>Computer generated document • Confidential</p>
+            <p style="margin-top: 3px;">Page 1 of 1</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
+    
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+    }, 250);
   };
 
   // Fetch asset details from API
@@ -334,17 +746,12 @@ const getReceiptImageUrl = (filename?: string) => {
           <p className="text-sm text-muted-foreground">Full details for {asset.assetName}</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
-            <Pencil className="w-4 h-4" />
-            Edit
-          </button>
-          <button className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
+          <button 
+            onClick={handleProfessionalPrint}
+            className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+          >
             <Printer className="w-4 h-4" />
-            Print
-          </button>
-          <button className="px-4 py-2 bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
-            <Trash2 className="w-4 h-4" />
-            Delete
+            Print Report
           </button>
         </div>
       </div>
@@ -426,7 +833,7 @@ const getReceiptImageUrl = (filename?: string) => {
                     <span className="font-medium text-foreground">
                       {formatFileSize(asset.receiptImageDetails.size)}
                     </span>
-                  </div>
+                </div>
                 )}
                 
                 {/* Preview Area */}

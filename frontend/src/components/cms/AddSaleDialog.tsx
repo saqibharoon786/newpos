@@ -115,6 +115,10 @@ export function AddSaleDialog({
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   
+  // Year dropdown state
+  const [showYearDropdown, setShowYearDropdown] = useState(false);
+  const years = Array.from({ length: 21 }, (_, i) => new Date().getFullYear() - 10 + i);
+  
   // Time states
   const [selectedHour, setSelectedHour] = useState("12");
   const [selectedMinute, setSelectedMinute] = useState("00");
@@ -185,6 +189,7 @@ export function AddSaleDialog({
     } else {
       setCurrentMonth(m => m - 1);
     }
+    setShowYearDropdown(false);
   };
 
   const handleNextMonth = () => {
@@ -194,12 +199,19 @@ export function AddSaleDialog({
     } else {
       setCurrentMonth(m => m + 1);
     }
+    setShowYearDropdown(false);
+  };
+
+  const handleYearSelect = (year: number) => {
+    setCurrentYear(year);
+    setShowYearDropdown(false);
   };
 
   const handleDateSelect = (day: number) => {
     const date = new Date(currentYear, currentMonth, day);
     setSelectedDate(date);
     setShowCalendar(false);
+    setShowYearDropdown(false);
   };
 
   const handleToday = () => {
@@ -208,6 +220,7 @@ export function AddSaleDialog({
     setCurrentMonth(today.getMonth());
     setCurrentYear(today.getFullYear());
     setShowCalendar(false);
+    setShowYearDropdown(false);
   };
 
   // Time picker options
@@ -219,6 +232,7 @@ export function AddSaleDialog({
     const handleClickOutside = (event: MouseEvent) => {
       if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
         setShowCalendar(false);
+        setShowYearDropdown(false);
       }
       if (timeRef.current && !timeRef.current.contains(event.target as Node)) {
         setShowTimePicker(false);
@@ -737,6 +751,7 @@ export function AddSaleDialog({
     setSelectedDate(now);
     setCurrentMonth(now.getMonth());
     setCurrentYear(now.getFullYear());
+    setShowYearDropdown(false);
     
     const currentTimeMatch = currentTimeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
     if (currentTimeMatch) {
@@ -768,10 +783,11 @@ export function AddSaleDialog({
     return showCalendar && (
       <div 
         ref={calendarRef}
-        className="absolute z-[999] mt-1 w-72 bg-background border border-border rounded-lg shadow-2xl"
+        className="absolute z-[999] mt-1 w-80 bg-background border border-border rounded-lg shadow-2xl"
         style={{ 
           top: '100%',
-          left: 0,
+          left: '50%',
+          transform: 'translateX(-50%)',
           marginTop: '4px',
         }}
       >
@@ -783,9 +799,34 @@ export function AddSaleDialog({
             >
               <ChevronLeft className="w-5 h-5 text-muted-foreground" />
             </button>
-            <div className="text-sm font-semibold text-foreground">
-              {monthNames[currentMonth]} {currentYear}
+            
+            <div className="flex items-center gap-1 relative">
+              <div className="text-sm font-semibold text-foreground min-w-[100px] text-center">
+                {monthNames[currentMonth]}
+              </div>
+              <button 
+                onClick={() => setShowYearDropdown(!showYearDropdown)}
+                className="flex items-center gap-1 px-2 py-1 text-sm font-semibold text-foreground hover:bg-muted rounded"
+              >
+                {currentYear}
+                <ChevronDown className={`w-4 h-4 transition-transform ${showYearDropdown ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {showYearDropdown && (
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-1 w-32 max-h-48 overflow-y-auto bg-background border border-border rounded-md shadow-lg z-10">
+                  {years.map(year => (
+                    <button
+                      key={year}
+                      onClick={() => handleYearSelect(year)}
+                      className={`w-full px-3 py-2 text-sm text-left hover:bg-muted ${year === currentYear ? 'bg-primary/10 text-primary font-semibold' : 'text-foreground'}`}
+                    >
+                      {year}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+            
             <button 
               onClick={handleNextMonth} 
               className="p-1 hover:bg-muted rounded"
@@ -1063,6 +1104,7 @@ export function AddSaleDialog({
                       e.stopPropagation();
                       setShowCalendar(prev => !prev);
                       setShowTimePicker(false);
+                      setShowYearDropdown(false);
                     }}
                   >
                     <input
@@ -1084,6 +1126,7 @@ export function AddSaleDialog({
                       e.stopPropagation();
                       setShowTimePicker(prev => !prev);
                       setShowCalendar(false);
+                      setShowYearDropdown(false);
                     }}
                   >
                     <input

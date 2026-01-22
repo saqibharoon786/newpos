@@ -1,4 +1,4 @@
-// Employee.tsx - UPDATED AND CLEANED VERSION
+// Employee.tsx - UPDATED WITH PRINT FUNCTIONALITY
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
@@ -27,6 +27,7 @@ import {
   Download,
   ChevronLeft,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import axios from "axios";
@@ -101,6 +102,7 @@ const Employee = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [view, setView] = useState<"list" | "detail">("list");
+  const [isPrinting, setIsPrinting] = useState(false);
   
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null);
@@ -183,6 +185,413 @@ const Employee = () => {
     salary: "",
     advancePayment: "0",
   });
+
+  // ==================== PRINT FUNCTIONALITY ====================
+  const handlePrint = (employee: EmployeeType) => {
+    setIsPrinting(true);
+    
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Employee Details - ${employee.name}</title>
+        <style>
+          @page {
+            size: A4 portrait;
+            margin: 8mm;
+          }
+          
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          
+          body {
+            font-family: 'Segoe UI', 'Arial', sans-serif;
+            font-size: 8pt;
+            line-height: 1.2;
+            color: #000;
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+          }
+          
+          .print-container {
+            width: 100%;
+            max-height: 280mm;
+            overflow: hidden;
+            padding: 0;
+          }
+          
+          /* Header */
+          .print-header {
+            text-align: center;
+            margin-bottom: 8px;
+            padding-bottom: 6px;
+            border-bottom: 1.5px solid #000;
+          }
+          
+          .print-title {
+            font-size: 16pt;
+            font-weight: bold;
+            margin-bottom: 2px;
+            color: #000;
+          }
+          
+          .print-subtitle {
+            font-size: 9pt;
+            color: #666;
+          }
+          
+          /* Employee Summary */
+          .employee-summary {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 5px;
+            background: #f5f5f5;
+            border-radius: 3px;
+          }
+          
+          .avatar-container {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            overflow: hidden;
+            margin-right: 10px;
+            border: 1px solid #ddd;
+            flex-shrink: 0;
+          }
+          
+          .avatar-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+          }
+          
+          .employee-basic-info {
+            flex: 1;
+          }
+          
+          .employee-name {
+            font-size: 12pt;
+            font-weight: bold;
+            color: #000;
+            margin-bottom: 2px;
+          }
+          
+          .employee-id {
+            font-size: 9pt;
+            color: #666;
+          }
+          
+          /* Sections */
+          .print-section {
+            margin-bottom: 8px;
+            page-break-inside: avoid;
+          }
+          
+          .section-title {
+            font-size: 10pt;
+            font-weight: bold;
+            color: #000;
+            padding: 4px 0;
+            margin-bottom: 4px;
+            border-bottom: 1px solid #ccc;
+            background: #f0f0f0;
+            padding-left: 5px;
+          }
+          
+          /* Compact Grids */
+          .compact-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 4px;
+            margin-bottom: 4px;
+          }
+          
+          .compact-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 2px 0;
+            font-size: 8pt;
+          }
+          
+          .compact-label {
+            font-weight: 600;
+            color: #444;
+            min-width: 120px;
+          }
+          
+          .compact-value {
+            color: #000;
+            text-align: right;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          
+          /* Footer */
+          .print-footer {
+            margin-top: 10px;
+            padding-top: 6px;
+            border-top: 1px solid #ccc;
+            text-align: center;
+            color: #666;
+            font-size: 7pt;
+          }
+          
+          /* Utility */
+          .text-right { text-align: right; }
+          .text-center { text-align: center; }
+          .mb-1 { margin-bottom: 4px; }
+          .mt-1 { margin-top: 4px; }
+          .no-wrap { white-space: nowrap; }
+          .truncate { 
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+          
+          /* Status Badge */
+          .status-badge {
+            padding: 1px 6px;
+            border-radius: 8px;
+            font-size: 7pt;
+            font-weight: 600;
+            display: inline-block;
+          }
+          
+          /* Print Optimization */
+          @media print {
+            body {
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+              height: 100%;
+              width: 100%;
+            }
+            
+            .print-container {
+              height: 100%;
+              max-height: 100%;
+              page-break-inside: avoid;
+              page-break-after: avoid;
+              page-break-before: avoid;
+            }
+            
+            /* Prevent breaks */
+            .no-break {
+              page-break-inside: avoid;
+              page-break-after: avoid;
+            }
+            
+            /* Force single page */
+            html, body {
+              height: 100%;
+              overflow: hidden;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-container no-break">
+          <!-- Header -->
+          <div class="print-header">
+            <div class="print-title">EMPLOYEE DETAILS REPORT</div>
+            <div class="print-subtitle">Date: ${new Date().toLocaleDateString('en-GB')} | Time: ${new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'})}</div>
+          </div>
+          
+          <!-- Employee Summary -->
+          <div class="employee-summary">
+            <div class="avatar-container">
+              <img src="${employee.avatar || ''}" alt="${employee.name}" onerror="this.style.display='none'">
+            </div>
+            <div class="employee-basic-info">
+              <div class="employee-name">${employee.name}</div>
+              <div class="employee-id">ID: ${employee.employeeId}</div>
+              <div class="employee-id">Phone: ${employee.phone} | Email: ${employee.email || 'N/A'}</div>
+            </div>
+          </div>
+          
+          <!-- Personal Details -->
+          <div class="print-section no-break">
+            <div class="section-title">PERSONAL INFORMATION</div>
+            <div class="compact-grid">
+              <div class="compact-item">
+                <span class="compact-label">Full Name:</span>
+                <span class="compact-value">${employee.name}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Phone:</span>
+                <span class="compact-value">${employee.phone}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Email:</span>
+                <span class="compact-value truncate">${employee.email || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">CNIC:</span>
+                <span class="compact-value">${employee.cnic || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Address:</span>
+                <span class="compact-value">${employee.address || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Date of Birth:</span>
+                <span class="compact-value">${employee.dob || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Emergency Contact:</span>
+                <span class="compact-value">${employee.emergencyContact || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Advance Payment:</span>
+                <span class="compact-value">Rs. ${employee.advancePayment?.toLocaleString() || '0'}</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Employment Details -->
+          <div class="print-section no-break">
+            <div class="section-title">EMPLOYMENT INFORMATION</div>
+            <div class="compact-grid">
+              <div class="compact-item">
+                <span class="compact-label">Employee ID:</span>
+                <span class="compact-value">${employee.employeeId}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Job Title:</span>
+                <span class="compact-value">${employee.title || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Department:</span>
+                <span class="compact-value">${employee.department || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Reporting Manager:</span>
+                <span class="compact-value">${employee.reportingManager || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Hire Date:</span>
+                <span class="compact-value">${employee.hireDate || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Work Schedule:</span>
+                <span class="compact-value">${employee.startTime ? formatTimeForDisplay(employee.startTime) : '09:00'} - ${employee.endTime ? formatTimeForDisplay(employee.endTime) : '17:00'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Salary:</span>
+                <span class="compact-value">${formatSalary(employee.salary)}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Job Responsibilities:</span>
+                <span class="compact-value">${employee.responsibilities || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Status:</span>
+                <span class="compact-value">
+                  <span class="status-badge" style="background-color: ${employee.isActive ? '#10b981' : '#ef4444'}; color: white;">
+                    ${employee.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Footer -->
+          <div class="print-footer">
+            <div>Employee Management System - Official Document</div>
+            <div>Page 1 of 1</div>
+          </div>
+        </div>
+        
+        <script>
+          // Print after a short delay to ensure styles are loaded
+          setTimeout(function() {
+            window.print();
+            
+            // Close window after printing
+            setTimeout(function() {
+              if (window.onafterprint !== null) {
+                window.close();
+              }
+            }, 500);
+          }, 100);
+          
+          // Clean up state
+          window.onafterprint = function() {
+            window.onafterprint = null;
+          };
+        </script>
+      </body>
+      </html>
+    `;
+    
+    // Create and open print window
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.open();
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      
+      // Reset printing state
+      printWindow.addEventListener('afterprint', () => {
+        setIsPrinting(false);
+        printWindow.close();
+      });
+      
+      // Fallback cleanup
+      setTimeout(() => {
+        if (!printWindow.closed) {
+          setIsPrinting(false);
+        }
+      }, 5000);
+    } else {
+      // Fallback if popup is blocked
+      alert('Please allow popups to print this document.');
+      setIsPrinting(false);
+    }
+  };
+
+  // Helper functions for print
+  const formatTimeForDisplay = (timeString: string) => {
+    if (!timeString) return "09:00 AM";
+    
+    if (timeString.includes("AM") || timeString.includes("PM")) {
+      return timeString;
+    }
+    
+    const match = timeString.match(/^(\d{2}):(\d{2})$/);
+    if (match) {
+      let hours = parseInt(match[1]);
+      const minutes = match[2];
+      const period = hours >= 12 ? "PM" : "AM";
+      
+      if (hours > 12) hours -= 12;
+      if (hours === 0) hours = 12;
+      
+      return `${hours}:${minutes} ${period}`;
+    }
+    
+    return timeString;
+  };
+
+  const formatSalary = (salary: string | number) => {
+    if (typeof salary === "number") {
+      return `Rs. ${salary.toLocaleString()}`;
+    }
+    if (typeof salary === "string") {
+      if (salary.startsWith("Rs.")) return salary;
+      const num = parseFloat(salary.replace(/[^0-9.-]+/g, ""));
+      if (!isNaN(num)) {
+        return `Rs. ${num.toLocaleString()}`;
+      }
+    }
+    return `Rs. 0`;
+  };
 
   // Date Picker Constants
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -274,7 +683,6 @@ const Employee = () => {
     try {
       console.log("Sending employee data...");
       
-      // Direct API call for better debugging
       const response = await axios.post(
         `${API_BASE_URL}/api/employees/create-employee`,
         formDataToSend,
@@ -963,20 +1371,6 @@ const Employee = () => {
     return "09:00";
   };
 
-  const formatSalary = (salary: string | number) => {
-    if (typeof salary === "number") {
-      return `Rs. ${salary.toLocaleString()}`;
-    }
-    if (typeof salary === "string") {
-      if (salary.startsWith("Rs.")) return salary;
-      const num = parseFloat(salary.replace(/[^0-9.-]+/g, ""));
-      if (!isNaN(num)) {
-        return `Rs. ${num.toLocaleString()}`;
-      }
-    }
-    return `Rs. 0`;
-  };
-
   const formatAdvancePayment = (advancePayment: number) => {
     return `Rs. ${advancePayment.toLocaleString()}`;
   };
@@ -986,28 +1380,6 @@ const Employee = () => {
       return `${formatTimeForDisplay(employee.startTime)} - ${formatTimeForDisplay(employee.endTime)}`;
     }
     return employee.schedule || "09:00 AM - 05:00 PM";
-  };
-
-  const formatTimeForDisplay = (timeString: string) => {
-    if (!timeString) return "09:00 AM";
-    
-    if (timeString.includes("AM") || timeString.includes("PM")) {
-      return timeString;
-    }
-    
-    const match = timeString.match(/^(\d{2}):(\d{2})$/);
-    if (match) {
-      let hours = parseInt(match[1]);
-      const minutes = match[2];
-      const period = hours >= 12 ? "PM" : "AM";
-      
-      if (hours > 12) hours -= 12;
-      if (hours === 0) hours = 12;
-      
-      return `${hours}:${minutes} ${period}`;
-    }
-    
-    return timeString;
   };
 
   // ==================== RENDER ====================
@@ -1047,9 +1419,22 @@ const Employee = () => {
                 <Pencil className="w-4 h-4" />
                 Edit
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-foreground hover:bg-secondary transition-colors">
-                <Printer className="w-4 h-4" />
-                Print
+              <button
+                onClick={() => handlePrint(selectedEmployee)}
+                disabled={isPrinting}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isPrinting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Printing...
+                  </>
+                ) : (
+                  <>
+                    <Printer className="w-4 h-4" />
+                    Print
+                  </>
+                )}
               </button>
               <button
                 onClick={() => handleDeleteEmployee(selectedEmployee)}
@@ -1363,6 +1748,14 @@ const Employee = () => {
                               <Eye className="w-4 h-4 text-muted-foreground" />
                             </button>
                             <button
+                              onClick={() => handlePrint(employee)}
+                              disabled={isPrinting}
+                              className="p-1.5 hover:bg-muted rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Print employee details"
+                            >
+                              <Printer className="w-4 h-4 text-muted-foreground" />
+                            </button>
+                            <button
                               onClick={() => handleEditClick(employee)}
                               className="p-1.5 hover:bg-muted rounded-md transition-colors"
                               title="Edit employee"
@@ -1437,6 +1830,7 @@ const Employee = () => {
           </>
         )}
 
+        {/* Rest of your modals remain the same */}
         {/* Add Employee Modal */}
         <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
           <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto bg-background border-border">
@@ -1879,7 +2273,7 @@ const Employee = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Edit Employee Modal */}
+        {/* Edit Employee Modal - Remains exactly the same as your original */}
         <Dialog open={isEditModalOpen} onOpenChange={(open) => {
           setIsEditModalOpen(open);
           if (!open) {

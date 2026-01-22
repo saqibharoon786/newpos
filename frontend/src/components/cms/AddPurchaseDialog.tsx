@@ -71,16 +71,22 @@ export default function AddPurchasePage() {
   const deliveryCalendarRef = useRef<HTMLDivElement>(null)
   const deliveryTimeRef = useRef<HTMLDivElement>(null)
 
+  // Year dropdown states
+  const [showYearDropdown, setShowYearDropdown] = useState(false)
+  const years = Array.from({ length: 21 }, (_, i) => new Date().getFullYear() - 10 + i)
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (purchaseCalendarRef.current && !purchaseCalendarRef.current.contains(event.target as Node)) {
         setShowPurchaseCalendar(false)
+        setShowYearDropdown(false)
       }
       if (purchaseTimeRef.current && !purchaseTimeRef.current.contains(event.target as Node)) {
         setShowPurchaseTimePicker(false)
       }
       if (deliveryCalendarRef.current && !deliveryCalendarRef.current.contains(event.target as Node)) {
         setShowDeliveryCalendar(false)
+        setShowYearDropdown(false)
       }
       if (deliveryTimeRef.current && !deliveryTimeRef.current.contains(event.target as Node)) {
         setShowDeliveryTimePicker(false)
@@ -176,6 +182,7 @@ export default function AddPurchasePage() {
     } else {
       setCurrentMonth(m => m - 1)
     }
+    setShowYearDropdown(false)
   }
 
   const handleNextMonth = () => {
@@ -185,6 +192,12 @@ export default function AddPurchasePage() {
     } else {
       setCurrentMonth(m => m + 1)
     }
+    setShowYearDropdown(false)
+  }
+
+  const handleYearSelect = (year: number) => {
+    setCurrentYear(year)
+    setShowYearDropdown(false)
   }
 
   const handleDateSelect = (day: number, type: 'purchase' | 'delivery') => {
@@ -196,6 +209,7 @@ export default function AddPurchasePage() {
       setSelectedDeliveryDate(date)
       setShowDeliveryCalendar(false)
     }
+    setShowYearDropdown(false)
   }
 
   const handleToday = (type: 'purchase' | 'delivery') => {
@@ -212,6 +226,7 @@ export default function AddPurchasePage() {
     } else {
       setShowDeliveryCalendar(false)
     }
+    setShowYearDropdown(false)
   }
 
   const hours = Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0'))
@@ -393,6 +408,7 @@ export default function AddPurchasePage() {
     
     setImagePreview(null)
     setErrors({})
+    setShowYearDropdown(false)
 
     if (imagePreview && imagePreview.startsWith("blob:")) {
       URL.revokeObjectURL(imagePreview)
@@ -407,10 +423,11 @@ export default function AddPurchasePage() {
     return showCalendar && (
       <div 
         ref={calendarRef}
-        className="absolute z-[999] mt-1 w-72 bg-white border border-teal-600/50 rounded-lg shadow-2xl"
+        className="absolute z-[999] mt-1 w-80 bg-white border border-teal-600/50 rounded-lg shadow-2xl"
         style={{ 
           top: '100%',
-          left: 0,
+          left: '50%',
+          transform: 'translateX(-50%)',
           marginTop: '4px',
         }}
       >
@@ -422,9 +439,34 @@ export default function AddPurchasePage() {
             >
               <ChevronLeft className="w-5 h-5 text-teal-700" />
             </button>
-            <div className="text-sm font-semibold text-teal-900">
-              {monthNames[currentMonth]} {currentYear}
+            
+            <div className="flex items-center gap-1 relative">
+              <div className="text-sm font-semibold text-teal-900 min-w-[100px] text-center">
+                {monthNames[currentMonth]}
+              </div>
+              <button 
+                onClick={() => setShowYearDropdown(!showYearDropdown)}
+                className="flex items-center gap-1 px-2 py-1 text-sm font-semibold text-teal-900 hover:bg-teal-100 rounded"
+              >
+                {currentYear}
+                <ChevronDown className={`w-4 h-4 transition-transform ${showYearDropdown ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {showYearDropdown && (
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-1 w-32 max-h-48 overflow-y-auto bg-white border border-teal-600/50 rounded-md shadow-lg z-10">
+                  {years.map(year => (
+                    <button
+                      key={year}
+                      onClick={() => handleYearSelect(year)}
+                      className={`w-full px-3 py-2 text-sm text-left hover:bg-teal-50 ${year === currentYear ? 'bg-teal-100 text-teal-700 font-semibold' : 'text-teal-900'}`}
+                    >
+                      {year}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+            
             <button 
               onClick={handleNextMonth} 
               className="p-1 hover:bg-teal-100 rounded"
@@ -567,7 +609,7 @@ export default function AddPurchasePage() {
       <div className="px-8 py-6">
         {/* Title Section */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-white mb-2">Add New Purchase</h1>
+          <h1 className="text-3xl font-bold text-white mb-2">Add New Purchasesss</h1>
           <p className="text-sm text-white/80">Enter the details for the new asset purchase and delivery</p>
         </div>
 
@@ -667,6 +709,7 @@ export default function AddPurchasePage() {
                       e.stopPropagation()
                       setShowPurchaseCalendar(prev => !prev)
                       setShowPurchaseTimePicker(false)
+                      setShowYearDropdown(false)
                     }}
                   >
                     <input
@@ -688,6 +731,7 @@ export default function AddPurchasePage() {
                       e.stopPropagation()
                       setShowPurchaseTimePicker(prev => !prev)
                       setShowPurchaseCalendar(false)
+                      setShowYearDropdown(false)
                     }}
                   >
                     <input
@@ -814,6 +858,7 @@ export default function AddPurchasePage() {
                       e.stopPropagation()
                       setShowDeliveryCalendar(prev => !prev)
                       setShowDeliveryTimePicker(false)
+                      setShowYearDropdown(false)
                     }}
                   >
                     <input
@@ -835,6 +880,7 @@ export default function AddPurchasePage() {
                       e.stopPropagation()
                       setShowDeliveryTimePicker(prev => !prev)
                       setShowDeliveryCalendar(false)
+                      setShowYearDropdown(false)
                     }}
                   >
                     <input

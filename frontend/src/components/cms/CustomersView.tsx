@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, Printer, Phone, Mail, Users, Eye, Edit2, Trash2, RefreshCw, FolderOpen, Download, MoreVertical } from "lucide-react";
+import { Search, Plus, Printer, Phone, Mail, Users, Eye, Edit2, Trash2, RefreshCw, FolderOpen, Download, MoreVertical, Calendar, Loader2 } from "lucide-react";
 import { AddCustomerDialog, CustomerFormData } from "./AddCustomerDialog";
 import { toast } from "sonner";
 import axios from "axios";
@@ -22,18 +22,27 @@ interface Customer {
   updatedAt: string;
 }
 
-// Add this date formatting function
-const formatDateToDDMMYYYY = (dateString: string | Date): string => {
+// Helper function to get month name
+const getMonthName = (monthNumber: number): string => {
+  const months = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+  ];
+  return months[monthNumber - 1] || "";
+};
+
+// Updated date formatting function to show month names like "22 Jan 2026"
+const formatDateWithMonthName = (dateString: string | Date): string => {
   if (!dateString) return "N/A";
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return "Invalid Date";
     
     const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const month = getMonthName(date.getMonth() + 1);
     const year = date.getFullYear();
     
-    return `${day}-${month}-${year}`;
+    return `${day} ${month} ${year}`;
   } catch (error) {
     return "N/A";
   }
@@ -52,6 +61,7 @@ export default function CustomersView() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   // Log API URL for debugging
   useEffect(() => {
@@ -137,6 +147,352 @@ export default function CustomersView() {
     customer.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
     customer.customerId.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Optimized Print Functionality for Single Page
+  const handlePrintCustomer = (customer: Customer) => {
+    setIsPrinting(true);
+    
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Customer Details - ${customer.customerName}</title>
+        <style>
+          @page {
+            size: A4 portrait;
+            margin: 8mm;
+          }
+          
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          
+          body {
+            font-family: 'Segoe UI', 'Arial', sans-serif;
+            font-size: 8pt;
+            line-height: 1.2;
+            color: #000;
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+          }
+          
+          .print-container {
+            width: 100%;
+            max-height: 280mm;
+            overflow: hidden;
+            padding: 0;
+          }
+          
+          /* Header */
+          .print-header {
+            text-align: center;
+            margin-bottom: 8px;
+            padding-bottom: 6px;
+            border-bottom: 1.5px solid #000;
+          }
+          
+          .print-title {
+            font-size: 16pt;
+            font-weight: bold;
+            margin-bottom: 2px;
+            color: #000;
+          }
+          
+          .print-subtitle {
+            font-size: 9pt;
+            color: #666;
+          }
+          
+          /* Customer Summary */
+          .customer-summary {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 5px;
+            background: #f5f5f5;
+            border-radius: 3px;
+          }
+          
+          .avatar-container {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            overflow: hidden;
+            margin-right: 10px;
+            border: 1px solid #ddd;
+            flex-shrink: 0;
+          }
+          
+          .avatar-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+          }
+          
+          .customer-basic-info {
+            flex: 1;
+          }
+          
+          .customer-name {
+            font-size: 12pt;
+            font-weight: bold;
+            color: #000;
+            margin-bottom: 2px;
+          }
+          
+          .customer-id {
+            font-size: 9pt;
+            color: #666;
+          }
+          
+          /* Sections */
+          .print-section {
+            margin-bottom: 8px;
+            page-break-inside: avoid;
+          }
+          
+          .section-title {
+            font-size: 10pt;
+            font-weight: bold;
+            color: #000;
+            padding: 4px 0;
+            margin-bottom: 4px;
+            border-bottom: 1px solid #ccc;
+            background: #f0f0f0;
+            padding-left: 5px;
+          }
+          
+          /* Compact Grids */
+          .compact-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 4px;
+            margin-bottom: 4px;
+          }
+          
+          .compact-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 2px 0;
+            font-size: 8pt;
+          }
+          
+          .compact-label {
+            font-weight: 600;
+            color: #444;
+            min-width: 90px;
+          }
+          
+          .compact-value {
+            color: #000;
+            text-align: right;
+            max-width: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          
+          /* Footer */
+          .print-footer {
+            margin-top: 10px;
+            padding-top: 6px;
+            border-top: 1px solid #ccc;
+            text-align: center;
+            color: #666;
+            font-size: 7pt;
+          }
+          
+          /* Utility */
+          .text-right { text-align: right; }
+          .text-center { text-align: center; }
+          .mb-1 { margin-bottom: 4px; }
+          .mt-1 { margin-top: 4px; }
+          .no-wrap { white-space: nowrap; }
+          .truncate { 
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+          
+          /* Print Optimization */
+          @media print {
+            body {
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+              height: 100%;
+              width: 100%;
+            }
+            
+            .print-container {
+              height: 100%;
+              max-height: 100%;
+              page-break-inside: avoid;
+              page-break-after: avoid;
+              page-break-before: avoid;
+            }
+            
+            /* Prevent breaks */
+            .no-break {
+              page-break-inside: avoid;
+              page-break-after: avoid;
+            }
+            
+            /* Force single page */
+            html, body {
+              height: 100%;
+              overflow: hidden;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-container no-break">
+          <!-- Header -->
+          <div class="print-header">
+            <div class="print-title">CUSTOMER DETAILS REPORT</div>
+            <div class="print-subtitle">Date: ${new Date().toLocaleDateString('en-GB')} | Time: ${new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'})}</div>
+          </div>
+          
+          <!-- Customer Summary -->
+          <div class="customer-summary">
+            <div class="avatar-container">
+              <img src="${customer.photo || ''}" alt="${customer.customerName}" onerror="this.style.display='none'">
+            </div>
+            <div class="customer-basic-info">
+              <div class="customer-name">${customer.customerName}</div>
+              <div class="customer-id">ID: ${customer.customerId}</div>
+              <div class="customer-id">Phone: ${customer.phoneNo} | Email: ${customer.email || 'N/A'}</div>
+            </div>
+          </div>
+          
+          <!-- Personal Details -->
+          <div class="print-section no-break">
+            <div class="section-title">PERSONAL INFORMATION</div>
+            <div class="compact-grid">
+              <div class="compact-item">
+                <span class="compact-label">Full Name:</span>
+                <span class="compact-value">${customer.customerName}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Phone:</span>
+                <span class="compact-value">${customer.phoneNo}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Email:</span>
+                <span class="compact-value truncate">${customer.email || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">CNIC:</span>
+                <span class="compact-value">${customer.cnicNo || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Registration Date:</span>
+                <span class="compact-value">${formatDateWithMonthName(customer.registrationDate)}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Account Status:</span>
+                <span class="compact-value">
+                  <span style="background-color: ${customer.isActive ? '#10b981' : '#ef4444'}; color: white; padding: 1px 6px; border-radius: 8px; font-size: 7pt;">
+                    ${customer.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Address Information -->
+          <div class="print-section no-break">
+            <div class="section-title">ADDRESS INFORMATION</div>
+            <div class="compact-grid">
+              <div class="compact-item">
+                <span class="compact-label">Address:</span>
+                <span class="compact-value">${customer.address || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">City:</span>
+                <span class="compact-value">${customer.city || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Province:</span>
+                <span class="compact-value">${customer.province || 'N/A'}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Member Since:</span>
+                <span class="compact-value">${formatDateWithMonthName(customer.createdAt)}</span>
+              </div>
+              <div class="compact-item">
+                <span class="compact-label">Last Updated:</span>
+                <span class="compact-value">${formatDateWithMonthName(customer.updatedAt)}</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Documents -->
+          <div class="print-section no-break">
+            <div class="section-title">DOCUMENTS</div>
+            <div class="compact-item">
+              <span class="compact-label">Total Documents:</span>
+              <span class="compact-value">${customer.documents?.length || 0} file(s)</span>
+            </div>
+          </div>
+          
+          <!-- Footer -->
+          <div class="print-footer">
+            <div>Customer Management System - Official Document</div>
+            <div>Page 1 of 1</div>
+          </div>
+        </div>
+        
+        <script>
+          // Print after a short delay to ensure styles are loaded
+          setTimeout(function() {
+            window.print();
+            
+            // Close window after printing
+            setTimeout(function() {
+              if (window.onafterprint !== null) {
+                window.close();
+              }
+            }, 500);
+          }, 100);
+          
+          // Clean up state
+          window.onafterprint = function() {
+            window.onafterprint = null;
+          };
+        </script>
+      </body>
+      </html>
+    `;
+    
+    // Create and open print window
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.open();
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      
+      // Reset printing state
+      printWindow.addEventListener('afterprint', () => {
+        setIsPrinting(false);
+        printWindow.close();
+      });
+      
+      // Fallback cleanup
+      setTimeout(() => {
+        if (!printWindow.closed) {
+          setIsPrinting(false);
+        }
+      }, 5000);
+    } else {
+      // Fallback if popup is blocked
+      alert('Please allow popups to print this document.');
+      setIsPrinting(false);
+    }
+  };
 
   const handleAddCustomer = () => {
     // Clear search term before opening add dialog
@@ -269,6 +625,23 @@ export default function CustomersView() {
               Edit
             </button>
             <button
+              onClick={() => handlePrintCustomer(selectedCustomer)}
+              disabled={isPrinting}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isPrinting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Printing...
+                </>
+              ) : (
+                <>
+                  <Printer className="w-4 h-4" />
+                  Print
+                </>
+              )}
+            </button>
+            <button
               onClick={() => handleDeleteCustomer(selectedCustomer._id)}
               className="px-4 py-2 bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-lg text-sm font-medium flex items-center gap-2"
             >
@@ -321,9 +694,12 @@ export default function CustomersView() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Registration Date</p>
-                <p className="text-sm text-foreground">
-                  {formatDateToDDMMYYYY(selectedCustomer.registrationDate)}
-                </p>
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                  <p className="text-sm text-foreground">
+                    {formatDateWithMonthName(selectedCustomer.registrationDate)}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -340,15 +716,21 @@ export default function CustomersView() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Member Since</p>
-                <p className="text-sm text-foreground">
-                  {formatDateToDDMMYYYY(selectedCustomer.createdAt)}
-                </p>
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                  <p className="text-sm text-foreground">
+                    {formatDateWithMonthName(selectedCustomer.createdAt)}
+                  </p>
+                </div>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Last Updated</p>
-                <p className="text-sm text-foreground">
-                  {formatDateToDDMMYYYY(selectedCustomer.updatedAt)}
-                </p>
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                  <p className="text-sm text-foreground">
+                    {formatDateWithMonthName(selectedCustomer.updatedAt)}
+                  </p>
+                </div>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Documents</p>
@@ -585,9 +967,12 @@ export default function CustomersView() {
                             </div>
                           </td>
                           <td className="py-3 px-4">
-                            <p className="text-sm text-foreground">
-                              {formatDateToDDMMYYYY(customer.registrationDate)}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <Calendar className="w-4 h-4 text-muted-foreground" />
+                              <p className="text-sm text-foreground">
+                                {formatDateWithMonthName(customer.registrationDate)}
+                              </p>
+                            </div>
                           </td>
                           <td className="py-3 px-4">
                             <span className={`px-3 py-1 text-xs rounded-full ${
@@ -602,27 +987,35 @@ export default function CustomersView() {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => handleViewCustomer(customer)}
-                                className="p-1.5 hover:bg-muted rounded-md transition-colors"
+                                className="p-1.5 hover:bg-muted rounded-md transition-colors text-green-600 hover:text-green-700"
                                 title="View details"
                               >
-                                <Eye className="w-4 h-4 text-muted-foreground" />
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handlePrintCustomer(customer)}
+                                disabled={isPrinting}
+                                className="p-1.5 hover:bg-muted rounded-md transition-colors text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Print customer details"
+                              >
+                                <Printer className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => handleEditCustomer(customer)}
-                                className="p-1.5 hover:bg-muted rounded-md transition-colors"
+                                className="p-1.5 hover:bg-muted rounded-md transition-colors text-blue-600 hover:text-blue-700"
                                 title="Edit customer"
                               >
-                                <Edit2 className="w-4 h-4 text-muted-foreground" />
+                                <Edit2 className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => handleDeleteCustomer(customer._id)}
-                                className="p-1.5 hover:bg-destructive/10 rounded-md transition-colors"
+                                className="p-1.5 hover:bg-destructive/10 rounded-md transition-colors text-red-600 hover:text-red-700"
                                 title="Delete customer"
                               >
-                                <Trash2 className="w-4 h-4 text-destructive" />
+                                <Trash2 className="w-4 h-4" />
                               </button>
-                              <button className="p-1.5 hover:bg-muted rounded-md transition-colors">
-                                <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                              <button className="p-1.5 hover:bg-muted rounded-md transition-colors text-gray-600 hover:text-gray-700">
+                                <MoreVertical className="w-4 h-4" />
                               </button>
                             </div>
                           </td>

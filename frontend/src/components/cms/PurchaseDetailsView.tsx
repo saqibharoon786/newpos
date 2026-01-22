@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Pencil, Printer, Trash2, Circle, Scale, Palette, Building2, Award, IndianRupee, Calendar, Truck, Settings, User, CreditCard, ArrowLeft, Loader2, Download, Eye, FileText, Image as ImageIcon, AlertCircle } from "lucide-react";
+import { Printer, Circle, Scale, Palette, Building2, Award, IndianRupee, Calendar, Truck, Settings, User, CreditCard, ArrowLeft, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
 
@@ -103,9 +103,7 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
   const [purchase, setPurchase] = useState<Purchase | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [showVehicleModal, setShowVehicleModal] = useState(false);
   const [vehicleImageUrl, setVehicleImageUrl] = useState<string | null>(null);
   const [imageLoading, setImageLoading] = useState(true);
 
@@ -227,62 +225,321 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
     setImageLoading(false);
   };
 
-  const handleEdit = () => {
-    // Implement edit functionality
-    toast({
-      title: "Edit",
-      description: "Edit functionality will be implemented soon.",
-    });
-  };
-
   const handlePrint = () => {
-    window.print();
-  };
-
-  const handleDelete = async () => {
-    if (window.confirm('Are you sure you want to delete this purchase? This action cannot be undone.')) {
-      try {
-        setDeleting(true);
-        await api.delete(`${PURCHASES_API_URL}/${purchaseId}`);
-        
-        toast({
-          title: "Success",
-          description: "Purchase deleted successfully!",
-        });
-        
-        // Go back to the list
-        onBack();
-      } catch (error: any) {
-        console.error('Error deleting purchase:', error);
-        toast({
-          title: "Error",
-          description: error.response?.data?.message || "Failed to delete purchase",
-          variant: "destructive",
-        });
-      } finally {
-        setDeleting(false);
-      }
-    }
-  };
-
-  const handleDownloadVehicleImage = () => {
-    if (!vehicleImageUrl) return;
-
-    const link = document.createElement('a');
-    link.href = vehicleImageUrl;
-    link.download = `vehicle_${purchase?.vehicleNumber || purchase?._id}_${Date.now()}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
     
-    toast({
-      title: "Downloading",
-      description: "Vehicle image download started",
-    });
-  };
-
-  const handleViewVehicleImage = () => {
-    setShowVehicleModal(true);
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Purchase Details - ${purchase?.materialName || 'Record'}</title>
+        <style>
+          @media print {
+            @page {
+              margin: 10mm;
+              size: A4 portrait;
+            }
+            
+            body {
+              margin: 0;
+              padding: 0;
+              font-family: Arial, sans-serif;
+              font-size: 11px;
+              line-height: 1.4;
+              color: #000;
+              background: white;
+            }
+            
+            .print-container {
+              max-width: 100%;
+              padding: 5mm;
+            }
+            
+            .print-header {
+              text-align: center;
+              border-bottom: 2px solid #000;
+              padding-bottom: 10px;
+              margin-bottom: 15px;
+            }
+            
+            .print-header h1 {
+              margin: 0 0 5px 0;
+              font-size: 18px;
+              color: #000;
+            }
+            
+            .print-header .subtitle {
+              font-size: 12px;
+              color: #666;
+              margin-bottom: 10px;
+            }
+            
+            .print-badges {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 8px;
+              justify-content: center;
+              margin-bottom: 15px;
+            }
+            
+            .print-badge {
+              background: #f0f0f0;
+              padding: 4px 10px;
+              border-radius: 12px;
+              font-size: 9px;
+              border: 1px solid #ccc;
+            }
+            
+            .print-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr 1fr;
+              gap: 12px;
+              margin-bottom: 20px;
+            }
+            
+            .print-section {
+              background: white;
+              border: 1px solid #ccc;
+              border-radius: 4px;
+              padding: 12px;
+              page-break-inside: avoid;
+              break-inside: avoid;
+            }
+            
+            .print-section h3 {
+              font-size: 13px;
+              margin: 0 0 10px 0;
+              padding-bottom: 6px;
+              border-bottom: 1px solid #ddd;
+              color: #000;
+            }
+            
+            .print-row {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 6px;
+              page-break-inside: avoid;
+            }
+            
+            .print-label {
+              color: #666;
+              font-size: 10px;
+            }
+            
+            .print-value {
+              font-weight: 500;
+              font-size: 11px;
+              color: #000;
+              text-align: right;
+            }
+            
+            .print-image-container {
+              border: 1px solid #ccc;
+              border-radius: 4px;
+              padding: 8px;
+              background: #f9f9f9;
+              text-align: center;
+            }
+            
+            .print-image {
+              max-width: 100%;
+              max-height: 120px;
+              object-fit: contain;
+            }
+            
+            .print-additional {
+              margin-top: 20px;
+              border-top: 1px solid #ccc;
+              padding-top: 15px;
+            }
+            
+            .print-additional-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr 1fr;
+              gap: 15px;
+            }
+            
+            .print-footer {
+              margin-top: 20px;
+              padding-top: 10px;
+              border-top: 1px solid #ccc;
+              text-align: center;
+              font-size: 9px;
+              color: #666;
+            }
+            
+            .color-dot {
+              display: inline-block;
+              width: 12px;
+              height: 12px;
+              border-radius: 50%;
+              border: 1px solid #ccc;
+              margin-right: 4px;
+              vertical-align: middle;
+            }
+            
+            /* Compact styles for printing */
+            .compact {
+              margin: 0;
+              padding: 0;
+            }
+            
+            /* Hide unnecessary elements */
+            .no-print, button, nav, .print-button, .back-button {
+              display: none !important;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-container">
+          <div class="print-header">
+            <h1>Purchase Record Details</h1>
+            <div class="subtitle">Full details for the selected purchase transaction</div>
+            <div class="print-badges">
+              <span class="print-badge">ID: ${purchase?._id.substring(0, 8)}...</span>
+              <span class="print-badge">Purchase Date: ${formatDate(purchase?.purchaseDate || '')}</span>
+              <span class="print-badge">Vehicle: ${purchase?.vehicleNumber || purchase?.vehicleName || 'N/A'}</span>
+              ${purchase?.vehicleImage ? '<span class="print-badge">Vehicle Image: Available</span>' : ''}
+            </div>
+          </div>
+          
+          <div class="print-grid">
+            <!-- Product Details -->
+            <div class="print-section">
+              <h3>Product Details</h3>
+              <div class="print-row">
+                <span class="print-label">Material Name:</span>
+                <span class="print-value">${purchase?.materialName || 'N/A'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Weight:</span>
+                <span class="print-value">${purchase?.weight || '0'} kg</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Color:</span>
+                <span class="print-value">
+                  <span class="color-dot" style="background-color: ${purchase?.materialColor};"></span>
+                  ${getColorName(purchase?.materialColor || '') || 'N/A'}
+                </span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Vendor:</span>
+                <span class="print-value">${purchase?.vendor || 'N/A'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Quality:</span>
+                <span class="print-value">${purchase?.quality || 'N/A'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Price:</span>
+                <span class="print-value">${formatCurrency(purchase?.price || '0')}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Purchase Date:</span>
+                <span class="print-value">${formatDate(purchase?.purchaseDate || '')}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Receipt No:</span>
+                <span class="print-value">${purchase?.receiptNo || 'N/A'}</span>
+              </div>
+            </div>
+            
+            <!-- Vehicle Details -->
+            <div class="print-section">
+              <h3>Vehicle Details</h3>
+              <div class="print-row">
+                <span class="print-label">Vehicle Name:</span>
+                <span class="print-value">${purchase?.vehicleName || 'N/A'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Vehicle Type:</span>
+                <span class="print-value">${purchase?.vehicleType || 'N/A'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Vehicle Color:</span>
+                <span class="print-value">
+                  <span class="color-dot" style="background-color: ${purchase?.vehicleColor};"></span>
+                  ${getColorName(purchase?.vehicleColor || '') || 'N/A'}
+                </span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Driver Name:</span>
+                <span class="print-value">${purchase?.driverName || 'N/A'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Vehicle Number:</span>
+                <span class="print-value">${purchase?.vehicleNumber || 'N/A'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Delivery Date:</span>
+                <span class="print-value">${formatDate(purchase?.deliveryDate || '')}</span>
+              </div>
+            </div>
+            
+            <!-- Vehicle Image -->
+            <div class="print-section">
+              <h3>Vehicle Image</h3>
+              ${vehicleImageUrl && !vehicleImageUrl.toLowerCase().endsWith('.pdf') ? 
+                `<div class="print-image-container">
+                  <img src="${vehicleImageUrl}" alt="Vehicle Image" class="print-image" onerror="this.style.display='none';this.parentElement.innerHTML='<p>Image not available</p>';" />
+                </div>` : 
+                `<div class="print-image-container">
+                  <p>${purchase?.vehicleImage ? 'Image not available for printing' : 'No vehicle image was uploaded'}</p>
+                </div>`
+              }
+              <div style="margin-top: 10px;">
+                <div class="print-row">
+                  <span class="print-label">Vehicle:</span>
+                  <span class="print-value">${purchase?.vehicleName || purchase?.vehicleNumber || 'N/A'}</span>
+                </div>
+                <div class="print-row">
+                  <span class="print-label">File:</span>
+                  <span class="print-value">${purchase?.vehicleImage ? purchase.vehicleImage.split('/').pop() : 'N/A'}</span>
+                </div>
+                <div class="print-row">
+                  <span class="print-label">Uploaded:</span>
+                  <span class="print-value">${formatDate(purchase?.createdAt || '')}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Additional Information -->
+          <div class="print-additional">
+            <h3 style="font-size: 13px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Additional Information</h3>
+            <div class="print-additional-grid">
+              <div>
+                <div class="print-label">Record Created</div>
+                <div class="print-value" style="font-size: 11px;">${formatDate(purchase?.createdAt || '')}</div>
+              </div>
+              <div>
+                <div class="print-label">Last Updated</div>
+                <div class="print-value" style="font-size: 11px;">${formatDate(purchase?.updatedAt || '')}</div>
+              </div>
+              <div>
+                <div class="print-label">Database ID</div>
+                <div class="print-value" style="font-size: 10px; font-family: monospace;">${purchase?._id}</div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="print-footer">
+            Printed on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
+    
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+    }, 250);
   };
 
   const formatDate = (dateString: string) => {
@@ -385,117 +642,11 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
 
   return (
     <div className="flex-1 p-6 overflow-auto animate-fade-in">
-      {/* Vehicle Image Modal */}
-      {showVehicleModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-cms-card rounded-xl max-w-4xl max-h-[90vh] overflow-auto relative">
-            <div className="sticky top-0 bg-cms-table-header px-6 py-4 border-b border-border flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-foreground">
-                Vehicle Image - {purchase.vehicleName || purchase.vehicleNumber || 'Vehicle'}
-              </h3>
-              <button
-                onClick={() => setShowVehicleModal(false)}
-                className="p-2 hover:bg-cms-card-hover rounded-lg transition-colors"
-              >
-                <span className="text-xl text-foreground">×</span>
-              </button>
-            </div>
-            <div className="p-6">
-              {isVehicleImagePDF ? (
-                <div className="flex flex-col items-center justify-center p-8">
-                  <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-4">
-                    <FileText className="w-10 h-10 text-red-600" />
-                  </div>
-                  <p className="text-lg font-medium text-foreground mb-2">PDF Document</p>
-                  <p className="text-sm text-muted-foreground mb-6">Click below to download the PDF document</p>
-                  <button
-                    onClick={handleDownloadVehicleImage}
-                    className="px-6 py-3 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download PDF Document
-                  </button>
-                </div>
-              ) : (
-                <div className="relative">
-                  {imageLoading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-cms-card">
-                      <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                    </div>
-                  )}
-                  {vehicleImageUrl ? (
-                    <img
-                      src={vehicleImageUrl}
-                      alt={`${purchase.vehicleName || 'Vehicle'} Image`}
-                      className={`w-full h-auto max-h-[70vh] object-contain rounded-lg border border-border ${imageLoading ? 'opacity-0' : 'opacity-100'}`}
-                      onLoad={handleImageLoad}
-                      onError={handleImageError}
-                      crossOrigin="anonymous"
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-64">
-                      <p className="text-muted-foreground">No image available</p>
-                    </div>
-                  )}
-                  {imageError && vehicleImageUrl && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-cms-card">
-                      <div className="text-center p-6">
-                        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
-                        <p className="text-foreground font-medium mb-2">Failed to load vehicle image</p>
-                        <div className="flex gap-2 mt-4 justify-center">
-                          <button
-                            onClick={() => {
-                              setImageError(false);
-                              setImageLoading(true);
-                              // Force reload by adding timestamp
-                              const img = document.querySelector('img[alt*="Vehicle"]') as HTMLImageElement;
-                              if (img && vehicleImageUrl) {
-                                img.src = vehicleImageUrl + '?t=' + Date.now();
-                              }
-                            }}
-                            className="px-4 py-2 bg-cms-card-hover hover:bg-cms-card border border-border rounded-lg text-sm"
-                          >
-                            Try Again
-                          </button>
-                          <button
-                            onClick={() => vehicleImageUrl && window.open(vehicleImageUrl, '_blank')}
-                            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm"
-                          >
-                            Open in Browser
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="sticky bottom-0 bg-cms-table-header px-6 py-4 border-t border-border flex justify-end gap-3">
-              <button
-                onClick={() => setShowVehicleModal(false)}
-                className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium"
-              >
-                Close
-              </button>
-              {!isVehicleImagePDF && vehicleImageUrl && (
-                <button
-                  onClick={handleDownloadVehicleImage}
-                  className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2"
-                >
-                  <Download className="w-4 h-4" />
-                  Download Image
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Back Button */}
-      <div className="mb-6">
+      <div className="mb-6 no-print">
         <button
           onClick={onBack}
-          className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+          className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors back-button"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Purchase List
@@ -503,7 +654,7 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
       </div>
 
       {/* Breadcrumb */}
-      <p className="text-sm text-muted-foreground mb-6">Point of Purchase / Details</p>
+      <p className="text-sm text-muted-foreground mb-6 no-print">Point of Purchase / Details</p>
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -532,50 +683,13 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {vehicleImageUrl && (
-            <>
-              <button
-                onClick={handleViewVehicleImage}
-                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-              >
-                <Eye className="w-4 h-4" />
-                View Vehicle Image
-              </button>
-              <button
-                onClick={handleDownloadVehicleImage}
-                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                Download Image
-              </button>
-            </>
-          )}
-          <button
-            onClick={handleEdit}
-            className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-          >
-            <Pencil className="w-4 h-4" />
-            Edit
-          </button>
+        <div className="flex items-center gap-3 no-print">
           <button
             onClick={handlePrint}
-            className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+            className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors print-button"
           >
             <Printer className="w-4 h-4" />
             Print
-          </button>
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="px-4 py-2 bg-destructive hover:bg-destructive/90 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {deleting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Trash2 className="w-4 h-4" />
-            )}
-            {deleting ? 'Deleting...' : 'Delete'}
           </button>
         </div>
       </div>
@@ -709,7 +823,7 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
         {/* Vehicle Image Section */}
         <div className="bg-cms-card rounded-xl p-5 border border-border">
           <h3 className="text-base font-semibold text-foreground mb-4 pb-3 border-b border-border">
-            Recepits Image
+            Vehicle Image
             {imageError && (
               <span className="ml-2 text-xs bg-red-500/10 text-red-600 px-2 py-1 rounded">
                 Error Loading
@@ -728,10 +842,10 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
                 {isVehicleImagePDF ? (
                   <div className="flex flex-col items-center justify-center p-6">
                     <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-3">
-                      <FileText className="w-8 h-8 text-red-600" />
+                      <AlertCircle className="w-8 h-8 text-red-600" />
                     </div>
                     <p className="text-sm font-medium text-foreground">PDF Document</p>
-                    <p className="text-xs text-muted-foreground mt-1">Click to download PDF document</p>
+                    <p className="text-xs text-muted-foreground mt-1">PDF file cannot be previewed</p>
                   </div>
                 ) : (
                   <div className="relative">
@@ -751,21 +865,8 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
                     {imageError && (
                       <div className="absolute inset-0 flex items-center justify-center bg-cms-input-bg rounded-md">
                         <div className="text-center p-4">
-                          <ImageIcon className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                          <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
                           <p className="text-sm text-muted-foreground">Failed to load image</p>
-                          <button
-                            onClick={() => {
-                              setImageError(false);
-                              setImageLoading(true);
-                              const img = document.querySelector('img[alt*="Vehicle"]') as HTMLImageElement;
-                              if (img && vehicleImageUrl) {
-                                img.src = vehicleImageUrl + '?t=' + Date.now();
-                              }
-                            }}
-                            className="mt-2 text-xs bg-cms-card-hover hover:bg-cms-card border border-border px-3 py-1 rounded"
-                          >
-                            Retry
-                          </button>
                         </div>
                       </div>
                     )}
@@ -788,23 +889,6 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
                   <span className="text-sm text-muted-foreground">Uploaded:</span>
                   <span className="text-sm font-medium text-foreground">{formatDate(purchase.createdAt)}</span>
                 </div>
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={handleViewVehicleImage}
-                  className="flex-1 px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors"
-                >
-                  <Eye className="w-4 h-4" />
-                  View
-                </button>
-                <button
-                  onClick={handleDownloadVehicleImage}
-                  className="flex-1 px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors"
-                >
-                  <Download className="w-4 h-4" />
-                  Download
-                </button>
               </div>
             </div>
           ) : (
@@ -841,30 +925,6 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
           </div>
         </div>
       </div>
-
-      {/* Print Styles */}
-      <style media="print">
-        {`
-          @media print {
-            button, nav, .no-print {
-              display: none !important;
-            }
-            body {
-              font-size: 12px;
-            }
-            .bg-cms-card {
-              background: white !important;
-              border: 1px solid #ddd !important;
-            }
-            .text-foreground {
-              color: black !important;
-            }
-            .text-muted-foreground {
-              color: #666 !important;
-            }
-          }
-        `}
-      </style>
     </div>
   );
 }

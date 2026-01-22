@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Pencil, Printer, Trash2, Circle, Scale, Palette, Building2, Award, IndianRupee, Calendar, User, CreditCard, ArrowLeft, Loader2, FileText, Mail, Phone, MapPin, Briefcase, Tag, Percent, DollarSign, Package, Building, Truck, Settings, AlertCircle, Car, Image as ImageIcon, Download, Eye } from "lucide-react";
+import { Printer, Circle, Scale, Palette, Building2, Award, IndianRupee, Calendar, User, CreditCard, ArrowLeft, Loader2, Mail, Phone, MapPin, Briefcase, Tag, Percent, DollarSign, Package, Building, Truck, Settings, AlertCircle, Car, FileText } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
 
@@ -74,12 +74,8 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
   const [sale, setSale] = useState<Sale | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [imageError, setImageError] = useState(false);
-  const [receiptImageError, setReceiptImageError] = useState(false);
   const [vehicleData, setVehicleData] = useState<any>(null);
   const [loadingVehicle, setLoadingVehicle] = useState(false);
-  const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
 
   // Fetch sale details by ID
@@ -104,8 +100,6 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
     try {
       setLoading(true);
       setError(null);
-      setImageError(false);
-      setReceiptImageError(false);
       setVehicleData(null);
       setReceiptUrl(null);
       
@@ -231,8 +225,6 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
   const getReceiptUrl = (receiptImage: string): string => {
     if (!receiptImage) return '';
     
-    // console.log("Processing receipt image path:", receiptImage);
-    
     // If it's already a full URL, return it
     if (receiptImage.startsWith('http://') || receiptImage.startsWith('https://')) {
       return receiptImage;
@@ -262,60 +254,436 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
     return `${API_BASE_URL}/${imagePath}`;
   };
 
-  const handleEdit = () => {
-    toast({
-      title: "Edit",
-      description: "Edit functionality will be implemented soon.",
-    });
-  };
-
   const handlePrint = () => {
-    window.print();
-  };
-
-  const handleDelete = async () => {
-    if (window.confirm('Are you sure you want to delete this sale? This action cannot be undone.')) {
-      try {
-        setDeleting(true);
-        await api.delete(`${SALES_API_URL}/${saleId}`);
-        
-        toast({
-          title: "Success",
-          description: "Sale deleted successfully!",
-        });
-        
-        onBack();
-      } catch (error: any) {
-        console.error('Error deleting sale:', error);
-        toast({
-          title: "Error",
-          description: error.response?.data?.message || "Failed to delete sale",
-          variant: "destructive",
-        });
-      } finally {
-        setDeleting(false);
-      }
-    }
-  };
-
-  const handleDownloadReceipt = () => {
-    if (!receiptUrl) return;
-
-    const link = document.createElement('a');
-    link.href = receiptUrl;
-    link.download = `receipt_${sale?.invoiceNo || sale?._id}_${Date.now()}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
     
-    toast({
-      title: "Downloading",
-      description: "Receipt download started",
-    });
-  };
-
-  const handleViewReceipt = () => {
-    setShowReceiptModal(true);
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Sale Details - ${sale?.invoiceNo || 'Invoice'}</title>
+        <style>
+          @media print {
+            @page {
+              margin: 10mm;
+              size: A4 portrait;
+            }
+            
+            body {
+              margin: 0;
+              padding: 0;
+              font-family: Arial, sans-serif;
+              font-size: 11px;
+              line-height: 1.4;
+              color: #000;
+              background: white;
+            }
+            
+            .print-container {
+              max-width: 100%;
+              padding: 5mm;
+            }
+            
+            .print-header {
+              text-align: center;
+              border-bottom: 2px solid #000;
+              padding-bottom: 10px;
+              margin-bottom: 15px;
+            }
+            
+            .print-header h1 {
+              margin: 0 0 5px 0;
+              font-size: 18px;
+              color: #000;
+            }
+            
+            .print-header .subtitle {
+              font-size: 12px;
+              color: #666;
+              margin-bottom: 10px;
+            }
+            
+            .print-badges {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 8px;
+              justify-content: center;
+              margin-bottom: 15px;
+            }
+            
+            .print-badge {
+              background: #f0f0f0;
+              padding: 4px 10px;
+              border-radius: 12px;
+              font-size: 9px;
+              border: 1px solid #ccc;
+            }
+            
+            .print-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr 1fr;
+              gap: 12px;
+              margin-bottom: 20px;
+            }
+            
+            .print-section {
+              background: white;
+              border: 1px solid #ccc;
+              border-radius: 4px;
+              padding: 12px;
+              page-break-inside: avoid;
+              break-inside: avoid;
+            }
+            
+            .print-section h3 {
+              font-size: 13px;
+              margin: 0 0 10px 0;
+              padding-bottom: 6px;
+              border-bottom: 1px solid #ddd;
+              color: #000;
+            }
+            
+            .print-row {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 6px;
+              page-break-inside: avoid;
+            }
+            
+            .print-label {
+              color: #666;
+              font-size: 10px;
+            }
+            
+            .print-value {
+              font-weight: 500;
+              font-size: 11px;
+              color: #000;
+              text-align: right;
+            }
+            
+            .print-image-container {
+              border: 1px solid #ccc;
+              border-radius: 4px;
+              padding: 8px;
+              background: #f9f9f9;
+              text-align: center;
+            }
+            
+            .print-image {
+              max-width: 100%;
+              max-height: 120px;
+              object-fit: contain;
+            }
+            
+            .print-additional {
+              margin-top: 20px;
+              border-top: 1px solid #ccc;
+              padding-top: 15px;
+            }
+            
+            .print-additional-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr 1fr;
+              gap: 15px;
+            }
+            
+            .print-footer {
+              margin-top: 20px;
+              padding-top: 10px;
+              border-top: 1px solid #ccc;
+              text-align: center;
+              font-size: 9px;
+              color: #666;
+            }
+            
+            .color-dot {
+              display: inline-block;
+              width: 12px;
+              height: 12px;
+              border-radius: 50%;
+              border: 1px solid #ccc;
+              margin-right: 4px;
+              vertical-align: middle;
+            }
+            
+            .profit-positive {
+              color: #059669;
+              font-weight: bold;
+            }
+            
+            .profit-negative {
+              color: #dc2626;
+              font-weight: bold;
+            }
+            
+            /* Compact styles for printing */
+            .compact {
+              margin: 0;
+              padding: 0;
+            }
+            
+            /* Hide unnecessary elements */
+            .no-print, button, nav, .print-button, .back-button {
+              display: none !important;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-container">
+          <div class="print-header">
+            <h1>Sale Record Details</h1>
+            <div class="subtitle">Complete details for sale invoice #${sale?.invoiceNo || 'N/A'}</div>
+            <div class="print-badges">
+              <span class="print-badge">Invoice: ${sale?.invoiceNo || 'N/A'}</span>
+              <span class="print-badge">Sale Date: ${formatDate(sale?.purchaseDate || '')}</span>
+              <span class="print-badge ${profit.amount >= 0 ? 'profit-positive' : 'profit-negative'}">
+                Profit: ${profit.amount >= 0 ? '+' : ''}${formatCurrency(profit.amount.toString())}
+              </span>
+              ${hasVehicleData ? '<span class="print-badge">Vehicle: Assigned</span>' : ''}
+              ${sale?.purchaseId ? '<span class="print-badge">Linked to Purchase</span>' : ''}
+              ${sale?.receiptImage ? '<span class="print-badge">Receipt: Available</span>' : ''}
+            </div>
+          </div>
+          
+          <div class="print-grid">
+            <!-- Product & Sale Details -->
+            <div class="print-section">
+              <h3>Product & Sale Details</h3>
+              <div class="print-row">
+                <span class="print-label">Material Name:</span>
+                <span class="print-value">${sale?.materialName || 'N/A'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Weight:</span>
+                <span class="print-value">${sale?.weight || '0'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Units:</span>
+                <span class="print-value">${sale?.unit || '0'} units</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Color:</span>
+                <span class="print-value">
+                  <span class="color-dot" style="background-color: ${sale?.materialColor || '#FFFFFF'};"></span>
+                  ${getColorName(sale?.materialColor || '')}
+                </span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Supplier:</span>
+                <span class="print-value">${sale?.supplierName || 'N/A'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Branch:</span>
+                <span class="print-value">${sale?.branch || 'N/A'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Invoice Number:</span>
+                <span class="print-value">${sale?.invoiceNo || 'N/A'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Sale Date:</span>
+                <span class="print-value">${formatDate(sale?.purchaseDate || '')}</span>
+              </div>
+              ${sale?.purchaseId ? `
+              <div class="print-row">
+                <span class="print-label">Linked Purchase ID:</span>
+                <span class="print-value">${sale.purchaseId}</span>
+              </div>` : ''}
+            </div>
+            
+            <!-- Pricing Details -->
+            <div class="print-section">
+              <h3>Pricing Details</h3>
+              <div class="print-row">
+                <span class="print-label">Actual Price:</span>
+                <span class="print-value">${formatCurrency(sale?.actualPrice || '0')}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Production Cost:</span>
+                <span class="print-value">${formatCurrency(sale?.productionCost || '0')}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Selling Price:</span>
+                <span class="print-value">${formatCurrency(sale?.sellingPrice || '0')}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Discount:</span>
+                <span class="print-value">${sale?.discount || '0'}%</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Final Amount:</span>
+                <span class="print-value">${formatCurrency(sale?.finalAmount || sale?.sellingPrice || '0')}</span>
+              </div>
+              <div class="print-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee;">
+                <span class="print-label">Profit/Loss:</span>
+                <span class="print-value ${profit.amount >= 0 ? 'profit-positive' : 'profit-negative'}">
+                  ${profit.amount >= 0 ? '+' : ''}${formatCurrency(profit.amount.toString())}
+                  <span style="display: block; font-size: 9px; color: #666;">
+                    (${profit.percentage >= 0 ? '+' : ''}${profit.percentage.toFixed(2)}%)
+                  </span>
+                </span>
+              </div>
+            </div>
+            
+            <!-- Receipt Image -->
+            <div class="print-section">
+              <h3>Receipt Image</h3>
+              ${receiptUrl && !receiptUrl.toLowerCase().endsWith('.pdf') ? 
+                `<div class="print-image-container">
+                  <img src="${receiptUrl}" alt="Receipt" class="print-image" onerror="this.style.display='none';this.parentElement.innerHTML='<p>Image not available</p>';" />
+                </div>` : 
+                `<div class="print-image-container">
+                  <p>${sale?.receiptImage ? 'Image not available for printing' : 'No receipt was uploaded'}</p>
+                </div>`
+              }
+              <div style="margin-top: 10px;">
+                <div class="print-row">
+                  <span class="print-label">Invoice:</span>
+                  <span class="print-value">${sale?.invoiceNo || 'N/A'}</span>
+                </div>
+                <div class="print-row">
+                  <span class="print-label">File:</span>
+                  <span class="print-value">${sale?.receiptImage ? sale.receiptImage.split('/').pop() : 'N/A'}</span>
+                </div>
+                <div class="print-row">
+                  <span class="print-label">Uploaded:</span>
+                  <span class="print-value">${formatDate(sale?.createdAt || '')}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Vehicle Details -->
+          ${hasVehicleData ? `
+          <div class="print-section" style="margin-top: 15px;">
+            <h3>Vehicle Details</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div>
+                ${vehicleData?.vehicleName ? `
+                <div class="print-row">
+                  <span class="print-label">Vehicle Name:</span>
+                  <span class="print-value">${vehicleData.vehicleName}</span>
+                </div>` : ''}
+                ${vehicleData?.vehicleType ? `
+                <div class="print-row">
+                  <span class="print-label">Vehicle Type:</span>
+                  <span class="print-value">${vehicleData.vehicleType}</span>
+                </div>` : ''}
+                ${vehicleData?.vehicleNumber ? `
+                <div class="print-row">
+                  <span class="print-label">Vehicle Number:</span>
+                  <span class="print-value">${vehicleData.vehicleNumber}</span>
+                </div>` : ''}
+                ${vehicleData?.vehicleColor ? `
+                <div class="print-row">
+                  <span class="print-label">Vehicle Color:</span>
+                  <span class="print-value">
+                    <span class="color-dot" style="background-color: ${vehicleData.vehicleColor || '#FFFFFF'};"></span>
+                    ${getColorName(vehicleData.vehicleColor)}
+                  </span>
+                </div>` : ''}
+              </div>
+              <div>
+                ${vehicleData?.driverName ? `
+                <div class="print-row">
+                  <span class="print-label">Driver Name:</span>
+                  <span class="print-value">${vehicleData.driverName}</span>
+                </div>` : ''}
+                ${vehicleData?.deliveryDate ? `
+                <div class="print-row">
+                  <span class="print-label">Delivery Date:</span>
+                  <span class="print-value">${formatDate(vehicleData.deliveryDate)}</span>
+                </div>` : ''}
+              </div>
+            </div>
+            <div class="print-row" style="margin-top: 5px;">
+              <span class="print-label">Source:</span>
+              <span class="print-value">
+                ${vehicleData?.source === 'purchase' ? 'From Linked Purchase' : 
+                 vehicleData?.source === 'sale-vehicleDetails' ? 'From Sale (Nested)' : 
+                 vehicleData?.source === 'material-match' ? 'From Material Match' :
+                 'From Sale (Direct)'}
+              </span>
+            </div>
+          </div>` : ''}
+          
+          <!-- Buyer Information -->
+          <div class="print-section" style="margin-top: 15px;">
+            <h3>Buyer Information</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div>
+                <div class="print-row">
+                  <span class="print-label">Buyer Name:</span>
+                  <span class="print-value">${sale?.buyerName || 'N/A'}</span>
+                </div>
+                ${sale?.buyerCompany ? `
+                <div class="print-row">
+                  <span class="print-label">Company:</span>
+                  <span class="print-value">${sale.buyerCompany}</span>
+                </div>` : ''}
+                ${sale?.buyerCnic ? `
+                <div class="print-row">
+                  <span class="print-label">CNIC:</span>
+                  <span class="print-value">${sale.buyerCnic}</span>
+                </div>` : ''}
+              </div>
+              <div>
+                ${sale?.buyerPhone ? `
+                <div class="print-row">
+                  <span class="print-label">Phone:</span>
+                  <span class="print-value">${sale.buyerPhone}</span>
+                </div>` : ''}
+                ${sale?.buyerEmail ? `
+                <div class="print-row">
+                  <span class="print-label">Email:</span>
+                  <span class="print-value">${sale.buyerEmail}</span>
+                </div>` : ''}
+                ${sale?.buyerAddress ? `
+                <div class="print-row">
+                  <span class="print-label">Address:</span>
+                  <span class="print-value" style="text-align: right;">${sale.buyerAddress}</span>
+                </div>` : ''}
+              </div>
+            </div>
+          </div>
+          
+          <!-- Additional Information -->
+          <div class="print-additional">
+            <h3 style="font-size: 13px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Additional Information</h3>
+            <div class="print-additional-grid">
+              <div>
+                <div class="print-label">Record Created</div>
+                <div class="print-value" style="font-size: 11px;">${formatDate(sale?.createdAt || '')}</div>
+              </div>
+              <div>
+                <div class="print-label">Last Updated</div>
+                <div class="print-value" style="font-size: 11px;">${formatDate(sale?.updatedAt || '')}</div>
+              </div>
+              <div>
+                <div class="print-label">Database ID</div>
+                <div class="print-value" style="font-size: 10px; font-family: monospace;">${sale?._id}</div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="print-footer">
+            Printed on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
+    
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+    }, 250);
   };
 
   const formatDate = (dateString: string) => {
@@ -380,7 +748,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
   // Get the image URL
   const imageUrl = vehicleData?.vehicleImage ? getImageUrl(vehicleData.vehicleImage) : null;
   const hasVehicleData = vehicleData !== null;
-  const isReceiptPDF = receiptUrl?.toLowerCase().endsWith('.pdf');
+  const profit = calculateProfit();
 
   if (loading) {
     return (
@@ -439,123 +807,13 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
     );
   }
 
-  const profit = calculateProfit();
-
   return (
     <div className="flex-1 p-6 overflow-auto animate-fade-in">
-      {/* Receipt Image Modal */}
-      {showReceiptModal && receiptUrl && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-cms-card rounded-xl max-w-4xl max-h-[90vh] overflow-auto relative">
-            <div className="sticky top-0 bg-cms-table-header px-6 py-4 border-b border-border flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-foreground">
-                Receipt - Invoice #{sale.invoiceNo}
-              </h3>
-              <button
-                onClick={() => setShowReceiptModal(false)}
-                className="p-2 hover:bg-cms-card-hover rounded-lg transition-colors"
-              >
-                <span className="text-xl text-foreground">×</span>
-              </button>
-            </div>
-            <div className="p-6">
-              {isReceiptPDF ? (
-                <div className="flex flex-col items-center justify-center p-8">
-                  <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-4">
-                    <FileText className="w-10 h-10 text-red-600" />
-                  </div>
-                  <p className="text-lg font-medium text-foreground mb-2">PDF Receipt</p>
-                  <p className="text-sm text-muted-foreground mb-6">Click below to download the PDF receipt</p>
-                  <button
-                    onClick={handleDownloadReceipt}
-                    className="px-6 py-3 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download PDF Receipt
-                  </button>
-                </div>
-              ) : (
-                <div className="relative">
-                  <img
-                    src={receiptUrl}
-                    alt={`Receipt for Invoice #${sale.invoiceNo}`}
-                    className="w-full h-auto max-h-[70vh] object-contain rounded-lg border border-border"
-                    onError={(e) => {
-                      console.error('Image loading error:', e);
-                      console.error('Failed URL:', receiptUrl);
-                      setReceiptImageError(true);
-                      
-                      // Try alternative URL if .PNG extension
-                      if (sale.receiptImage?.toUpperCase().endsWith('.PNG')) {
-                        const altUrl = receiptUrl.toLowerCase();
-                        console.log('Trying lowercase URL:', altUrl);
-                        setTimeout(() => {
-                          e.currentTarget.src = altUrl + '?t=' + Date.now();
-                        }, 500);
-                      }
-                    }}
-                  />
-                  {receiptImageError && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-cms-card">
-                      <div className="text-center p-6">
-                        <ImageIcon className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                        <p className="text-foreground">Failed to load receipt image</p>
-                        <p className="text-sm text-muted-foreground mb-3">
-                          URL: {receiptUrl.length > 60 ? receiptUrl.substring(0, 60) + '...' : receiptUrl}
-                        </p>
-                        <div className="flex gap-2 mt-4">
-                          <button
-                            onClick={() => {
-                              setReceiptImageError(false);
-                              // Force reload by adding timestamp
-                              const img = document.querySelector('img[alt*="Receipt for Invoice"]') as HTMLImageElement;
-                              if (img) {
-                                img.src = receiptUrl + '?t=' + Date.now();
-                              }
-                            }}
-                            className="px-4 py-2 bg-cms-card-hover hover:bg-cms-card border border-border rounded-lg text-sm"
-                          >
-                            Try Again
-                          </button>
-                          <button
-                            onClick={() => window.open(receiptUrl, '_blank')}
-                            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm"
-                          >
-                            Open in Browser
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="sticky bottom-0 bg-cms-table-header px-6 py-4 border-t border-border flex justify-end gap-3">
-              <button
-                onClick={() => setShowReceiptModal(false)}
-                className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium"
-              >
-                Close
-              </button>
-              {!isReceiptPDF && receiptUrl && (
-                <button
-                  onClick={handleDownloadReceipt}
-                  className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2"
-                >
-                  <Download className="w-4 h-4" />
-                  Download Image
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Back Button */}
-      <div className="mb-6">
+      <div className="mb-6 no-print">
         <button
           onClick={onBack}
-          className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+          className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors back-button"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Sales List
@@ -563,9 +821,9 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
       </div>
 
       {/* Breadcrumb */}
-      <p className="text-sm text-muted-foreground mb-6">Point of Sale / Details</p>
+      <p className="text-sm text-muted-foreground mb-6 no-print">Point of Sale / Details</p>
 
-      {/* Header with Receipt Actions */}
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Sale Record Details</h1>
@@ -598,55 +856,18 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {receiptUrl && (
-            <>
-              <button
-                onClick={handleViewReceipt}
-                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-              >
-                <Eye className="w-4 h-4" />
-                View Receipt
-              </button>
-              <button
-                onClick={handleDownloadReceipt}
-                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                Download Receipt
-              </button>
-            </>
-          )}
-          <button
-            onClick={handleEdit}
-            className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-          >
-            <Pencil className="w-4 h-4" />
-            Edit
-          </button>
+        <div className="flex items-center gap-3 no-print">
           <button
             onClick={handlePrint}
-            className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+            className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors print-button"
           >
             <Printer className="w-4 h-4" />
             Print Invoice
           </button>
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="px-4 py-2 bg-destructive hover:bg-destructive/90 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {deleting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Trash2 className="w-4 h-4" />
-            )}
-            {deleting ? 'Deleting...' : 'Delete'}
-          </button>
         </div>
       </div>
 
-      {/* Main Content Grid - Now 3 columns for receipt */}
+      {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* Product & Sale Details */}
         <div className="bg-cms-card rounded-xl p-5 border border-border">
@@ -793,13 +1014,13 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
           {receiptUrl ? (
             <div className="space-y-4">
               <div className="relative bg-cms-input-bg rounded-lg border-2 border-dashed border-border p-4">
-                {isReceiptPDF ? (
+                {receiptUrl.toLowerCase().endsWith('.pdf') ? (
                   <div className="flex flex-col items-center justify-center p-6">
                     <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-3">
                       <FileText className="w-8 h-8 text-red-600" />
                     </div>
                     <p className="text-sm font-medium text-foreground">PDF Receipt</p>
-                    <p className="text-xs text-muted-foreground mt-1">Click to download PDF document</p>
+                    <p className="text-xs text-muted-foreground mt-1">PDF file cannot be previewed</p>
                   </div>
                 ) : (
                   <div className="relative">
@@ -809,29 +1030,8 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                       className="w-full h-48 object-contain rounded-md border border-border"
                       onError={(e) => {
                         console.error('Receipt image loading failed:', e);
-                        setReceiptImageError(true);
                       }}
                     />
-                    {receiptImageError && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-cms-input-bg rounded-md">
-                        <div className="text-center">
-                          <ImageIcon className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
-                          <p className="text-sm text-muted-foreground">Failed to load receipt</p>
-                          <button
-                            onClick={() => {
-                              setReceiptImageError(false);
-                              const img = document.querySelector('img[alt*="Receipt for Invoice"]') as HTMLImageElement;
-                              if (img) {
-                                img.src = receiptUrl + '?t=' + Date.now();
-                              }
-                            }}
-                            className="mt-2 text-xs bg-cms-card-hover hover:bg-cms-card border border-border px-3 py-1 rounded"
-                          >
-                            Retry
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -852,28 +1052,11 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                   <span className="text-sm font-medium text-foreground">{formatDate(sale.createdAt)}</span>
                 </div>
               </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={handleViewReceipt}
-                  className="flex-1 px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors"
-                >
-                  <Eye className="w-4 h-4" />
-                  View
-                </button>
-                <button
-                  onClick={handleDownloadReceipt}
-                  className="flex-1 px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors"
-                >
-                  <Download className="w-4 h-4" />
-                  Download
-                </button>
-              </div>
             </div>
           ) : (
             <div className="text-center py-8">
               <div className="w-16 h-16 bg-cms-input-bg rounded-full flex items-center justify-center mx-auto mb-4">
-                <ImageIcon className="w-8 h-8 text-muted-foreground" />
+                <FileText className="w-8 h-8 text-muted-foreground" />
               </div>
               <h4 className="text-base font-medium text-foreground mb-2">No Receipt Uploaded</h4>
               <p className="text-sm text-muted-foreground">
@@ -973,39 +1156,6 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
               )}
             </div>
           </div>
-
-          {/* Vehicle Image Section */}
-          {imageUrl ? (
-            <div className="mt-6 pt-6 border-t border-border">
-              <h4 className="text-sm font-semibold text-foreground mb-3">Vehicle Image</h4>
-              <div className="rounded-xl overflow-hidden border border-border max-w-md">
-                <img 
-                  src={imageUrl}
-                  alt={`${vehicleData?.vehicleName || 'Vehicle'}`} 
-                  className="w-full h-48 object-cover"
-                  onError={() => {
-                    setImageError(true);
-                  }}
-                />
-              </div>
-              {imageError && (
-                <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-sm text-yellow-600">
-                    Could not load vehicle image.
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : vehicleData?.vehicleName ? (
-            <div className="mt-6 pt-6 border-t border-border">
-              <h4 className="text-sm font-semibold text-foreground mb-3">Vehicle Image</h4>
-              <div className="w-full max-w-md h-48 bg-cms-card-hover border border-border rounded-xl flex flex-col items-center justify-center text-muted-foreground">
-                <Truck className="w-12 h-12 mb-2" />
-                <p>No vehicle image uploaded</p>
-                <p className="text-xs mt-1">{vehicleData.vehicleName}</p>
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : (
         <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5 mb-6">

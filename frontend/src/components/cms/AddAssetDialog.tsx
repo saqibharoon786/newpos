@@ -27,9 +27,9 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
     purchasePrice: "",
     purchaseFrom: "",
     invoiceNo: "",
-    date: "",  // DD/MM/YYYY string
-    time: new Date().toLocaleTimeString('en-US', { hour12: false }).slice(0, 5),
-    receiptImage: null as File | null, // ✅ CHANGED: Store File object instead of Base64
+    date: "",  // DD/MM/YYYY string - USER SELECTED DATE
+    time: "12:00", // Default to 12:00 PM to avoid midnight timezone issues
+    receiptImage: null as File | null,
   });
   
   const [isLoading, setIsLoading] = useState(false);
@@ -38,7 +38,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showReceiptPreview, setShowReceiptPreview] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null); // ✅ ADDED: Preview URL
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
 
@@ -62,13 +62,14 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Dialog open hone pe default date set
+  // Dialog open hone pe default date set (current date)
   useEffect(() => {
     if (open && !formData.date) {
       const now = new Date();
       setSelectedDate(now);
       setCurrentMonth(now.getMonth());
       setCurrentYear(now.getFullYear());
+      // Format as DD/MM/YYYY
       const ddmmyyyy = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
       setFormData(prev => ({ ...prev, date: ddmmyyyy }));
     }
@@ -122,7 +123,6 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
     setShowCalendar(false);
   };
 
-  // ✅ FIXED: Handle receipt image upload - Store File object directly
   const handleReceiptUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -134,30 +134,25 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
       fileObject: file instanceof File ? "YES" : "NO"
     });
 
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       toast.error("Receipt image must be less than 5MB");
       return;
     }
 
-    // Validate file type
     const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf'];
     if (!validTypes.includes(file.type)) {
       toast.error("Please upload a valid image (JPEG, JPG, PNG, WebP, PDF)");
       return;
     }
 
-    // Create preview URL
     const objectUrl = URL.createObjectURL(file);
     setPreviewUrl(objectUrl);
     
-    // Store File object directly
     setFormData(prev => ({ ...prev, receiptImage: file }));
     toast.success("Receipt image uploaded successfully");
   };
 
   const removeReceiptImage = () => {
-    // Clean up preview URL
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
@@ -184,131 +179,138 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // ✅ FIXED: Submit function - Correct FormData field names
-const handleSubmit = async () => {
-  if (!formData.assetName || !formData.category || !formData.condition || !formData.department) {
-    toast.error("Please fill required fields");
-    return;
-  }
-
-  if (!formData.date) {
-    toast.error("Date is required");
-    return;
-  }
-
-  setIsLoading(true);
-  
-  try {
-    // Create FormData object
-    const formDataToSend = new FormData();
-    
-    // ✅ Append all fields with CORRECT field names
-    formDataToSend.append('assetName', formData.assetName);
-    formDataToSend.append('category', formData.category);
-    formDataToSend.append('quantity', formData.quantity);
-    formDataToSend.append('sizeModel', formData.sizeModel || '');
-    formDataToSend.append('condition', formData.condition);
-    formDataToSend.append('description', formData.description || '');
-    formDataToSend.append('department', formData.department);
-    formDataToSend.append('assignedTo', formData.assignedTo || '');
-    formDataToSend.append('purchasePrice', formData.purchasePrice || '');
-    formDataToSend.append('purchaseFrom', formData.purchaseFrom || '');
-    formDataToSend.append('invoiceNo', formData.invoiceNo || '');
-    
-    // ✅ Convert DD/MM/YYYY to ISO format (YYYY-MM-DD)
-    let purchaseDate = formData.date;
-    if (purchaseDate.includes('/')) {
-      const [day, month, year] = purchaseDate.split('/');
-      purchaseDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-      console.log("📅 Converted date to ISO:", purchaseDate);
-    }
-    formDataToSend.append('purchaseDate', purchaseDate);
-    
-    formDataToSend.append('purchaseTime', formData.time);
-    
-    // ✅ Append the File object with the correct field name
-    if (formData.receiptImage) {
-      console.log("📄 Appending file to FormData:", formData.receiptImage.name);
-      formDataToSend.append('receiptImage', formData.receiptImage);
-    } else {
-      console.log("⚠️ No receipt image to append");
+  // ✅ FIXED: Submit function - Correct date handling to avoid timezone issues
+  const handleSubmit = async () => {
+    if (!formData.assetName || !formData.category || !formData.condition || !formData.department) {
+      toast.error("Please fill required fields");
+      return;
     }
 
-    // Debug: Log FormData contents
-    console.log("📦 FormData contents:");
-    for (let [key, value] of formDataToSend.entries()) {
-      console.log(`${key}:`, value instanceof File ? `File (${value.name}, ${value.type}, ${value.size} bytes)` : value);
+    if (!formData.date) {
+      toast.error("Date is required");
+      return;
     }
 
-    if (onSave) {
-      await onSave(formDataToSend);
+    setIsLoading(true);
+    
+    try {
+      // Create FormData object
+      const formDataToSend = new FormData();
       
-      // Clean up preview URL
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-        setPreviewUrl(null);
+      // ✅ Append all fields with CORRECT field names
+      formDataToSend.append('assetName', formData.assetName);
+      formDataToSend.append('category', formData.category);
+      formDataToSend.append('quantity', formData.quantity);
+      formDataToSend.append('sizeModel', formData.sizeModel || '');
+      formDataToSend.append('condition', formData.condition);
+      formDataToSend.append('description', formData.description || '');
+      formDataToSend.append('department', formData.department);
+      formDataToSend.append('assignedTo', formData.assignedTo || '');
+      formDataToSend.append('purchasePrice', formData.purchasePrice || '');
+      formDataToSend.append('purchaseFrom', formData.purchaseFrom || '');
+      formDataToSend.append('invoiceNo', formData.invoiceNo || '');
+      
+      // ✅ CRITICAL FIX: Convert DD/MM/YYYY to YYYY-MM-DD format WITHOUT timezone issues
+      let purchaseDate = formData.date;
+      console.log("📅 Original date from form:", purchaseDate);
+      
+      if (purchaseDate.includes('/')) {
+        const [day, month, year] = purchaseDate.split('/');
+        
+        // ✅ Create YYYY-MM-DD format directly without Date object
+        const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        console.log("📅 Converted date to YYYY-MM-DD:", formattedDate);
+        
+        formDataToSend.append('purchaseDate', formattedDate);
+      } else {
+        // If already in correct format
+        formDataToSend.append('purchaseDate', purchaseDate);
       }
       
-      // Reset form
-      setFormData({
-        assetName: "",
-        category: "",
-        quantity: "1",
-        sizeModel: "",
-        condition: "",
-        description: "",
-        department: "",
-        assignedTo: "",
-        purchasePrice: "",
-        purchaseFrom: "",
-        invoiceNo: "",
-        date: "",
-        time: new Date().toLocaleTimeString('en-US', { hour12: false }).slice(0, 5),
-        receiptImage: null,
-      });
+      // ✅ Add purchaseTime (default to 12:00 to avoid midnight timezone issues)
+      const timeToSend = formData.time || '12:00';
+      formDataToSend.append('purchaseTime', timeToSend);
       
-      onOpenChange(false);
-    }
-  } catch (error: any) {
-    console.error("❌ Error in handleSubmit:", error);
-    
-    // ✅ FIXED: Proper error extraction
-    let errorMessage = "Failed to save asset";
-    
-    if (error) {
-      // First try to get error.message
-      if (error.message) {
-        // Check if error.message is a string or an object
-        if (typeof error.message === 'string') {
-          errorMessage = error.message;
-        } else if (typeof error.message === 'object') {
-          // If error.message is an object, try to stringify it
+      // ✅ Append the File object with the correct field name
+      if (formData.receiptImage) {
+        console.log("📄 Appending file to FormData:", formData.receiptImage.name);
+        formDataToSend.append('receiptImage', formData.receiptImage);
+      } else {
+        console.log("⚠️ No receipt image to append");
+      }
+
+      // Debug: Log FormData contents
+      console.log("📦 FormData contents before sending:");
+      for (let [key, value] of formDataToSend.entries()) {
+        console.log(`${key}:`, value instanceof File ? `File (${value.name}, ${value.type}, ${value.size} bytes)` : value);
+      }
+
+      if (onSave) {
+        await onSave(formDataToSend);
+        
+        // Clean up preview URL
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+          setPreviewUrl(null);
+        }
+        
+        // Reset form but keep date for next entry (optional)
+        const now = new Date();
+        const ddmmyyyy = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+        
+        setFormData({
+          assetName: "",
+          category: "",
+          quantity: "1",
+          sizeModel: "",
+          condition: "",
+          description: "",
+          department: "",
+          assignedTo: "",
+          purchasePrice: "",
+          purchaseFrom: "",
+          invoiceNo: "",
+          date: ddmmyyyy, // Reset to current date
+          time: "12:00", // Reset to default time
+          receiptImage: null,
+        });
+        
+        onOpenChange(false);
+      }
+    } catch (error: any) {
+      console.error("❌ Error in handleSubmit:", error);
+      
+      let errorMessage = "Failed to save asset";
+      
+      if (error) {
+        if (error.message) {
+          if (typeof error.message === 'string') {
+            errorMessage = error.message;
+          } else if (typeof error.message === 'object') {
+            try {
+              errorMessage = JSON.stringify(error.message);
+            } catch {
+              errorMessage = "Error message is an object";
+            }
+          }
+        } 
+        else if (error.error) {
+          errorMessage = typeof error.error === 'string' ? error.error : JSON.stringify(error.error);
+        }
+        else {
           try {
-            errorMessage = JSON.stringify(error.message);
+            errorMessage = JSON.stringify(error);
           } catch {
-            errorMessage = "Error message is an object";
+            errorMessage = "Unknown error occurred";
           }
         }
-      } 
-      // Try error.error if message doesn't work
-      else if (error.error) {
-        errorMessage = typeof error.error === 'string' ? error.error : JSON.stringify(error.error);
       }
-      // Try to stringify the entire error
-      else {
-        try {
-          errorMessage = JSON.stringify(error);
-        } catch {
-          errorMessage = "Unknown error occurred";
-        }
-      }
+      
+      toast.error(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
-    
-    toast.error(errorMessage);
-  } finally {
-    setIsLoading(false);
-  }
-};
+  };
 
   const handleDialogClose = (open: boolean) => {
     if (!open && !isLoading) {
@@ -318,6 +320,10 @@ const handleSubmit = async () => {
         setPreviewUrl(null);
       }
       
+      // Reset form
+      const now = new Date();
+      const ddmmyyyy = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+      
       setFormData({
         assetName: "",
         category: "",
@@ -330,8 +336,8 @@ const handleSubmit = async () => {
         purchasePrice: "",
         purchaseFrom: "",
         invoiceNo: "",
-        date: "",
-        time: new Date().toLocaleTimeString('en-US', { hour12: false }).slice(0, 5),
+        date: ddmmyyyy, // Reset to current date
+        time: "12:00", // Reset to default time
         receiptImage: null,
       });
       setShowReceiptPreview(false);
@@ -510,7 +516,7 @@ const handleSubmit = async () => {
             </div>
 
             <div className="mb-6">
-              <label className="block text-xs text-muted-foreground mb-1.5">Date & Time</label>
+              <label className="block text-xs text-muted-foreground mb-1.5">Date & Time *</label>
               <div className="flex gap-2">
                 <div className="relative flex-1" ref={calendarRef}>
                   <div 
@@ -527,8 +533,8 @@ const handleSubmit = async () => {
                     <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                   </div>
                   
-               {showCalendar && (
-  <div className="absolute z-50 mt-1 w-80 bg-background border border-border rounded-lg shadow-lg"> {/* Changed width to w-80 */}
+{showCalendar && (
+  <div className="absolute z-50 mt-1 w-80 bg-background border border-border rounded-lg shadow-lg">
     <div className="p-4 border-b border-border">
       <div className="flex items-center justify-between mb-3">
         <button onClick={handlePrevMonth} className="p-1 hover:bg-cms-input-bg rounded">
@@ -536,12 +542,17 @@ const handleSubmit = async () => {
         </button>
         
         <div className="flex items-center gap-2">
-          {/* Month Selector - Unchanged */}
+          {/* Today's Date */}
+          <div className="text-sm font-semibold text-primary">
+            {selectedDate ? selectedDate.getDate().toString().padStart(2, '0') : todayDate.getDate().toString().padStart(2, '0')}
+          </div>
+          
+          {/* Month */}
           <div className="text-sm font-semibold text-foreground">
             {monthNames[currentMonth]}
           </div>
           
-          {/* ✅ ADDED: Year Dropdown */}
+          {/* Year Dropdown */}
           <select
             value={currentYear}
             onChange={(e) => setCurrentYear(parseInt(e.target.value))}

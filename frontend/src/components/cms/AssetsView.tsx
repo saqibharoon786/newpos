@@ -29,6 +29,42 @@ interface AssetItem {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 const ASSETS_API_URL = `${API_BASE_URL}/api/assets`;
 
+// Helper function to format date as "22 Jan 2026"
+const formatDateWithMonthName = (dateString: string): string => {
+  try {
+    // First try to parse as ISO date string
+    const date = new Date(dateString);
+    if (!isNaN(date.getTime())) {
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = getMonthName(date.getMonth() + 1);
+      const year = date.getFullYear();
+      return `${day} ${month} ${year}`;
+    }
+    
+    // Try to parse as DD/MM/YYYY format
+    if (dateString.includes('/')) {
+      const [day, month, year] = dateString.split('/').map(Number);
+      if (day && month && year) {
+        return `${day.toString().padStart(2, '0')} ${getMonthName(month)} ${year}`;
+      }
+    }
+    
+    return dateString; // Return original if can't parse
+  } catch (error) {
+    console.error("Error formatting date:", error);
+    return dateString;
+  }
+};
+
+// Helper function to get month name
+const getMonthName = (monthNumber: number): string => {
+  const months = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+  ];
+  return months[monthNumber - 1] || "";
+};
+
 export function AssetsView() {
   const [data, setData] = useState<AssetItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -388,17 +424,9 @@ const handleAddAsset = async (assetData: any) => {
     />;
   }
 
+  // Updated formatDate function to show month names
   const formatDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', {
-        month: '2-digit',
-        day: '2-digit',
-        year: 'numeric'
-      });
-    } catch (e) {
-      return dateString;
-    }
+    return formatDateWithMonthName(dateString);
   };
 
   return (
@@ -511,19 +539,24 @@ const handleAddAsset = async (assetData: any) => {
                   </td>
                   <td className="px-4 py-3 text-sm text-foreground">{item.quantity}</td>
                   <td className="px-4 py-3 text-sm text-foreground">{item.assignedTo}</td>
-                  <td className="px-4 py-3 text-sm text-foreground">{formatDate(item.purchaseDate)}</td>
+                  <td className="px-4 py-3 text-sm text-foreground">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-muted-foreground" />
+                      <span>{formatDate(item.purchaseDate)}</span>
+                    </div>
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => handleEditStart(item)}
-                        className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                        className="p-1.5 hover:bg-secondary rounded transition-colors text-blue-600 hover:text-blue-700"
                         title="Edit"
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleViewDetails(item)}
-                        className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                        className="p-1.5 hover:bg-secondary rounded transition-colors text-green-600 hover:text-green-700"
                         title="View Details"
                       >
                         <Eye className="w-4 h-4" />

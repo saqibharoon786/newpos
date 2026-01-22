@@ -46,19 +46,526 @@ interface StatsData {
   }>;
 }
 
-// View Modal Component - AssetDetailsView ki tarah design
+interface PaginationData {
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  itemsPerPage: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
+}
+
+// Helper function to format date as "22 Jan 2026"
+const formatDateWithMonthName = (dateString: string): string => {
+  try {
+    // First try to parse as DD/MM/YYYY format (from your existing data)
+    if (dateString.includes('/')) {
+      const [day, month, year] = dateString.split('/').map(Number);
+      const date = new Date(year, month - 1, day);
+      
+      // Validate date
+      if (isNaN(date.getTime())) {
+        // If invalid, try ISO format
+        const isoDate = new Date(dateString);
+        if (!isNaN(isoDate.getTime())) {
+          dateString = isoDate.toLocaleDateString('en-GB');
+          const [d, m, y] = dateString.split('/');
+          return `${d} ${getMonthName(parseInt(m))} ${y}`;
+        }
+        return dateString; // Return original if can't parse
+      }
+      
+      return `${day} ${getMonthName(month)} ${year}`;
+    }
+    
+    // Try to parse as ISO date string
+    const date = new Date(dateString);
+    if (!isNaN(date.getTime())) {
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = date.getMonth() + 1;
+      const year = date.getFullYear();
+      return `${day} ${getMonthName(month)} ${year}`;
+    }
+    
+    return dateString; // Return original if can't parse
+  } catch (error) {
+    console.error("Error formatting date:", error);
+    return dateString;
+  }
+};
+
+// Helper function to get month name
+const getMonthName = (monthNumber: number): string => {
+  const months = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+  ];
+  return months[monthNumber - 1] || "";
+};
+
+// Professional Print Function
+const handleProfessionalPrint = (expenses: ExpenseItem[], currentPage: number, totalPages: number, totalItems: number, calculateTotalExpenses: () => number) => {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return;
+
+  // Calculate statistics
+  const pageTotal = calculateTotalExpenses();
+  const averageExpense = pageTotal / Math.max(expenses.length, 1);
+  const currentDate = new Date().toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
+  const currentTime = new Date().toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  // Group by purpose for summary
+  const purposeSummary: Record<string, { count: number; total: number }> = {};
+  expenses.forEach(expense => {
+    if (!purposeSummary[expense.purpose]) {
+      purposeSummary[expense.purpose] = { count: 0, total: 0 };
+    }
+    purposeSummary[expense.purpose].count++;
+    purposeSummary[expense.purpose].total += parseFloat(expense.price.replace(/,/g, ''));
+  });
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Expense Report - ${currentDate}</title>
+      <style>
+        @media print {
+          @page {
+            margin: 15mm;
+            size: A4 portrait;
+          }
+          
+          body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 10pt;
+            line-height: 1.4;
+            color: #333;
+            background: white;
+          }
+          
+          .print-header {
+            text-align: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #333;
+            padding-bottom: 15px;
+          }
+          
+          .company-name {
+            font-size: 22pt;
+            font-weight: bold;
+            color: #1a365d;
+            margin: 0;
+            letter-spacing: 1px;
+          }
+          
+          .report-title {
+            font-size: 16pt;
+            color: #2d3748;
+            margin: 10px 0 5px 0;
+          }
+          
+          .report-subtitle {
+            font-size: 11pt;
+            color: #718096;
+            margin: 0 0 10px 0;
+          }
+          
+          .report-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9pt;
+            color: #4a5568;
+            margin-top: 5px;
+          }
+          
+          .summary-section {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 20px;
+          }
+          
+          .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 15px;
+          }
+          
+          .summary-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 10px;
+            text-align: center;
+          }
+          
+          .summary-label {
+            font-size: 8pt;
+            color: #718096;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          }
+          
+          .summary-value {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #2d3748;
+          }
+          
+          .summary-value.small {
+            font-size: 11pt;
+          }
+          
+          .table-container {
+            margin: 20px 0;
+          }
+          
+          .expense-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+          }
+          
+          .expense-table th {
+            background: #2d3748;
+            color: white;
+            font-weight: 600;
+            font-size: 9pt;
+            padding: 8px 6px;
+            text-align: left;
+            border: 1px solid #e2e8f0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          }
+          
+          .expense-table td {
+            padding: 6px;
+            border: 1px solid #e2e8f0;
+            font-size: 9pt;
+          }
+          
+          .expense-table tr:nth-child(even) {
+            background: #f8fafc;
+          }
+          
+          .expense-table tr:hover {
+            background: #edf2f7;
+          }
+          
+          .amount-cell {
+            font-weight: 600;
+            text-align: right;
+          }
+          
+          .purpose-badge {
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 8pt;
+            font-weight: 500;
+          }
+          
+          .purpose-car { background: #bee3f8; color: #2c5282; }
+          .purpose-office { background: #e9d8fd; color: #553c9a; }
+          .purpose-travel { background: #c6f6d5; color: #22543d; }
+          .purpose-equipment { background: #fed7d7; color: #9b2c2c; }
+          .purpose-other { background: #fefcbf; color: #744210; }
+          
+          .usage-badge {
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 8pt;
+            font-weight: 500;
+          }
+          
+          .usage-personal { background: #fef3c7; color: #92400e; }
+          .usage-company { background: #d1fae5; color: #065f46; }
+          
+          .summary-section-footer {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 15px;
+          }
+          
+          .purpose-breakdown {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 10px;
+          }
+          
+          .breakdown-title {
+            font-size: 10pt;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 4px;
+          }
+          
+          .breakdown-item {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9pt;
+            padding: 3px 0;
+            border-bottom: 1px dotted #e2e8f0;
+          }
+          
+          .breakdown-item:last-child {
+            border-bottom: none;
+          }
+          
+          .breakdown-label {
+            color: #4a5568;
+          }
+          
+          .breakdown-value {
+            font-weight: 500;
+            color: #2d3748;
+          }
+          
+          .signature-section {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 10px;
+            text-align: center;
+          }
+          
+          .signature-line {
+            margin-top: 30px;
+            border-top: 1px solid #cbd5e0;
+            padding-top: 10px;
+            font-size: 9pt;
+            color: #718096;
+          }
+          
+          .page-footer {
+            margin-top: 30px;
+            padding-top: 10px;
+            border-top: 1px solid #cbd5e0;
+            font-size: 8pt;
+            color: #718096;
+            text-align: center;
+          }
+          
+          .print-footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #f7fafc;
+            border-top: 1px solid #e2e8f0;
+            padding: 8px 15mm;
+            font-size: 8pt;
+            color: #718096;
+            display: flex;
+            justify-content: space-between;
+          }
+          
+          .page-number {
+            font-weight: 500;
+          }
+          
+          /* Hide unnecessary elements */
+          .no-print, button, nav, .print-button, .back-button {
+            display: none !important;
+          }
+          
+          .print-only {
+            display: block !important;
+          }
+          
+          /* Ensure tables don't break across pages */
+          .expense-table {
+            page-break-inside: avoid;
+          }
+          
+          .summary-section {
+            page-break-inside: avoid;
+          }
+        }
+        
+        @media screen {
+          .print-only {
+            display: none;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="print-container">
+        <!-- Header -->
+        <div class="print-header">
+          <h1 class="company-name">YOUR COMPANY NAME</h1>
+          <h2 class="report-title">Daily Expense Report (Roznamcha)</h2>
+          <p class="report-subtitle">Detailed listing of all recorded expenses</p>
+          
+          <div class="report-meta">
+            <div class="meta-left">
+              <strong>Report Date:</strong> ${currentDate} | <strong>Time:</strong> ${currentTime}
+            </div>
+            <div class="meta-right">
+              <strong>Page:</strong> ${currentPage} of ${totalPages} | <strong>Records:</strong> ${totalItems}
+            </div>
+          </div>
+        </div>
+        
+        <!-- Summary Section -->
+        <div class="summary-section">
+          <div class="summary-grid">
+            <div class="summary-card">
+              <div class="summary-label">Total Page Amount</div>
+              <div class="summary-value">Rs. ${pageTotal.toLocaleString()}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">Records on Page</div>
+              <div class="summary-value">${expenses.length}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">Average Expense</div>
+              <div class="summary-value small">Rs. ${averageExpense.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">Report Generated</div>
+              <div class="summary-value small">${currentDate}</div>
+            </div>
+          </div>
+          
+          <div class="summary-section-footer">
+            <div class="purpose-breakdown">
+              <div class="breakdown-title">Expense by Purpose</div>
+              ${Object.entries(purposeSummary).map(([purpose, data]) => `
+                <div class="breakdown-item">
+                  <span class="breakdown-label">${purpose}:</span>
+                  <span class="breakdown-value">Rs. ${data.total.toLocaleString()} (${data.count})</span>
+                </div>
+              `).join('')}
+            </div>
+            
+            <div class="signature-section">
+              <div class="signature-line">
+                Authorized Signature
+              </div>
+              <div style="margin-top: 5px; font-size: 8pt; color: #718096;">
+                Finance Department
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Expense Table -->
+        <div class="table-container">
+          <table class="expense-table">
+            <thead>
+              <tr>
+                <th width="5%">#</th>
+                <th width="25%">Subject & Description</th>
+                <th width="12%">Purpose</th>
+                <th width="10%">Usage</th>
+                <th width="12%">Amount</th>
+                <th width="12%">Responsible Person</th>
+                <th width="12%">Date</th>
+                <th width="12%">Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${expenses.map((expense, index) => {
+                const serialNumber = (currentPage - 1) * 10 + index + 1;
+                const formattedDate = formatDateWithMonthName(expense.date);
+                const priceValue = parseFloat(expense.price.replace(/,/g, ''));
+                
+                // Determine purpose badge class
+                const purposeClass = `purpose-${expense.purpose.toLowerCase()}`;
+                
+                // Determine usage badge class
+                const usageClass = expense.usage === 'Personal' ? 'usage-personal' : 'usage-company';
+                
+                return `
+                  <tr>
+                    <td>${serialNumber}</td>
+                    <td>
+                      <strong>${expense.subject}</strong><br>
+                      <span style="font-size: 8pt; color: #666;">${expense.description}</span>
+                    </td>
+                    <td>
+                      <span class="purpose-badge ${purposeClass}">
+                        ${expense.purpose}
+                      </span>
+                    </td>
+                    <td>
+                      <span class="usage-badge ${usageClass}">
+                        ${expense.usage}
+                      </span>
+                    </td>
+                    <td class="amount-cell">
+                      <strong>Rs. ${priceValue.toLocaleString()}</strong>
+                    </td>
+                    <td>${expense.personResponsible}</td>
+                    <td>${formattedDate}</td>
+                    <td>${expense.time}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        
+        <!-- Page Footer -->
+        <div class="page-footer">
+          <p>This document is computer generated and requires no signature for validation.</p>
+          <p>For any queries, please contact the Finance Department.</p>
+          <p style="margin-top: 5px;"><strong>Confidential - For Internal Use Only</strong></p>
+        </div>
+      </div>
+      
+      <!-- Print Footer (Fixed at bottom) -->
+      <div class="print-footer">
+        <div class="footer-left">
+          YOUR COMPANY NAME • Expense Report
+        </div>
+        <div class="footer-right">
+          Generated on ${currentDate} ${currentTime} • Page <span class="page-number">${currentPage}</span> of ${totalPages}
+        </div>
+      </div>
+    </body>
+    </html>
+  `);
+  
+  printWindow.document.close();
+  setTimeout(() => {
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
+  }, 250);
+};
+
+// View Modal Component
 function ExpenseViewModal({ 
   expense, 
   onClose,
   onEdit,
   onDelete,
-  allExpenses // Pass expenses as prop
+  allExpenses
 }: { 
   expense: ExpenseItem | null;
   onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
-  allExpenses: ExpenseItem[]; // Add this prop
+  allExpenses: ExpenseItem[];
 }) {
   if (!expense) return null;
 
@@ -67,10 +574,14 @@ function ExpenseViewModal({
     const currentMonth = new Date().getMonth() + 1;
     const currentYear = new Date().getFullYear();
     const monthExpenses = allExpenses.filter(e => {
-      const expenseDate = new Date(e.date);
-      const expenseMonth = expenseDate.getMonth() + 1;
-      const expenseYear = expenseDate.getFullYear();
-      return expenseMonth === currentMonth && expenseYear === currentYear;
+      try {
+        const expenseDate = new Date(e.date);
+        const expenseMonth = expenseDate.getMonth() + 1;
+        const expenseYear = expenseDate.getFullYear();
+        return expenseMonth === currentMonth && expenseYear === currentYear;
+      } catch (error) {
+        return false;
+      }
     });
     const total = monthExpenses.reduce((sum, e) => sum + parseFloat(e.price.replace(/,/g, '')), 0);
     return total;
@@ -79,9 +590,13 @@ function ExpenseViewModal({
   const calculateYearTotal = () => {
     const currentYear = new Date().getFullYear();
     const yearExpenses = allExpenses.filter(e => {
-      const expenseDate = new Date(e.date);
-      const expenseYear = expenseDate.getFullYear();
-      return expenseYear === currentYear;
+      try {
+        const expenseDate = new Date(e.date);
+        const expenseYear = expenseDate.getFullYear();
+        return expenseYear === currentYear;
+      } catch (error) {
+        return false;
+      }
     });
     const total = yearExpenses.reduce((sum, e) => sum + parseFloat(e.price.replace(/,/g, '')), 0);
     return total;
@@ -89,6 +604,385 @@ function ExpenseViewModal({
 
   const monthTotal = calculateMonthTotal();
   const yearTotal = calculateYearTotal();
+
+  // Format date for display in modal
+  const formattedDate = formatDateWithMonthName(expense.date);
+
+  // Handle print for single expense view
+  const handleViewPrint = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const currentDate = new Date().toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+    const currentTime = new Date().toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Expense Details - ${expense.subject}</title>
+        <style>
+          @media print {
+            @page {
+              margin: 15mm;
+              size: A4 portrait;
+            }
+            
+            body {
+              margin: 0;
+              padding: 0;
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              font-size: 10pt;
+              line-height: 1.4;
+              color: #333;
+              background: white;
+            }
+            
+            .print-header {
+              text-align: center;
+              margin-bottom: 25px;
+              border-bottom: 2px solid #333;
+              padding-bottom: 15px;
+            }
+            
+            .company-name {
+              font-size: 20pt;
+              font-weight: bold;
+              color: #1a365d;
+              margin: 0;
+            }
+            
+            .report-title {
+              font-size: 16pt;
+              color: #2d3748;
+              margin: 10px 0 5px 0;
+            }
+            
+            .expense-id {
+              font-size: 10pt;
+              color: #718096;
+              background: #f7fafc;
+              padding: 4px 12px;
+              border-radius: 12px;
+              display: inline-block;
+              margin: 5px 0;
+            }
+            
+            .details-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 20px;
+              margin: 25px 0;
+            }
+            
+            .details-section {
+              background: #f7fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 6px;
+              padding: 20px;
+            }
+            
+            .section-title {
+              font-size: 12pt;
+              font-weight: 600;
+              color: #2d3748;
+              margin-bottom: 15px;
+              padding-bottom: 8px;
+              border-bottom: 2px solid #cbd5e0;
+            }
+            
+            .detail-row {
+              display: flex;
+              justify-content: space-between;
+              margin-bottom: 12px;
+              padding-bottom: 8px;
+              border-bottom: 1px dotted #e2e8f0;
+            }
+            
+            .detail-row:last-child {
+              border-bottom: none;
+              margin-bottom: 0;
+              padding-bottom: 0;
+            }
+            
+            .detail-label {
+              font-size: 10pt;
+              color: #4a5568;
+              font-weight: 500;
+            }
+            
+            .detail-value {
+              font-size: 10pt;
+              color: #2d3748;
+              font-weight: 600;
+              text-align: right;
+              max-width: 60%;
+            }
+            
+            .amount-highlight {
+              font-size: 18pt;
+              color: #2d3748;
+              font-weight: bold;
+              text-align: right;
+            }
+            
+            .purpose-badge {
+              padding: 4px 10px;
+              border-radius: 4px;
+              font-size: 9pt;
+              font-weight: 500;
+            }
+            
+            .purpose-car { background: #bee3f8; color: #2c5282; }
+            .purpose-office { background: #e9d8fd; color: #553c9a; }
+            .purpose-travel { background: #c6f6d5; color: #22543d; }
+            
+            .usage-badge {
+              padding: 4px 10px;
+              border-radius: 4px;
+              font-size: 9pt;
+              font-weight: 500;
+            }
+            
+            .usage-personal { background: #fef3c7; color: #92400e; }
+            .usage-company { background: #d1fae5; color: #065f46; }
+            
+            .stats-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 15px;
+              margin-top: 25px;
+            }
+            
+            .stat-card {
+              background: white;
+              border: 1px solid #e2e8f0;
+              border-radius: 4px;
+              padding: 15px;
+              text-align: center;
+            }
+            
+            .stat-label {
+              font-size: 9pt;
+              color: #718096;
+              margin-bottom: 5px;
+            }
+            
+            .stat-value {
+              font-size: 16pt;
+              font-weight: bold;
+              color: #2d3748;
+            }
+            
+            .footer {
+              margin-top: 40px;
+              padding-top: 20px;
+              border-top: 1px solid #cbd5e0;
+              text-align: center;
+              font-size: 9pt;
+              color: #718096;
+            }
+            
+            .signature-area {
+              margin-top: 40px;
+              padding-top: 20px;
+              border-top: 1px solid #cbd5e0;
+              display: flex;
+              justify-content: space-between;
+            }
+            
+            .signature-box {
+              text-align: center;
+              width: 45%;
+            }
+            
+            .signature-line {
+              margin-top: 40px;
+              border-top: 1px solid #666;
+              padding-top: 10px;
+              font-size: 9pt;
+            }
+            
+            .print-footer {
+              position: fixed;
+              bottom: 0;
+              left: 0;
+              right: 0;
+              background: #f7fafc;
+              border-top: 1px solid #e2e8f0;
+              padding: 8px 15mm;
+              font-size: 8pt;
+              color: #718096;
+              display: flex;
+              justify-content: space-between;
+            }
+            
+            /* Hide unnecessary elements */
+            .no-print, button, nav, .print-button, .back-button {
+              display: none !important;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-container">
+          <!-- Header -->
+          <div class="print-header">
+            <h1 class="company-name">YOUR COMPANY NAME</h1>
+            <h2 class="report-title">Expense Detail Report</h2>
+            <div class="expense-id">Expense ID: ${expense._id.substring(0, 8)}...</div>
+            <p style="color: #718096; margin-top: 10px;">
+              Generated on ${currentDate} at ${currentTime}
+            </p>
+          </div>
+          
+          <!-- Details Grid -->
+          <div class="details-grid">
+            <div class="details-section">
+              <div class="section-title">Expense Information</div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Subject:</span>
+                <span class="detail-value">${expense.subject}</span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Description:</span>
+                <span class="detail-value">${expense.description}</span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Purpose:</span>
+                <span class="detail-value">
+                  <span class="purpose-badge purpose-${expense.purpose.toLowerCase()}">
+                    ${expense.purpose}
+                  </span>
+                </span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Usage Type:</span>
+                <span class="detail-value">
+                  <span class="usage-badge usage-${expense.usage.toLowerCase()}">
+                    ${expense.usage}
+                  </span>
+                </span>
+              </div>
+            </div>
+            
+            <div class="details-section">
+              <div class="section-title">Financial Details</div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Amount:</span>
+                <span class="amount-highlight">
+                  Rs. ${parseFloat(expense.price.replace(/,/g, '')).toLocaleString()}
+                </span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Date:</span>
+                <span class="detail-value">${formattedDate}</span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Time:</span>
+                <span class="detail-value">${expense.time}</span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Recorded On:</span>
+                <span class="detail-value">
+                  ${formatDateWithMonthName(expense.createdAt)} at ${new Date(expense.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Person Details -->
+          <div class="details-section" style="margin-top: 20px;">
+            <div class="section-title">Responsible Person Details</div>
+            
+            <div class="detail-row">
+              <span class="detail-label">Responsible Person:</span>
+              <span class="detail-value">${expense.personResponsible}</span>
+            </div>
+            
+            <div class="detail-row">
+              <span class="detail-label">Department:</span>
+              <span class="detail-value">
+                ${expense.personResponsible === 'HR' ? 'Human Resources' :
+                 expense.personResponsible === 'Admin' ? 'Administration' :
+                 expense.personResponsible === 'CEO' ? 'Executive' :
+                 expense.personResponsible === 'Finance Dept' ? 'Finance' : 'General'}
+              </span>
+            </div>
+          </div>
+          
+          <!-- Statistics -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">This Month's Total</div>
+              <div class="stat-value">Rs. ${monthTotal.toLocaleString()}</div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-label">This Year's Total</div>
+              <div class="stat-value">Rs. ${yearTotal.toLocaleString()}</div>
+            </div>
+          </div>
+          
+          <!-- Signature Area -->
+          <div class="signature-area">
+            <div class="signature-box">
+              <div class="signature-line"></div>
+              <div style="margin-top: 5px; font-size: 9pt; color: #718096;">
+                Prepared By
+              </div>
+            </div>
+            
+            <div class="signature-box">
+              <div class="signature-line"></div>
+              <div style="margin-top: 5px; font-size: 9pt; color: #718096;">
+                Authorized By
+              </div>
+            </div>
+          </div>
+          
+          <!-- Footer -->
+          <div class="footer">
+            <p>This is a computer generated document and requires no signature for validation.</p>
+            <p style="margin-top: 5px;"><strong>Confidential - For Internal Use Only</strong></p>
+          </div>
+        </div>
+        
+        <!-- Print Footer -->
+        <div class="print-footer">
+          <div class="footer-left">
+            YOUR COMPANY NAME • Expense Detail
+          </div>
+          <div class="footer-right">
+            Page 1 of 1 • ${currentDate} ${currentTime}
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
+    
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+    }, 250);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
@@ -109,7 +1003,7 @@ function ExpenseViewModal({
                 Edit
               </button>
               <button 
-                onClick={() => window.print()}
+                onClick={handleViewPrint}
                 className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
               >
                 <Printer className="w-4 h-4" />
@@ -132,7 +1026,7 @@ function ExpenseViewModal({
           </div>
         </div>
 
-        {/* Modal Content - AssetDetailsView ki tarah design */}
+        {/* Modal Content */}
         <div className="p-6">
           {/* Details Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -210,7 +1104,7 @@ function ExpenseViewModal({
                     <Calendar className="w-4 h-4" />
                     <span className="text-sm">Date</span>
                   </div>
-                  <span className="text-sm text-foreground font-medium">{expense.date}</span>
+                  <span className="text-sm text-foreground font-medium">{formattedDate}</span>
                 </div>
                 
                 <div className="flex items-center justify-between">
@@ -227,7 +1121,7 @@ function ExpenseViewModal({
                     <span className="text-sm">Created At</span>
                   </div>
                   <span className="text-sm text-foreground font-medium">
-                    {new Date(expense.createdAt).toLocaleDateString()} at {new Date(expense.createdAt).toLocaleTimeString()}
+                    {formatDateWithMonthName(expense.createdAt)} at {new Date(expense.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                   </span>
                 </div>
               </div>
@@ -312,20 +1206,58 @@ export function RoznamchaView() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editExpense, setEditExpense] = useState<ExpenseItem | null>(null);
   const [viewExpense, setViewExpense] = useState<ExpenseItem | null>(null);
-  const [activeTab, setActiveTab] = useState("All"); // Changed default tab to "All"
+  const [activeTab, setActiveTab] = useState("All");
   const [filters, setFilters] = useState({
-    category: "All Categories",
     purpose: "",
     personResponsible: "",
     usage: ""
   });
   const [optimisticUpdates, setOptimisticUpdates] = useState<{[key: string]: ExpenseItem}>({});
 
-  // Fetch expenses from backend
-  const fetchExpenses = async () => {
+  // Pagination states
+  const [pagination, setPagination] = useState<PaginationData>({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 10,
+    hasNext: false,
+    hasPrevious: false
+  });
+
+  // Fetch expenses from backend with pagination
+  const fetchExpenses = async (page = 1) => {
     setLoading(true);
     try {
-      const response = await api.get(`${EXPENSES_API_URL}/get-all`);
+      // Build query parameters
+      const params = new URLSearchParams();
+      params.append('page', page.toString());
+      params.append('limit', '10');
+      params.append('sortBy', 'createdAt');
+      params.append('sortOrder', 'desc');
+      
+      // Add filters if they exist
+      if (filters.purpose) params.append('purpose', filters.purpose);
+      if (filters.personResponsible) params.append('personResponsible', filters.personResponsible);
+      if (filters.usage) params.append('usage', filters.usage);
+      
+      // Add search term if it exists
+      if (searchTerm) params.append('search', searchTerm);
+      
+      // Handle active tab filters
+      if (activeTab === "Daily") {
+        const today = new Date().toISOString().split('T')[0];
+        params.append('startDate', today);
+        params.append('endDate', today);
+      } else if (activeTab === "Monthly") {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+        params.append('startDate', firstDay);
+        params.append('endDate', lastDay);
+      }
+      
+      const response = await api.get(`${EXPENSES_API_URL}/get-all?${params.toString()}`);
+      
       if (response.data.success) {
         const fetchedExpenses = response.data.data;
         
@@ -338,6 +1270,7 @@ export function RoznamchaView() {
         });
         
         setExpenses(mergedExpenses);
+        setPagination(response.data.pagination);
       }
     } catch (error) {
       console.error("Error fetching expenses:", error);
@@ -363,7 +1296,7 @@ export function RoznamchaView() {
     }
   };
 
-  // Handle adding/editing expense with OPTIMISTIC UPDATES
+  // Handle adding/editing expense
   const handleSaveExpense = async (expenseData: any) => {
     try {
       let response;
@@ -401,7 +1334,7 @@ export function RoznamchaView() {
         response = await api.put(`${EXPENSES_API_URL}/${editExpense._id}`, expenseData);
         
         if (response.data.success) {
-          // Update with server data (in case server modified something)
+          // Update with server data
           setExpenses(prev => 
             prev.map(expense => 
               expense._id === editExpense._id ? response.data.data : expense
@@ -487,7 +1420,7 @@ export function RoznamchaView() {
           }
         } catch (fetchError) {
           // If can't fetch original, refresh all
-          fetchExpenses();
+          fetchExpenses(pagination.currentPage);
         }
         
         // Clear optimistic update
@@ -510,7 +1443,7 @@ export function RoznamchaView() {
     }
   };
 
-  // Handle delete expense with OPTIMISTIC UPDATES
+  // Handle delete expense
   const handleDeleteExpense = async (id: string) => {
     if (!confirm("Are you sure you want to delete this expense?")) return;
     
@@ -534,6 +1467,8 @@ export function RoznamchaView() {
       
       // Update stats in background
       fetchStats();
+      // Refresh current page to update pagination counts
+      fetchExpenses(pagination.currentPage);
       
     } catch (error) {
       console.error("Error deleting expense:", error);
@@ -590,94 +1525,76 @@ export function RoznamchaView() {
     setViewExpense(null);
   };
 
-  // Calculate total expenses
+  // Handle page change
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= pagination.totalPages) {
+      fetchExpenses(page);
+    }
+  };
+
+  // Handle filter change
+  const handleFilterChange = () => {
+    // Reset to page 1 when filters change
+    fetchExpenses(1);
+  };
+
+  // Handle active tab change
+  const handleActiveTabChange = (tab: string) => {
+    setActiveTab(tab);
+    // Reset to page 1 when tab changes
+    fetchExpenses(1);
+  };
+
+  // Calculate total expenses from current page data only
   const calculateTotalExpenses = () => {
     return expenses.reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
   };
 
-  // Calculate average daily expense (based on all time data)
-  const calculateAverageDailyExpense = () => {
-    if (expenses.length === 0) return 0;
+  // Generate pagination range
+  const getPaginationRange = () => {
+    const range = [];
+    const current = pagination.currentPage;
+    const total = pagination.totalPages;
+    const delta = 1;
     
-    // Get unique dates from expenses
-    const uniqueDates = new Set(expenses.map(e => e.date));
-    const totalDays = uniqueDates.size || 1;
-    const totalAmount = calculateTotalExpenses();
-    
-    return totalAmount / totalDays;
-  };
-
-  // Calculate monthly average
-  const calculateMonthlyAverage = () => {
-    if (expenses.length === 0) return 0;
-    
-    // Get unique months from expenses
-    const uniqueMonths = new Set(
-      expenses.map(e => {
-        const date = new Date(e.date);
-        return `${date.getFullYear()}-${date.getMonth()}`;
-      })
-    );
-    
-    const totalMonths = uniqueMonths.size || 1;
-    const totalAmount = calculateTotalExpenses();
-    
-    return totalAmount / totalMonths;
-  };
-
-  // Filter expenses based on search and filters ONLY - NO DATE FILTERING
-  const filteredExpenses = expenses.filter(expense => {
-    const searchMatch = searchTerm === "" ||
-      expense.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      expense.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      expense.personResponsible.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const purposeMatch = !filters.purpose || expense.purpose === filters.purpose;
-    const personMatch = !filters.personResponsible || expense.personResponsible === filters.personResponsible;
-    const usageMatch = !filters.usage || expense.usage === filters.usage;
-    
-    return searchMatch && purposeMatch && personMatch && usageMatch;
-  });
-
-  // Get stats based on active tab
-  const getCurrentStats = () => {
-    const total = calculateTotalExpenses();
-    
-    switch (activeTab) {
-      case "All":
-        return {
-          total: total,
-          average: total / Math.max(expenses.length, 1),
-          periodLabel: "All Time"
-        };
-      case "Daily":
-        return {
-          total: total,
-          average: calculateAverageDailyExpense(),
-          periodLabel: "All Time Daily"
-        };
-      case "Monthly":
-        return {
-          total: total,
-          average: calculateMonthlyAverage(),
-          periodLabel: "All Time Monthly"
-        };
-      default:
-        return {
-          total: total,
-          average: total / Math.max(expenses.length, 1),
-          periodLabel: "All Time"
-        };
+    for (let i = Math.max(2, current - delta); i <= Math.min(total - 1, current + delta); i++) {
+      range.push(i);
     }
+    
+    if (current - delta > 2) {
+      range.unshift('...');
+    }
+    if (current + delta < total - 1) {
+      range.push('...');
+    }
+    
+    if (total > 0) {
+      range.unshift(1);
+      if (total > 1) range.push(total);
+    }
+    
+    return range;
   };
-
-  const currentStats = getCurrentStats();
 
   // Initial data fetch
   useEffect(() => {
-    fetchExpenses();
+    fetchExpenses(1);
     fetchStats();
   }, []);
+
+  // Handle search with debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchExpenses(1);
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Handle filter changes
+  useEffect(() => {
+    fetchExpenses(1);
+  }, [filters.purpose, filters.personResponsible, filters.usage, activeTab]);
 
   return (
     <>
@@ -696,7 +1613,7 @@ export function RoznamchaView() {
             {["All", "Daily", "Monthly"].map((tab) => (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab)}
+                onClick={() => handleActiveTabChange(tab)}
                 className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${
                   activeTab === tab
                     ? "bg-primary text-primary-foreground"
@@ -719,12 +1636,15 @@ export function RoznamchaView() {
           </button>
         </div>
 
-        {/* Filters Row - REMOVED Period filter */}
+        {/* Filters Row */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <select
               value={filters.purpose}
-              onChange={(e) => setFilters({...filters, purpose: e.target.value})}
+              onChange={(e) => {
+                setFilters({...filters, purpose: e.target.value});
+                handleFilterChange();
+              }}
               className="bg-cms-card border border-border rounded-lg px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="">All Categories</option>
@@ -735,7 +1655,10 @@ export function RoznamchaView() {
             </select>
             <select
               value={filters.personResponsible}
-              onChange={(e) => setFilters({...filters, personResponsible: e.target.value})}
+              onChange={(e) => {
+                setFilters({...filters, personResponsible: e.target.value});
+                handleFilterChange();
+              }}
               className="bg-cms-card border border-border rounded-lg px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="">All Persons</option>
@@ -746,7 +1669,10 @@ export function RoznamchaView() {
             </select>
             <select
               value={filters.usage}
-              onChange={(e) => setFilters({...filters, usage: e.target.value})}
+              onChange={(e) => {
+                setFilters({...filters, usage: e.target.value});
+                handleFilterChange();
+              }}
               className="bg-cms-card border border-border rounded-lg px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="">All Usage</option>
@@ -766,194 +1692,240 @@ export function RoznamchaView() {
           </div>
         </div>
 
-        {/* Stats Cards - Updated to show all-time statistics */}
+        {/* Stats Cards */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="bg-cms-card rounded-xl p-4">
-            <p className="text-sm text-muted-foreground mb-1">Total All Time Expense</p>
-            <p className="text-2xl font-bold text-foreground">Rs. {currentStats.total.toLocaleString()}</p>
+            <p className="text-sm text-muted-foreground mb-1">Total Expense</p>
+            <p className="text-2xl font-bold text-foreground">Rs. {calculateTotalExpenses().toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground mt-1">Current Page</p>
           </div>
           <div className="bg-cms-card rounded-xl p-4">
             <p className="text-sm text-muted-foreground mb-1">Total Expenses Count</p>
-            <p className="text-2xl font-bold text-foreground">{expenses.length}</p>
+            <p className="text-2xl font-bold text-foreground">{pagination.totalItems}</p>
+            <p className="text-xs text-muted-foreground mt-1">All records</p>
           </div>
           <div className="bg-cms-card rounded-xl p-4">
-            <p className="text-sm text-muted-foreground mb-1">Avg. {activeTab === "All" ? "Per Expense" : activeTab} Expense</p>
+            <p className="text-sm text-muted-foreground mb-1">Avg. Expense</p>
             <p className="text-2xl font-bold text-foreground">
-              Rs. {currentStats.average.toLocaleString(undefined, { 
+              Rs. {(calculateTotalExpenses() / Math.max(expenses.length, 1)).toLocaleString(undefined, { 
                 maximumFractionDigits: 0 
               })}
             </p>
+            <p className="text-xs text-muted-foreground mt-1">Current page</p>
           </div>
         </div>
 
-        {/* Print Button */}
+        {/* Professional Print Button */}
         <div className="flex justify-end mb-4">
           <button 
-            onClick={() => window.print()}
+            onClick={() => handleProfessionalPrint(expenses, pagination.currentPage, pagination.totalPages, pagination.totalItems, calculateTotalExpenses)}
             className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
           >
             <Printer className="w-4 h-4" />
-            Print
+            Print Professional Report
           </button>
         </div>
 
-        {/* Table - Shows ALL expenses from all years */}
-     {/* Table - Shows ALL expenses from all years */}
-<div className="bg-cms-card rounded-xl overflow-hidden">
-  {loading && expenses.length === 0 ? (
-    <div className="p-8 text-center">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-      <p className="mt-2 text-sm text-muted-foreground">Loading expenses...</p>
-    </div>
-  ) : filteredExpenses.length === 0 ? (
-    <div className="p-8 text-center">
-      <p className="text-muted-foreground">No expenses found</p>
-      <button
-        onClick={() => setDialogOpen(true)}
-        className="mt-2 px-4 py-2 bg-primary text-white rounded-md text-sm"
-      >
-        Add Your First Expense
-      </button>
-    </div>
-  ) : (
-    <>
-      {/* Optimistic Updates Indicator */}
-      {Object.keys(optimisticUpdates).length > 0 && (
-        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2">
-          <p className="text-xs text-yellow-800 flex items-center gap-2">
-            <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-yellow-600"></div>
-            Saving changes... ({Object.keys(optimisticUpdates).length} item(s))
-          </p>
+        {/* Pagination Info */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-sm text-muted-foreground">
+            Showing {(pagination.currentPage - 1) * 10 + 1} to{" "}
+            {Math.min(pagination.currentPage * 10, pagination.totalItems)} of{" "}
+            {pagination.totalItems} expenses
+          </div>
+          <div className="text-sm text-muted-foreground">
+            Page {pagination.currentPage} of {pagination.totalPages}
+          </div>
         </div>
-      )}
-      
-     <table className="w-full">
-  <thead>
-    <tr className="bg-cms-table-header">
-      <th className="text-center px-4 py-3 text-sm font-medium text-foreground">#</th> {/* Changed to text-center */}
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Subject</th>
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Purpose</th>
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Usage</th>
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Price</th>
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Responsible</th>
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date & Time</th>
-      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Action</th>
-    </tr>
-  </thead>
-  <tbody>
-    {filteredExpenses.map((expense, index) => {
-      const isOptimistic = optimisticUpdates[expense._id];
-      const isTemp = expense._id.startsWith('temp-');
-      const serialNumber = index + 1; // Calculate serial number
-      
-      return (
-        <tr
-          key={expense._id}
-          className={`border-t border-border ${
-            index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'
-          } hover:bg-cms-card-hover transition-colors ${
-            isOptimistic ? 'opacity-80 bg-yellow-50' : ''
-          } ${isTemp ? 'opacity-70 bg-blue-50' : ''}`}
-        >
-          <td className="px-4 py-3 text-sm text-foreground font-medium text-center">
-            {serialNumber}
-          </td>
-          <td className="px-4 py-3 text-sm text-foreground">
-            <div className="flex items-center gap-2">
-              <div>
-                <p className="font-medium">{expense.subject}</p>
-                {/* Description removed as per request */}
-              </div>
-              {isOptimistic && (
-                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-yellow-600"></div>
-              )}
-              {isTemp && (
-                <span className="text-xs text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">Saving...</span>
-              )}
-            </div>
-          </td>
-          <td className="px-4 py-3 text-sm text-foreground">{expense.purpose}</td>
-          <td className="px-4 py-3 text-sm">
-            <span className={`px-2 py-1 rounded text-xs ${expense.usage === 'Personal' ? 'bg-primary/20 text-primary' : 'bg-cms-success/20 text-cms-success'}`}>
-              {expense.usage}
-            </span>
-          </td>
-          <td className="px-4 py-3 text-sm text-foreground font-medium">
-            Rs. {expense.price}
-          </td>
-          <td className="px-4 py-3 text-sm text-foreground">{expense.personResponsible}</td>
-          <td className="px-4 py-3 text-sm text-foreground">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-muted-foreground" />
-              <div>
-                <p>{expense.date}</p>
-                <p className="text-xs text-muted-foreground">{expense.time}</p>
-              </div>
-            </div>
-          </td>
-          <td className="px-4 py-3">
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => handleEditExpense(expense)}
-                disabled={isTemp || isOptimistic}
-                className={`p-1.5 hover:bg-secondary rounded transition-colors ${
-                  isTemp || isOptimistic 
-                    ? 'text-gray-400 cursor-not-allowed' 
-                    : 'text-blue-600 hover:text-blue-700'
-                }`}
-                title={isTemp || isOptimistic ? "Saving... Please wait" : "Edit"}
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
-              <button 
-                onClick={() => handleViewExpense(expense._id)}
-                disabled={isTemp}
-                className={`p-1.5 hover:bg-secondary rounded transition-colors ${
-                  isTemp 
-                    ? 'text-gray-400 cursor-not-allowed' 
-                    : 'text-green-600 hover:text-green-700'
-                }`}
-                title={isTemp ? "Saving... Please wait" : "View Details"}
-              >
-                <Eye className="w-4 h-4" />
-              </button>
-              <button 
-                onClick={() => handleDeleteExpense(expense._id)}
-                disabled={isTemp || isOptimistic}
-                className={`p-1.5 hover:bg-secondary rounded transition-colors ${
-                  isTemp || isOptimistic 
-                    ? 'text-gray-400 cursor-not-allowed' 
-                    : 'text-red-600 hover:text-red-700'
-                }`}
-                title={isTemp || isOptimistic ? "Saving... Please wait" : "Delete"}
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          </td>
-        </tr>
-      );
-    })}
-  </tbody>
-</table>
 
-      {/* Pagination */}
-      <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
-        <button className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground">
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        <button className="w-8 h-8 bg-primary text-primary-foreground rounded-md text-sm font-medium">1</button>
-        <button className="w-8 h-8 hover:bg-secondary text-muted-foreground rounded-md text-sm font-medium transition-colors">2</button>
-        <button className="w-8 h-8 hover:bg-secondary text-muted-foreground rounded-md text-sm font-medium transition-colors">3</button>
-        <span className="text-muted-foreground px-2">.....</span>
-        <button className="w-8 h-8 hover:bg-secondary text-muted-foreground rounded-md text-sm font-medium transition-colors">10</button>
-        <button className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground">
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
-    </>
-  )}
-</div>
+        {/* Table */}
+        <div className="bg-cms-card rounded-xl overflow-hidden">
+          {loading && expenses.length === 0 ? (
+            <div className="p-8 text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              <p className="mt-2 text-sm text-muted-foreground">Loading expenses...</p>
+            </div>
+          ) : expenses.length === 0 ? (
+            <div className="p-8 text-center">
+              <p className="text-muted-foreground">No expenses found</p>
+              <button
+                onClick={() => setDialogOpen(true)}
+                className="mt-2 px-4 py-2 bg-primary text-white rounded-md text-sm"
+              >
+                Add Your First Expense
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Optimistic Updates Indicator */}
+              {Object.keys(optimisticUpdates).length > 0 && (
+                <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2">
+                  <p className="text-xs text-yellow-800 flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-yellow-600"></div>
+                    Saving changes... ({Object.keys(optimisticUpdates).length} item(s))
+                  </p>
+                </div>
+              )}
+              
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-cms-table-header">
+                    <th className="text-center px-4 py-3 text-sm font-medium text-foreground">#</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Subject</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Purpose</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Usage</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Price</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Responsible</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date & Time</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenses.map((expense, index) => {
+                    const isOptimistic = optimisticUpdates[expense._id];
+                    const isTemp = expense._id.startsWith('temp-');
+                    const serialNumber = (pagination.currentPage - 1) * 10 + index + 1;
+                    const formattedDate = formatDateWithMonthName(expense.date);
+                    
+                    return (
+                      <tr
+                        key={expense._id}
+                        className={`border-t border-border ${
+                          index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'
+                        } hover:bg-cms-card-hover transition-colors ${
+                          isOptimistic ? 'opacity-80 bg-yellow-50' : ''
+                        } ${isTemp ? 'opacity-70 bg-blue-50' : ''}`}
+                      >
+                        <td className="px-4 py-3 text-sm text-foreground font-medium text-center">
+                          {serialNumber}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-foreground">
+                          <div className="flex items-center gap-2">
+                            <div>
+                              <p className="font-medium">{expense.subject}</p>
+                            </div>
+                            {isOptimistic && (
+                              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-yellow-600"></div>
+                            )}
+                            {isTemp && (
+                              <span className="text-xs text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">Saving...</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-foreground">{expense.purpose}</td>
+                        <td className="px-4 py-3 text-sm">
+                          <span className={`px-2 py-1 rounded text-xs ${expense.usage === 'Personal' ? 'bg-primary/20 text-primary' : 'bg-cms-success/20 text-cms-success'}`}>
+                            {expense.usage}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-foreground font-medium">
+                          Rs. {expense.price}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-foreground">{expense.personResponsible}</td>
+                        <td className="px-4 py-3 text-sm text-foreground">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4 text-muted-foreground" />
+                            <div>
+                              <p className="font-medium">{formattedDate}</p>
+                              <p className="text-xs text-muted-foreground">{expense.time}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => handleEditExpense(expense)}
+                              disabled={isTemp || isOptimistic}
+                              className={`p-1.5 hover:bg-secondary rounded transition-colors ${
+                                isTemp || isOptimistic 
+                                  ? 'text-gray-400 cursor-not-allowed' 
+                                  : 'text-blue-600 hover:text-blue-700'
+                              }`}
+                              title={isTemp || isOptimistic ? "Saving... Please wait" : "Edit"}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleViewExpense(expense._id)}
+                              disabled={isTemp}
+                              className={`p-1.5 hover:bg-secondary rounded transition-colors ${
+                                isTemp 
+                                  ? 'text-gray-400 cursor-not-allowed' 
+                                  : 'text-green-600 hover:text-green-700'
+                              }`}
+                              title={isTemp ? "Saving... Please wait" : "View Details"}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteExpense(expense._id)}
+                              disabled={isTemp || isOptimistic}
+                              className={`p-1.5 hover:bg-secondary rounded transition-colors ${
+                                isTemp || isOptimistic 
+                                  ? 'text-gray-400 cursor-not-allowed' 
+                                  : 'text-red-600 hover:text-red-700'
+                              }`}
+                              title={isTemp || isOptimistic ? "Saving... Please wait" : "Delete"}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {/* Enhanced Pagination */}
+              {pagination.totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
+                  <button 
+                    onClick={() => handlePageChange(pagination.currentPage - 1)}
+                    disabled={!pagination.hasPrevious}
+                    className={`p-1.5 rounded transition-colors ${
+                      pagination.hasPrevious
+                        ? 'hover:bg-secondary text-foreground'
+                        : 'text-muted-foreground cursor-not-allowed'
+                    }`}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  
+                  {getPaginationRange().map((page, index) => (
+                    page === '...' ? (
+                      <span key={`ellipsis-${index}`} className="px-2 text-muted-foreground">...</span>
+                    ) : (
+                      <button
+                        key={page}
+                        onClick={() => handlePageChange(page as number)}
+                        className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
+                          pagination.currentPage === page
+                            ? 'bg-primary text-primary-foreground'
+                            : 'hover:bg-secondary text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    )
+                  ))}
+                  
+                  <button 
+                    onClick={() => handlePageChange(pagination.currentPage + 1)}
+                    disabled={!pagination.hasNext}
+                    className={`p-1.5 rounded transition-colors ${
+                      pagination.hasNext
+                        ? 'hover:bg-secondary text-foreground'
+                        : 'text-muted-foreground cursor-not-allowed'
+                    }`}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
         {/* Add/Edit Expense Dialog */}
         <AddExpenseDialog
@@ -977,7 +1949,7 @@ export function RoznamchaView() {
             handleViewModalClose();
             handleDeleteExpense(viewExpense._id);
           }}
-          allExpenses={expenses} // Pass expenses as prop
+          allExpenses={expenses}
         />
       )}
     </>

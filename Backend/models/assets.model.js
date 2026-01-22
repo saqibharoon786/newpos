@@ -41,7 +41,6 @@ const assetSchema = new mongoose.Schema({
   },
   purchaseDate: {
     type: Date,
-    default: Date.now
   },
   purchaseTime: {
     type: String

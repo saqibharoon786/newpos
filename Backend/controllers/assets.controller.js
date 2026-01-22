@@ -7,9 +7,14 @@ const Asset = require('../models/assets.model');
 // In your assets.controller.js, update the createAsset function:
 
 
-
 exports.createAsset = async (req, res) => {
   try {
+    // ✅ IMPORTANT: Log everything to debug
+    console.log('📥 REQUEST BODY (FormData fields):', req.body);
+    console.log('📥 REQUEST FILE (Multer):', req.file);
+    console.log('📥 ALL REQUEST FIELDS:', Object.keys(req.body));
+    
+    // ✅ Extract FormData fields
     const {
       assetName,
       category,
@@ -22,13 +27,17 @@ exports.createAsset = async (req, res) => {
       purchasePrice,
       purchaseFrom,
       invoiceNo,
-      date,
-      time
+      purchaseDate,  // ✅ Changed from 'date' to 'purchaseDate' to match frontend
+      purchaseTime   // ✅ Changed from 'time' to 'purchaseTime' to match frontend
     } = req.body;
 
-    console.log('📥 Received asset data:', req.body);
-    // console.log('📥 File received from Multer:', a);
-    console.log('📥 Files received:', req.files);
+    console.log('📝 Parsed FormData fields:', {
+      assetName,
+      category,
+      quantity,
+      purchaseDate,  // This should show the date from frontend
+      purchaseTime   // This should show the time from frontend
+    });
 
     // Basic validation
     if (!assetName || !category || !condition || !department) {
@@ -38,18 +47,42 @@ exports.createAsset = async (req, res) => {
       });
     }
 
-    // Parse date and time
-    let purchaseDate = new Date();
-    if (date) {
-      if (typeof date === 'string' && date.includes('/')) {
-        const [day, month, year] = date.split('/').map(Number);
-        purchaseDate = new Date(year, month - 1, day);
-      } else {
-        purchaseDate = new Date(date);
+    // ✅ Parse date - IMPORTANT FIX
+    let parsedPurchaseDate = new Date();
+    if (purchaseDate) {
+      console.log('📅 Raw purchaseDate from frontend:', purchaseDate);
+      
+      // Try to parse different date formats
+      try {
+        // Format 1: YYYY-MM-DD (ISO format from frontend)
+        if (purchaseDate.includes('-')) {
+          const [year, month, day] = purchaseDate.split('-').map(Number);
+          parsedPurchaseDate = new Date(year, month - 1, day);
+        }
+        // Format 2: DD/MM/YYYY
+        else if (purchaseDate.includes('/')) {
+          const [day, month, year] = purchaseDate.split('/').map(Number);
+          parsedPurchaseDate = new Date(year, month - 1, day);
+        }
+        // Format 3: Already a Date object or timestamp
+        else {
+          parsedPurchaseDate = new Date(purchaseDate);
+        }
+        
+        // Check if date is valid
+        if (isNaN(parsedPurchaseDate.getTime())) {
+          console.log('⚠️ Invalid date, using current date');
+          parsedPurchaseDate = new Date();
+        }
+        
+        console.log('📅 Parsed purchaseDate:', parsedPurchaseDate.toISOString());
+      } catch (error) {
+        console.log('⚠️ Date parsing error, using current date:', error);
+        parsedPurchaseDate = new Date();
       }
     }
 
-    // Parse purchasePrice properly
+    // Parse purchasePrice
     let parsedPurchasePrice = null;
     if (purchasePrice && purchasePrice !== "" && purchasePrice !== null) {
       try {
@@ -62,17 +95,15 @@ exports.createAsset = async (req, res) => {
       }
     }
 
-    // IMPORTANT: Receipt image ka FULL PATH save karo
+    // Handle receipt image
     let receiptImagePath = null;
     if (req.file) {
-      // Yeh path frontend ke liye perfect hai
-      // Agar tumne app.js mein app.use('/uploads', express.static('uploads')) kiya hai
+      // Save relative path for frontend access
       receiptImagePath = `/uploads/general/${req.file.filename}`;
-      
-      // Optional: Agar full URL chahiye (production ke liye better)
-      // receiptImagePath = `${req.protocol}://${req.get('host')}/uploads/receipts/${req.file.filename}`;
+      console.log('📸 Receipt image saved at:', receiptImagePath);
     }
 
+    // ✅ Prepare asset data
     const assetData = {
       assetName: String(assetName).trim(),
       category: String(category).trim(),
@@ -85,28 +116,26 @@ exports.createAsset = async (req, res) => {
       purchasePrice: parsedPurchasePrice,
       purchaseFrom: purchaseFrom ? String(purchaseFrom).trim() : null,
       invoiceNo: invoiceNo ? String(invoiceNo).trim() : null,
-      purchaseDate,
-      purchaseTime: time || null,
-      receiptImage: receiptImagePath,   // ← Yeh line fix ki hai
+      purchaseDate: parsedPurchaseDate,  // ✅ Use the parsed date
+      purchaseTime: purchaseTime || null,
+      receiptImage: receiptImagePath,
       status: 'Active'
     };
 
-    if (req.user) {
-      assetData.createdBy = req.user.id;
-    }
-
-    console.log('📤 Creating asset with data:', {
+    console.log('📤 Final asset data to save:', {
       ...assetData,
-      fileInfo: req.file ? {
-        filename: req.file.filename,
-        originalname: req.file.originalname,
-        size: req.file.size,
-        path: req.file.path,
-        savedUrl: receiptImagePath
-      } : 'No file uploaded'
+      purchaseDate: assetData.purchaseDate.toISOString()
     });
 
+    // ✅ Create the asset
     const asset = await Asset.create(assetData);
+
+    console.log('✅ Asset created successfully:', {
+      id: asset._id,
+      assetName: asset.assetName,
+      purchaseDate: asset.purchaseDate,
+      purchaseTime: asset.purchaseTime
+    });
 
     res.status(201).json({
       success: true,
@@ -115,6 +144,7 @@ exports.createAsset = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error creating asset:', error);
+    console.error('❌ Error stack:', error.stack);
 
     if (error instanceof multer.MulterError) {
       if (error.code === 'LIMIT_FILE_SIZE') {
@@ -128,7 +158,10 @@ exports.createAsset = async (req, res) => {
       return res.status(400).json({ success: false, error: messages.join(', ') });
     }
 
-    res.status(500).json({ success: false, error: 'Server error: ' + error.message });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Server error: ' + error.message 
+    });
   }
 };
 // @desc    Get all assets

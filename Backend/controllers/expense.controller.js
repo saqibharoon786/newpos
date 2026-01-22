@@ -2,6 +2,7 @@ const Expense = require("../models/expense.model");
 const mongoose = require("mongoose");
 
 // Get all expenses with filters
+// Backend: expenses.controller.js
 exports.getAllExpenses = async (req, res) => {
   try {
     const {
@@ -16,6 +17,10 @@ exports.getAllExpenses = async (req, res) => {
       endDate,
       search,
     } = req.query;
+
+    // Convert to numbers and validate
+    const currentPage = Math.max(1, parseInt(page));
+    const pageSize = Math.min(100, Math.max(1, parseInt(limit))); // Max 100 per page
 
     const query = {};
 
@@ -59,23 +64,34 @@ exports.getAllExpenses = async (req, res) => {
     const sortDirection = sortOrder === "desc" ? -1 : 1;
     const sortOptions = { [sortBy]: sortDirection };
 
-    const expenses = await Expense.find(query)
-      .sort(sortOptions)
-      .limit(Number(limit))
-      .skip((Number(page) - 1) * Number(limit))
-      .select("-__v");
+    // Calculate skip value
+    const skip = (currentPage - 1) * pageSize;
 
-    const total = await Expense.countDocuments(query);
+    // Execute queries in parallel for better performance
+    const [expenses, total] = await Promise.all([
+      Expense.find(query)
+        .sort(sortOptions)
+        .limit(pageSize)
+        .skip(skip)
+        .select("-__v"),
+      Expense.countDocuments(query),
+    ]);
+
+    // Calculate pagination info
+    const totalPages = Math.ceil(total / pageSize);
+    const hasNext = currentPage < totalPages;
+    const hasPrevious = currentPage > 1;
 
     res.json({
       success: true,
       data: expenses,
       pagination: {
-        currentPage: Number(page),
-        totalPages: Math.ceil(total / Number(limit)),
+        currentPage: currentPage,
+        totalPages: totalPages,
         totalItems: total,
-        hasNext: Number(page) * Number(limit) < total,
-        hasPrevious: Number(page) > 1,
+        itemsPerPage: pageSize,
+        hasNext: hasNext,
+        hasPrevious: hasPrevious,
       },
     });
   } catch (error) {
