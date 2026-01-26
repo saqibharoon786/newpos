@@ -14,6 +14,8 @@ const menuItems = [
   { id: "assets", label: "Assets", icon: Package },
   { id: "customers", label: "Customers", icon: Users },
   { id: "employees", label: "Employee", icon: UserCog },
+  { id: "Finance", label: "Finance", icon: UserCog },
+
 ];
 
 export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
