@@ -13,7 +13,9 @@ exports.createCustomer = async (req, res) => {
       province,
       city,
       photo,
-      documents
+      documents,
+      amount,
+      amountPaid  // ← ADD THIS
     } = req.body;
 
     // Only check basic required fields
@@ -21,6 +23,16 @@ exports.createCustomer = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Customer name and phone number are required'
+      });
+    }
+
+    // Validate amount field
+    const totalAmount = parseFloat(amount) || 0;
+
+    if (totalAmount < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Total amount cannot be negative'
       });
     }
 
@@ -35,8 +47,31 @@ exports.createCustomer = async (req, res) => {
       province: province || '',
       city: city || '',
       photo: photo || null,
-      documents: documents || []
+      documents: documents || [],
+      amount: totalAmount,
     };
+
+    // Handle amountPaid if provided
+    if (typeof amountPaid !== 'undefined') {
+      const paidAmountNum = parseFloat(amountPaid) || 0;
+      
+      if (paidAmountNum < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Paid amount cannot be negative'
+        });
+      }
+      
+      if (paidAmountNum > totalAmount) {
+        return res.status(400).json({
+          success: false,
+          message: 'Paid amount cannot exceed total amount'
+        });
+      }
+      
+      customerData.amountPaid = paidAmountNum;
+    }
+    // If amountPaid not provided, it defaults to 0 in the model
 
     const customer = new Customer(customerData);
     await customer.save();
@@ -49,7 +84,7 @@ exports.createCustomer = async (req, res) => {
 
   } catch (error) {
     console.error('Create customer error:', error);
-    
+
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -57,7 +92,7 @@ exports.createCustomer = async (req, res) => {
         message: messages.join(', ')
       });
     }
-    
+
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
@@ -93,7 +128,7 @@ exports.getAllCustomers = async (req, res) => {
 
     // Build filter object
     const filter = {};
-    
+
     if (search) {
       filter.$or = [
         { customerName: { $regex: search, $options: 'i' } },
@@ -147,7 +182,7 @@ exports.getAllCustomers = async (req, res) => {
 exports.getCustomerById = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Check if it's customerId or MongoDB _id
     let customer;
     if (id.startsWith('CUST-')) {
@@ -170,7 +205,7 @@ exports.getCustomerById = async (req, res) => {
 
   } catch (error) {
     console.error('Get customer error:', error);
-    
+
     if (error.name === 'CastError') {
       return res.status(400).json({
         success: false,
@@ -207,11 +242,48 @@ exports.updateCustomer = async (req, res) => {
       });
     }
 
-    // Update customer
+    // Validate amount fields if they're being updated
+    if (updates.amount !== undefined || updates.amountPaid !== undefined) {
+      const currentAmount = customer.amount;
+      const currentAmountPaid = customer.amountPaid;
+      
+      const newAmount = updates.amount !== undefined ? parseFloat(updates.amount) : currentAmount;
+      const newAmountPaid = updates.amountPaid !== undefined ? parseFloat(updates.amountPaid) : currentAmountPaid;
+      
+      // Validate new values
+      if (newAmount < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Total amount cannot be negative'
+        });
+      }
+      
+      if (newAmountPaid < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Paid amount cannot be negative'
+        });
+      }
+      
+      if (newAmountPaid > newAmount) {
+        return res.status(400).json({
+          success: false,
+          message: 'Paid amount cannot exceed total amount'
+        });
+      }
+    }
+
+    // Update customer fields
     Object.keys(updates).forEach(key => {
-      customer[key] = updates[key];
+      if (key === 'amount' || key === 'amountPaid') {
+        // Convert to number if it's a string
+        customer[key] = parseFloat(updates[key]);
+      } else if (key !== 'paymentStatus') { // Don't allow direct paymentStatus updates
+        customer[key] = updates[key];
+      }
     });
 
+    // If amount or amountPaid is updated, paymentStatus will be auto-calculated in pre-save
     customer.updatedAt = Date.now();
     await customer.save();
 
@@ -223,7 +295,7 @@ exports.updateCustomer = async (req, res) => {
 
   } catch (error) {
     console.error('Update customer error:', error);
-    
+
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -231,11 +303,18 @@ exports.updateCustomer = async (req, res) => {
         message: messages.join(', ')
       });
     }
-    
+
     if (error.name === 'CastError') {
       return res.status(400).json({
         success: false,
         message: 'Invalid customer ID'
+      });
+    }
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Duplicate value found. Customer ID, CNIC or email may already exist.'
       });
     }
 
@@ -276,7 +355,7 @@ exports.deleteCustomer = async (req, res) => {
 
   } catch (error) {
     console.error('Delete customer error:', error);
-    
+
     if (error.name === 'CastError') {
       return res.status(400).json({
         success: false,
@@ -406,7 +485,7 @@ exports.getCustomerStats = async (req, res) => {
     const totalCustomers = await Customer.countDocuments();
     const activeCustomers = await Customer.countDocuments({ isActive: true });
     const inactiveCustomers = await Customer.countDocuments({ isActive: false });
-    
+
     // Group by province
     const provinceStats = await Customer.aggregate([
       {

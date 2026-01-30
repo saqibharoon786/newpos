@@ -439,7 +439,7 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
               </div>
               <div class="print-row">
                 <span class="print-label">Purchase Date:</span>
-                <span class="print-value">${formatDate(purchase?.purchaseDate || '')}</span>
+              <span class="print-value">${formatDate(purchase?.purchaseDate || '')}</span>dsvarf  t~fr
               </div>
               <div class="print-row">
                 <span class="print-label">Receipt No:</span>

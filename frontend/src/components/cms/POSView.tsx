@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react";
-import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2 } from "lucide-react";
-import { AddSaleDialog } from "./AddSaleDialog";
+import { useState, useEffect, useRef } from "react";
+import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package, ChevronDown, CheckCircle, DollarSign, History } from "lucide-react";
 import { SaleDetailsView } from "./SaleDetailsView";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
@@ -32,6 +31,13 @@ interface Sale {
   productionCost: string;
   sellingPrice: string;
   discount: string;
+  advancePayment: number;
+  
+  // Payment tracking fields
+  amountPaid: number;
+  remainingAmount: number;
+  paymentStatus: 'none' | 'partial' | 'paid';
+  
   buyerName: string;
   buyerAddress: string;
   buyerPhone: string;
@@ -39,6 +45,7 @@ interface Sale {
   buyerCnic: string;
   buyerCompany: string;
   finalAmount: string;
+  receiptImage?: string;
   
   // Vehicle Details - These might be populated from purchase
   vehicleName?: string;
@@ -56,6 +63,877 @@ interface Sale {
   updatedAt: string;
 }
 
+interface PaymentHistory {
+  _id: string;
+  saleId: string;
+  amount: number;
+  paymentDate: string;
+  paymentMethod: string;
+  notes?: string;
+  invoiceNo?: string;
+  materialName?: string;
+}
+
+const PaymentStatusBadge = ({ status }: { status: 'none' | 'partial' | 'paid' }) => {
+  const getStatusConfig = (status: string) => {
+    switch (status) {
+      case 'paid':
+        return { bg: 'bg-green-100', text: 'text-green-800', label: 'Paid' };
+      case 'partial':
+        return { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Partial' };
+      case 'none':
+        return { bg: 'bg-red-100', text: 'text-red-800', label: 'Unpaid' };
+      default:
+        return { bg: 'bg-gray-100', text: 'text-gray-800', label: 'Unknown' };
+    }
+  };
+
+  const config = getStatusConfig(status);
+  return (
+    <span className={`px-2 py-1 text-xs ${config.bg} ${config.text} rounded-full`}>
+      {config.label}
+    </span>
+  );
+};
+
+const PaymentModal = ({ 
+  open, 
+  onClose, 
+  sale, 
+  onPaymentSuccess 
+}: { 
+  open: boolean;
+  onClose: () => void;
+  sale: Sale | null;
+  onPaymentSuccess: (newPayment: PaymentHistory) => void;
+}) => {
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [paymentMethod, setPaymentMethod] = useState<string>("cash");
+  const [notes, setNotes] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const [showYearDropdown, setShowYearDropdown] = useState(false);
+  const calendarRef = useRef<HTMLDivElement>(null);
+  const years = Array.from({ length: 21 }, (_, i) => new Date().getFullYear() - 10 + i);
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  useEffect(() => {
+    if (open && sale) {
+      setPaymentAmount("");
+      setPaymentDate(new Date().toISOString().split('T')[0]);
+      setSelectedDate(new Date());
+      setPaymentMethod("cash");
+      setNotes("");
+    }
+  }, [open, sale]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
+        setCalendarOpen(false);
+        setShowYearDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const getDaysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
+  const getFirstDayOfMonth = (y: number, m: number) => new Date(y, m, 1).getDay();
+
+  const handlePrevMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear(y => y - 1);
+    } else {
+      setCurrentMonth(m => m - 1);
+    }
+    setShowYearDropdown(false);
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear(y => y + 1);
+    } else {
+      setCurrentMonth(m => m + 1);
+    }
+    setShowYearDropdown(false);
+  };
+
+  const handleDateSelect = (day: number) => {
+    const date = new Date(currentYear, currentMonth, day);
+    setSelectedDate(date);
+    setPaymentDate(date.toISOString().split('T')[0]);
+    setCalendarOpen(false);
+    setShowYearDropdown(false);
+  };
+
+  const handleToday = () => {
+    const today = new Date();
+    setSelectedDate(today);
+    setPaymentDate(today.toISOString().split('T')[0]);
+    setCurrentMonth(today.getMonth());
+    setCurrentYear(today.getFullYear());
+    setCalendarOpen(false);
+    setShowYearDropdown(false);
+  };
+
+  const handleYearSelect = (year: number) => {
+    setCurrentYear(year);
+    setShowYearDropdown(false);
+  };
+
+  const renderCalendar = () => (
+    calendarOpen && (
+      <div 
+        ref={calendarRef}
+        className="absolute z-[999] mt-1 w-80 bg-background border border-border rounded-lg shadow-2xl"
+        style={{ 
+          top: '100%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          marginTop: '4px',
+        }}
+      >
+        <div className="p-4 border-b border-border">
+          <div className="flex items-center justify-between mb-3">
+            <button 
+              onClick={handlePrevMonth} 
+              className="p-1 hover:bg-muted rounded"
+            >
+              <ChevronLeft className="w-5 h-5 text-muted-foreground" />
+            </button>
+            
+            <div className="flex items-center gap-1 relative">
+              <div className="text-sm font-semibold text-foreground min-w-[100px] text-center">
+                {monthNames[currentMonth]}
+              </div>
+              <button 
+                onClick={() => setShowYearDropdown(!showYearDropdown)}
+                className="flex items-center gap-1 px-2 py-1 text-sm font-semibold text-foreground hover:bg-muted rounded"
+              >
+                {currentYear}
+                <ChevronDown className={`w-4 h-4 transition-transform ${showYearDropdown ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {showYearDropdown && (
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-1 w-32 max-h-48 overflow-y-auto bg-background border border-border rounded-md shadow-lg z-10">
+                  {years.map(year => (
+                    <button
+                      key={year}
+                      onClick={() => handleYearSelect(year)}
+                      className={`w-full px-3 py-2 text-sm text-left hover:bg-muted ${year === currentYear ? 'bg-primary/10 text-primary font-semibold' : 'text-foreground'}`}
+                    >
+                      {year}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <button 
+              onClick={handleNextMonth} 
+              className="p-1 hover:bg-muted rounded"
+            >
+              <ChevronRight className="w-5 h-5 text-muted-foreground" />
+            </button>
+          </div>
+          <button
+            onClick={handleToday}
+            className="w-full py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+          >
+            Today
+          </button>
+        </div>
+
+        <div className="p-4">
+          <div className="grid grid-cols-7 mb-2">
+            {dayNames.map(day => (
+              <div key={day} className="text-center text-xs text-muted-foreground font-medium">
+                {day}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: getFirstDayOfMonth(currentYear, currentMonth) }).map((_, i) => (
+              <div key={`empty-${i}`} className="h-9" />
+            ))}
+
+            {Array.from({ length: getDaysInMonth(currentYear, currentMonth) }).map((_, index) => {
+              const day = index + 1;
+              const isToday = new Date().getDate() === day && 
+                              new Date().getMonth() === currentMonth &&
+                              new Date().getFullYear() === currentYear;
+              const isSelected = selectedDate && 
+                                selectedDate.getDate() === day &&
+                                selectedDate.getMonth() === currentMonth &&
+                                selectedDate.getFullYear() === currentYear;
+
+              return (
+                <button
+                  key={day}
+                  onClick={() => handleDateSelect(day)}
+                  className={`
+                    h-9 flex items-center justify-center text-sm rounded-md transition-colors
+                    ${isSelected 
+                      ? 'bg-primary text-primary-foreground' 
+                      : isToday 
+                      ? 'bg-blue-100 text-blue-600 font-semibold' 
+                      : 'hover:bg-muted text-foreground'
+                    }
+                  `}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    )
+  );
+
+  const handleSubmit = async () => {
+    if (!sale) return;
+
+    const amount = parseFloat(paymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast({
+        title: "Error",
+        description: "Please enter a valid payment amount",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const remainingAmount = parseFloat(sale.finalAmount || sale.sellingPrice) - sale.amountPaid;
+    if (amount > remainingAmount) {
+      toast({
+        title: "Error",
+        description: `Payment amount cannot exceed remaining amount of Rs. ${remainingAmount.toLocaleString()}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const newAmountPaid = sale.amountPaid + amount;
+      const newPaymentStatus = newAmountPaid >= parseFloat(sale.finalAmount || sale.sellingPrice) ? 'paid' : 
+                              newAmountPaid > 0 ? 'partial' : 'none';
+      const newRemainingAmount = parseFloat(sale.finalAmount || sale.sellingPrice) - newAmountPaid;
+      
+      const paymentRecord: PaymentHistory = {
+        _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        saleId: sale._id,
+        amount: amount,
+        paymentDate: paymentDate,
+        paymentMethod: paymentMethod,
+        notes: notes || `Payment of Rs. ${amount.toLocaleString()}`,
+        invoiceNo: sale.invoiceNo,
+        materialName: sale.materialName
+      };
+
+      const updateData = {
+        amountPaid: newAmountPaid,
+        paymentStatus: newPaymentStatus,
+        remainingAmount: newRemainingAmount
+      };
+
+      const response = await api.put(
+        `${SALES_API_URL}/${sale._id}`,
+        updateData
+      );
+
+      if (response.data.success) {
+        toast({
+          title: "Success",
+          description: `Payment of Rs. ${amount.toLocaleString()} recorded successfully!`,
+        });
+        onPaymentSuccess(paymentRecord);
+        onClose();
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to record payment",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!open || !sale) return null;
+
+  const remainingAmount = parseFloat(sale.finalAmount || sale.sellingPrice) - sale.amountPaid;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-md">
+        <div className="bg-cms-table-header px-6 py-3 border-b border-border flex justify-between items-center">
+          <p className="text-xs text-muted-foreground">
+            Record Payment
+          </p>
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-cms-card-hover rounded-md transition-colors"
+          >
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="p-6">
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-foreground">Record Payment</h2>
+            <p className="text-sm text-muted-foreground">
+              Sale #{sale.invoiceNo} - {sale.materialName}
+            </p>
+          </div>
+
+          <div className="mb-6 p-4 bg-cms-card rounded-lg border border-border">
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Total Price</p>
+                <p className="text-lg font-semibold text-foreground">
+                  Rs. {parseFloat(sale.finalAmount || sale.sellingPrice).toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Amount Paid</p>
+                <p className="text-lg font-semibold text-green-600">
+                  Rs. {sale.amountPaid.toLocaleString()}
+                </p>
+              </div>
+            </div>
+            <div className="pt-3 border-t border-border">
+              <p className="text-xs text-muted-foreground">Remaining Amount</p>
+              <p className="text-xl font-bold text-red-600">
+                Rs. {remainingAmount.toLocaleString()}
+              </p>
+            </div>
+            <div className="mt-3">
+              <PaymentStatusBadge status={sale.paymentStatus} />
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Payment Amount *</label>
+              <div className="relative">
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  max={remainingAmount}
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  placeholder={`Maximum: Rs. ${remainingAmount.toLocaleString()}`}
+                  className="w-full bg-cms-card border border-border rounded-md pl-10 pr-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Max: Rs. {remainingAmount.toLocaleString()}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Payment Date *</label>
+              <div className="relative">
+                <div 
+                  className="relative cursor-pointer"
+                  onClick={() => setCalendarOpen(!calendarOpen)}
+                >
+                  <input
+                    type="text"
+                    readOnly
+                    value={new Date(paymentDate).toLocaleDateString('en-GB', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric'
+                    })}
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 pr-10 text-sm text-foreground cursor-pointer"
+                  />
+                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                </div>
+                {renderCalendar()}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Payment Method</label>
+              <select
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="cash">Cash</option>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="cheque">Cheque</option>
+                <option value="online">Online Payment</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Notes (Optional)</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Add any payment notes..."
+                rows={3}
+                className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-6 border-t border-border mt-6">
+            <button
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="px-5 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting || !paymentAmount}
+              className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  Record Payment
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const MarkAsPaidModal = ({ 
+  open, 
+  onClose, 
+  sale, 
+  onPaymentSuccess 
+}: { 
+  open: boolean;
+  onClose: () => void;
+  sale: Sale | null;
+  onPaymentSuccess: (paymentRecord: PaymentHistory) => void;
+}) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleMarkPaid = async () => {
+    if (!sale) return;
+
+    setIsSubmitting(true);
+    try {
+      const totalAmount = parseFloat(sale.finalAmount || sale.sellingPrice);
+      const remainingAmount = totalAmount - sale.amountPaid;
+      
+      const paymentRecord: PaymentHistory = {
+        _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        saleId: sale._id,
+        amount: remainingAmount,
+        paymentDate: new Date().toISOString().split('T')[0],
+        paymentMethod: 'cash',
+        notes: 'Marked as fully paid',
+        invoiceNo: sale.invoiceNo,
+        materialName: sale.materialName
+      };
+
+      const updateData = {
+        amountPaid: totalAmount,
+        paymentStatus: 'paid',
+        remainingAmount: 0
+      };
+
+      const response = await api.put(
+        `${SALES_API_URL}/${sale._id}`,
+        updateData
+      );
+
+      if (response.data.success) {
+        toast({
+          title: "Success",
+          description: `Sale marked as fully paid!`,
+        });
+        onPaymentSuccess(paymentRecord);
+        onClose();
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to mark as paid",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!open || !sale) return null;
+
+  const totalAmount = parseFloat(sale.finalAmount || sale.sellingPrice);
+  const remainingAmount = totalAmount - sale.amountPaid;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-md">
+        <div className="bg-cms-table-header px-6 py-3 border-b border-border flex justify-between items-center">
+          <p className="text-xs text-muted-foreground">
+            Mark as Paid
+          </p>
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-cms-card-hover rounded-md transition-colors"
+          >
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="p-6">
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-foreground">Mark as Fully Paid</h2>
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to mark this sale as fully paid?
+            </p>
+          </div>
+
+          <div className="mb-6 p-4 bg-cms-card rounded-lg border border-border">
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Total Price</p>
+                <p className="text-lg font-semibold text-foreground">
+                  Rs. {totalAmount.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Currently Paid</p>
+                <p className="text-lg font-semibold text-green-600">
+                  Rs. {sale.amountPaid.toLocaleString()}
+                </p>
+              </div>
+            </div>
+            <div className="pt-3 border-t border-border">
+              <p className="text-xs text-muted-foreground">Remaining to Pay</p>
+              <p className="text-xl font-bold text-red-600">
+                Rs. {remainingAmount.toLocaleString()}
+              </p>
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <PaymentStatusBadge status={sale.paymentStatus} />
+              <span className="text-xs text-muted-foreground">→</span>
+              <PaymentStatusBadge status={'paid'} />
+            </div>
+          </div>
+
+          <div className="mb-6">
+            <div className="flex items-center gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="w-6 h-6 bg-yellow-100 rounded-full flex items-center justify-center">
+                <CheckCircle className="w-4 h-4 text-yellow-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-yellow-800">Note</p>
+                <p className="text-xs text-yellow-700">
+                  This will update the payment status to "Paid" and set amount paid equal to total price.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-6 border-t border-border">
+            <button
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="px-5 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleMarkPaid}
+              disabled={isSubmitting}
+              className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  Mark as Paid
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const PaymentHistoryModal = ({
+  open,
+  onClose,
+  sale,
+  allPayments
+}: {
+  open: boolean;
+  onClose: () => void;
+  sale: Sale | null;
+  allPayments: PaymentHistory[];
+}) => {
+  const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (open && sale) {
+      fetchPaymentHistory();
+    }
+  }, [open, sale]);
+
+  const fetchPaymentHistory = () => {
+    if (!sale) return;
+    
+    setLoading(true);
+    try {
+      const salePayments = allPayments.filter(
+        payment => payment.saleId === sale._id
+      );
+      
+      const sortedPayments = [...salePayments].sort((a, b) => 
+        new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime()
+      );
+      
+      setPaymentHistory(sortedPayments);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load payment history",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open || !sale) return null;
+
+  const totalAmount = parseFloat(sale.finalAmount || sale.sellingPrice);
+  const remainingAmount = totalAmount - sale.amountPaid;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-4xl max-h-[80vh] overflow-y-auto">
+        <div className="bg-cms-table-header px-6 py-3 border-b border-border flex justify-between items-center sticky top-0 z-10">
+          <div>
+            <p className="text-xs text-muted-foreground">Payment History</p>
+            <h2 className="text-lg font-bold text-foreground">
+              Sale #{sale.invoiceNo} - {sale.materialName}
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-cms-card-hover rounded-md transition-colors"
+          >
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="p-6">
+          <div className="mb-6 p-4 bg-cms-card rounded-lg border border-border">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Total Price</p>
+                <p className="text-lg font-semibold text-foreground">
+                  Rs. {totalAmount.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Amount Paid</p>
+                <p className="text-lg font-semibold text-green-600">
+                  Rs. {sale.amountPaid.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Remaining Amount</p>
+                <p className="text-lg font-bold text-red-600">
+                  Rs. {remainingAmount.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Payment Status</p>
+                <div className="mt-1">
+                  <PaymentStatusBadge status={sale.paymentStatus} />
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 text-xs text-muted-foreground">
+              Total Payments: {paymentHistory.length} | 
+              Total Paid: Rs. {sale.amountPaid.toLocaleString()} | 
+              Remaining: Rs. {remainingAmount.toLocaleString()}
+            </div>
+          </div>
+
+          <div className="mb-6">
+            <h3 className="text-base font-semibold text-foreground mb-3 flex items-center gap-2">
+              <History className="w-5 h-5" />
+              Payment Records (Date Wise)
+            </h3>
+            
+            {loading ? (
+              <div className="flex justify-center items-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                <span className="ml-2 text-muted-foreground">Loading payment history...</span>
+              </div>
+            ) : paymentHistory.length === 0 ? (
+              <div className="text-center py-12 border border-dashed border-border rounded-lg">
+                <History className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground">No payment records found</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Record your first payment to see history here
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-cms-table-header">
+                      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Sr. No.</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Payment Method</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Amount</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Notes</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Running Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paymentHistory.map((payment, index) => {
+                      let runningTotal = 0;
+                      for (let i = 0; i <= index; i++) {
+                        runningTotal += paymentHistory[i].amount;
+                      }
+                      
+                      return (
+                        <tr 
+                          key={payment._id || index} 
+                          className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'}`}
+                        >
+                          <td className="px-4 py-3 text-sm text-muted-foreground">
+                            {index + 1}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-foreground">
+                            {new Date(payment.paymentDate).toLocaleDateString('en-GB', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
+                            })}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-foreground capitalize">
+                            {payment.paymentMethod.replace('_', ' ')}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-semibold text-green-600">
+                            Rs. {payment.amount.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-muted-foreground">
+                            {payment.notes || '-'}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-medium text-blue-600">
+                            Rs. {runningTotal.toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    
+                    <tr className="border-t-2 border-border bg-cms-card">
+                      <td className="px-4 py-3 text-sm font-semibold text-foreground" colSpan={3}>
+                        Total Paid
+                      </td>
+                      <td className="px-4 py-3 text-lg font-bold text-green-600">
+                        Rs. {sale.amountPaid.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={2}>
+                        {paymentHistory.length} payment{paymentHistory.length !== 1 ? 's' : ''}
+                      </td>
+                    </tr>
+                    
+                    {remainingAmount > 0 && (
+                      <tr className="border-t border-border bg-red-50/50">
+                        <td className="px-4 py-3 text-sm font-semibold text-foreground" colSpan={3}>
+                          Remaining Balance
+                        </td>
+                        <td className="px-4 py-3 text-lg font-bold text-red-600">
+                          Rs. {remainingAmount.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={2}>
+                          To be paid
+                        </td>
+                      </tr>
+                    )}
+                    
+                    <tr className="border-t-2 border-primary bg-primary/5">
+                      <td className="px-4 py-3 text-sm font-semibold text-foreground" colSpan={3}>
+                        Grand Total
+                      </td>
+                      <td className="px-4 py-3 text-xl font-bold text-primary">
+                        Rs. {totalAmount.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={2}>
+                        Sale Price
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h4 className="text-sm font-semibold text-blue-800 mb-2">Example: Multiple Payments</h4>
+            <p className="text-xs text-blue-700">
+              For a sale of Rs. 7,500, you can record payments like:
+            </p>
+            <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
+              <div className="p-2 bg-blue-100 rounded">1st: Rs. 2,500</div>
+              <div className="p-2 bg-blue-100 rounded">2nd: Rs. 2,500</div>
+              <div className="p-2 bg-blue-100 rounded">3rd: Rs. 2,000</div>
+              <div className="p-2 bg-blue-100 rounded">4th: Rs. 500</div>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-4 border-t border-border">
+            <button
+              onClick={onClose}
+              className="px-5 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-sm font-medium transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export function POSView() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,6 +945,19 @@ export function POSView() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [markAsPaidModalOpen, setMarkAsPaidModalOpen] = useState(false);
+  const [paymentHistoryModalOpen, setPaymentHistoryModalOpen] = useState(false);
+  const [selectedSaleForPayment, setSelectedSaleForPayment] = useState<Sale | null>(null);
+  
+  const [allPayments, setAllPayments] = useState<PaymentHistory[]>(() => {
+    const savedPayments = localStorage.getItem('sale_payments');
+    return savedPayments ? JSON.parse(savedPayments) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sale_payments', JSON.stringify(allPayments));
+  }, [allPayments]);
 
   // Fetch sales on component mount
   useEffect(() => {
@@ -136,48 +1027,8 @@ export function POSView() {
     }
   };
 
-  // Alternative: Fetch enriched sales data (if your backend supports it)
-  const fetchEnrichedSales = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Try to fetch sales with vehicle details included
-      // Modify this endpoint according to your backend
-      const response = await api.get(`${SALES_API_URL}/with-vehicles`);
-      
-      if (response.data.success) {
-        setSales(response.data.data || []);
-      } else {
-        // Fallback to regular sales fetch
-        const regularResponse = await api.get(SALES_API_URL);
-        if (regularResponse.data.success) {
-          setSales(regularResponse.data.data || []);
-        } else {
-          throw new Error(regularResponse.data.message || 'Failed to fetch sales');
-        }
-      }
-    } catch (error: any) {
-      console.error('Error fetching enriched sales:', error);
-      // Fallback to regular fetch
-      const regularResponse = await api.get(SALES_API_URL);
-      if (regularResponse.data.success) {
-        setSales(regularResponse.data.data || []);
-      } else {
-        setError(error.response?.data?.message || error.message || 'Failed to fetch sales');
-        toast({
-          title: "Error",
-          description: "Failed to load sales. Please try again.",
-          variant: "destructive",
-        });
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleAddSale = async () => {
-    await fetchSales(); // Refresh the list
+    await fetchSales();
   };
 
   const handleEdit = (sale: Sale) => {
@@ -195,6 +1046,11 @@ export function POSView() {
     if (window.confirm('Are you sure you want to delete this sale?')) {
       try {
         await api.delete(`${SALES_API_URL}/${id}`);
+        
+        // Remove payments associated with this sale
+        const updatedPayments = allPayments.filter(payment => payment.saleId !== id);
+        setAllPayments(updatedPayments);
+        
         await fetchSales();
         toast({
           title: "Success",
@@ -215,6 +1071,29 @@ export function POSView() {
     setSelectedSale(null);
     setIsEditMode(false);
     setShowDialog(true);
+  };
+
+  const handleRecordPayment = (sale: Sale) => {
+    setSelectedSaleForPayment(sale);
+    setPaymentModalOpen(true);
+  };
+
+  const handleMarkAsPaid = (sale: Sale) => {
+    setSelectedSaleForPayment(sale);
+    setMarkAsPaidModalOpen(true);
+  };
+
+  const handleViewPaymentHistory = (sale: Sale) => {
+    setSelectedSaleForPayment(sale);
+    setPaymentHistoryModalOpen(true);
+  };
+
+  const handlePaymentSuccess = async (newPayment: PaymentHistory) => {
+    setAllPayments(prev => [...prev, newPayment]);
+    await fetchSales();
+    setPaymentModalOpen(false);
+    setMarkAsPaidModalOpen(false);
+    setSelectedSaleForPayment(null);
   };
 
   // Filter sales based on search term
@@ -249,24 +1128,16 @@ export function POSView() {
   };
 
   // Format currency - REMOVED CURRENCY SYMBOL
-  const formatCurrency = (amount: string) => {
+  const formatCurrency = (amount: number) => {
     try {
-      const numAmount = parseFloat(amount);
-      if (isNaN(numAmount)) return '0';
-      return numAmount.toLocaleString('en-IN', {
+      if (isNaN(amount)) return '0';
+      return amount.toLocaleString('en-IN', {
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
       });
     } catch (error) {
-      return amount;
+      return '0';
     }
-  };
-
-  // Format weight with unit
-  const formatWeightWithUnit = (sale: Sale) => {
-    const weight = sale.weight || '0';
-    const unit = sale.unit || '0';
-    return `${weight} (${unit} units)`;
   };
 
   // Get vehicle number display - safe handling
@@ -282,6 +1153,27 @@ export function POSView() {
     
     return 'N/A';
   };
+
+  // Calculate totals
+  const calculateTotals = () => {
+    const totalSales = sales.length;
+    const totalRevenue = sales.reduce((total, s) => total + (parseFloat(s.finalAmount || s.sellingPrice) || 0), 0);
+    const totalAmountPaid = sales.reduce((total, s) => total + (s.amountPaid || 0), 0);
+    const totalRemainingAmount = sales.reduce((total, s) => total + (s.remainingAmount || 0), 0);
+    const totalUnitsSold = sales.reduce((total, s) => total + (parseInt(s.unit) || 0), 0);
+    const totalWeightSold = sales.reduce((total, s) => total + (parseFloat(s.weight) || 0), 0);
+
+    return {
+      totalSales,
+      totalRevenue,
+      totalAmountPaid,
+      totalRemainingAmount,
+      totalUnitsSold,
+      totalWeightSold
+    };
+  };
+
+  const totals = calculateTotals();
 
   // Pagination
   const itemsPerPage = 10;
@@ -313,13 +1205,13 @@ export function POSView() {
         <h1 className="text-lg font-semibold text-foreground">Point Of Sale (POS)</h1>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      {/* Stats Cards - UPDATED with payment totals */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <div className="bg-cms-card rounded-lg p-4 border border-border">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Total Sales</p>
-              <p className="text-2xl font-semibold text-foreground">{sales.length}</p>
+              <p className="text-2xl font-semibold text-foreground">{totals.totalSales}</p>
             </div>
             <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
               <ShoppingCart className="w-5 h-5 text-primary" />
@@ -331,24 +1223,51 @@ export function POSView() {
             <div>
               <p className="text-sm text-muted-foreground">Total Revenue</p>
               <p className="text-2xl font-semibold text-foreground">
-                {sales.reduce((total, s) => total + (parseFloat(s.finalAmount || s.sellingPrice) || 0), 0).toLocaleString()}
+                Rs. {formatCurrency(totals.totalRevenue)}
               </p>
             </div>
-            <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
-              <span className="text-green-500 text-lg font-bold">V</span>
+            <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
+              <DollarSign className="w-5 h-5 text-blue-500" />
             </div>
           </div>
         </div>
         <div className="bg-cms-card rounded-lg p-4 border border-border">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">Total Units Sold</p>
-              <p className="text-2xl font-semibold text-foreground">
-                {sales.reduce((total, s) => total + (parseInt(s.unit) || 0), 0).toLocaleString()} units
+              <p className="text-sm text-muted-foreground">Amount Paid</p>
+              <p className="text-2xl font-semibold text-green-600">
+                Rs. {formatCurrency(totals.totalAmountPaid)}
               </p>
             </div>
-            <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
-              <div className="text-blue-500 text-lg font-bold">#</div>
+            <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
+              <CheckCircle className="w-5 h-5 text-green-500" />
+            </div>
+          </div>
+        </div>
+        <div className="bg-cms-card rounded-lg p-4 border border-border">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Remaining Amount</p>
+              <p className="text-2xl font-semibold text-red-600">
+                Rs. {formatCurrency(totals.totalRemainingAmount)}
+              </p>
+            </div>
+            <div className="w-10 h-10 bg-red-500/10 rounded-lg flex items-center justify-center">
+              <DollarSign className="w-5 h-5 text-red-500" />
+            </div>
+          </div>
+        </div>
+        <div className="bg-cms-card rounded-lg p-4 border border-border">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Total Weight Sold</p>
+              <p className="text-2xl font-semibold text-purple-600">
+                {formatCurrency(totals.totalWeightSold)} kg
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">{totals.totalUnitsSold} units</p>
+            </div>
+            <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
+              <Package className="w-5 h-5 text-purple-500" />
             </div>
           </div>
         </div>
@@ -391,230 +1310,289 @@ export function POSView() {
         </div>
       </div>
 
-     {/* Table */}
-
-{/* Table */}
-<div className="bg-cms-card rounded-xl overflow-hidden">
-  {loading ? (
-    <div className="flex justify-center items-center py-12">
-      <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      <span className="ml-2 text-muted-foreground">Loading sales...</span>
-    </div>
-  ) : filteredSales.length === 0 ? (
-    <div className="text-center py-12">
-      <ShoppingCart className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-      <h3 className="text-lg font-medium text-foreground mb-2">No sales found</h3>
-      <p className="text-muted-foreground mb-4">
-        {searchTerm ? 'No sales match your search.' : 'Add your first sale to get started.'}
-      </p>
-      {!searchTerm && (
-        <button
-          onClick={handleAddNew}
-          className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors mx-auto"
-        >
-          <Plus className="w-4 h-4" />
-          Add First Sale
-        </button>
-      )}
-    </div>
-  ) : (
-    <>
-      <table className="w-full">
-        <thead>
-          <tr className="bg-cms-table-header">
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Invoice No.</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Buyer</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight & Units</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total Amount</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Advance Paid</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Balance</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>
-            <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {currentItems.map((sale, index) => {
-            const totalAmount = parseFloat(sale.finalAmount || sale.sellingPrice) || 0;
-            const advancePayment = parseFloat((sale as any).advancePayment) || 0;
-            const balance = totalAmount - advancePayment;
-            
-            return (
-              <tr
-                key={sale._id}
-                className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'} hover:bg-cms-card-hover transition-colors`}
-              >
-                <td className="px-4 py-3">
-                  <span className="text-sm font-medium text-foreground">{sale.invoiceNo || 'N/A'}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <div 
-                      className="w-3 h-3 rounded-full border border-border"
-                      style={{ backgroundColor: sale.materialColor || '#FFFFFF' }}
-                    />
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-foreground">{sale.materialName || 'N/A'}</span>
-                      <span className="text-xs text-muted-foreground">{sale.supplierName || ''}</span>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">{sale.buyerName || 'N/A'}</span>
-                    {sale.buyerPhone && (
-                      <span className="text-xs text-muted-foreground">{sale.buyerPhone}</span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">{sale.weight || '0'}</span>
-                    <span className="text-xs text-muted-foreground">{sale.unit || '0'} units</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">{formatCurrency(sale.finalAmount || sale.sellingPrice)}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {parseFloat(sale.sellingPrice || '0').toLocaleString()} each
-                    </span>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">
-                      {formatCurrency(advancePayment.toString())}
-                    </span>
-                    {advancePayment > 0 && (
-                      <span className="text-xs text-muted-foreground">
-                        {((advancePayment / totalAmount) * 100).toFixed(1)}% of total
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">
-                      {formatCurrency(balance.toString())}
-                    </span>
-                    {balance === 0 && (
-                      <span className="text-xs text-green-600">Paid</span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-sm text-foreground">
-                  {getVehicleNumber(sale)}
-                </td>
-                <td className="px-4 py-3 text-sm text-primary">{formatDate(sale.purchaseDate || sale.createdAt)}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => handleViewDetails(sale)}
-                      className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
-                      title="View Details"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => handleEdit(sale)}
-                      className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
-                      title="Edit"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => handleDelete(sale._id)}
-                      className="p-1.5 hover:bg-destructive/20 rounded transition-colors text-muted-foreground hover:text-destructive"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
-          <button 
-            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-            disabled={currentPage === 1}
-            className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          
-          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-            let pageNum;
-            if (totalPages <= 5) {
-              pageNum = i + 1;
-            } else if (currentPage <= 3) {
-              pageNum = i + 1;
-            } else if (currentPage >= totalPages - 2) {
-              pageNum = totalPages - 4 + i;
-            } else {
-              pageNum = currentPage - 2 + i;
-            }
-
-            return (
+      {/* Table */}
+      <div className="bg-cms-card rounded-xl overflow-hidden">
+        {loading ? (
+          <div className="flex justify-center items-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <span className="ml-2 text-muted-foreground">Loading sales...</span>
+          </div>
+        ) : filteredSales.length === 0 ? (
+          <div className="text-center py-12">
+            <ShoppingCart className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-foreground mb-2">No sales found</h3>
+            <p className="text-muted-foreground mb-4">
+              {searchTerm ? 'No sales match your search.' : 'Add your first sale to get started.'}
+            </p>
+            {!searchTerm && (
               <button
-                key={pageNum}
-                onClick={() => setCurrentPage(pageNum)}
-                className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
-                  currentPage === pageNum
-                    ? 'bg-primary text-primary-foreground'
-                    : 'hover:bg-secondary text-muted-foreground'
-                }`}
+                onClick={handleAddNew}
+                className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors mx-auto"
               >
-                {pageNum}
+                <Plus className="w-4 h-4" />
+                Add First Sale
               </button>
-            );
-          })}
+            )}
+          </div>
+        ) : (
+          <>
+            <table className="w-full">
+              <thead>
+                <tr className="bg-cms-table-header">
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Invoice No.</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Buyer</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight & Units</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total Amount</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Amount Paid</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining Amount</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Payment Status</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentItems.map((sale, index) => {
+                  const totalAmount = parseFloat(sale.finalAmount || sale.sellingPrice) || 0;
+                  const remainingAmount = sale.remainingAmount || 0;
+                  
+                  return (
+                    <tr
+                      key={sale._id}
+                      className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'} hover:bg-cms-card-hover transition-colors`}
+                    >
+                      <td className="px-4 py-3">
+                        <span className="text-sm font-medium text-foreground">{sale.invoiceNo || 'N/A'}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded-full border border-border"
+                            style={{ backgroundColor: sale.materialColor || '#FFFFFF' }}
+                          />
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-foreground">{sale.materialName || 'N/A'}</span>
+                            <span className="text-xs text-muted-foreground">{sale.supplierName || ''}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-foreground">{sale.buyerName || 'N/A'}</span>
+                          {sale.buyerPhone && (
+                            <span className="text-xs text-muted-foreground">{sale.buyerPhone}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-foreground">{sale.weight || '0'} kg</span>
+                          <span className="text-xs text-muted-foreground">{sale.unit || '0'} units</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-foreground">Rs. {formatCurrency(totalAmount)}</span>
+                          <span className="text-xs text-muted-foreground">
+                            Rs. {parseFloat(sale.sellingPrice || '0').toLocaleString()} each
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-green-600">
+                            Rs. {formatCurrency(sale.amountPaid || 0)}
+                          </span>
+                          {sale.amountPaid > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              {((sale.amountPaid / totalAmount) * 100).toFixed(1)}% of total
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className={`text-sm font-medium ${remainingAmount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            Rs. {formatCurrency(remainingAmount)}
+                          </span>
+                          {remainingAmount === 0 && sale.amountPaid > 0 && (
+                            <span className="text-xs text-green-600">Paid in full</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <PaymentStatusBadge status={sale.paymentStatus} />
+                      </td>
+                      <td className="px-4 py-3 text-sm text-foreground">
+                        {getVehicleNumber(sale)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-primary">{formatDate(sale.purchaseDate || sale.createdAt)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => handleViewDetails(sale)}
+                            className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                            title="View Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleEdit(sale)}
+                            className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                            title="Edit"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          {sale.paymentStatus !== 'paid' && remainingAmount > 0 && (
+                            <button 
+                              onClick={() => handleRecordPayment(sale)}
+                              className="p-1.5 hover:bg-green-100 rounded transition-colors text-muted-foreground hover:text-green-600"
+                              title="Record Payment"
+                            >
+                              <DollarSign className="w-4 h-4" />
+                            </button>
+                          )}
+                          {sale.paymentStatus !== 'paid' && remainingAmount > 0 && (
+                            <button 
+                              onClick={() => handleMarkAsPaid(sale)}
+                              className="p-1.5 hover:bg-blue-100 rounded transition-colors text-muted-foreground hover:text-blue-600"
+                              title="Mark as Paid"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                          )}
+                          {(sale.amountPaid || 0) > 0 && (
+                            <button 
+                              onClick={() => handleViewPaymentHistory(sale)}
+                              className="p-1.5 hover:bg-purple-100 rounded transition-colors text-muted-foreground hover:text-purple-600"
+                              title="Payment History"
+                            >
+                              <History className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => handleDelete(sale._id)}
+                            className="p-1.5 hover:bg-destructive/20 rounded transition-colors text-muted-foreground hover:text-destructive"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
 
-          {totalPages > 5 && currentPage < totalPages - 2 && (
-            <span className="text-muted-foreground px-2">...</span>
-          )}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
+                <button 
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
 
-          {totalPages > 5 && currentPage < totalPages - 2 && (
-            <button
-              onClick={() => setCurrentPage(totalPages)}
-              className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
-                currentPage === totalPages
-                  ? 'bg-primary text-primary-foreground'
-                  : 'hover:bg-secondary text-muted-foreground'
-              }`}
-            >
-              {totalPages}
-            </button>
-          )}
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
+                        currentPage === pageNum
+                          ? 'bg-primary text-primary-foreground'
+                          : 'hover:bg-secondary text-muted-foreground'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
 
-          <button 
-            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-            disabled={currentPage === totalPages}
-            className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-    </>
-  )}
-</div>
+                {totalPages > 5 && currentPage < totalPages - 2 && (
+                  <span className="text-muted-foreground px-2">...</span>
+                )}
 
+                {totalPages > 5 && currentPage < totalPages - 2 && (
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
+                      currentPage === totalPages
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-secondary text-muted-foreground'
+                    }`}
+                  >
+                    {totalPages}
+                  </button>
+                )}
 
+                <button 
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Payment Modals */}
+      <PaymentModal
+        open={paymentModalOpen}
+        onClose={() => {
+          setPaymentModalOpen(false);
+          setSelectedSaleForPayment(null);
+        }}
+        sale={selectedSaleForPayment}
+        onPaymentSuccess={handlePaymentSuccess}
+      />
+
+      <MarkAsPaidModal
+        open={markAsPaidModalOpen}
+        onClose={() => {
+          setMarkAsPaidModalOpen(false);
+          setSelectedSaleForPayment(null);
+        }}
+        sale={selectedSaleForPayment}
+        onPaymentSuccess={handlePaymentSuccess}
+      />
+
+      <PaymentHistoryModal
+        open={paymentHistoryModalOpen}
+        onClose={() => {
+          setPaymentHistoryModalOpen(false);
+          setSelectedSaleForPayment(null);
+        }}
+        sale={selectedSaleForPayment}
+        allPayments={allPayments}
+      />
+
+      {/* Note: AddSaleDialog should be imported and used here */}
       {/* Add/Edit Dialog */}
-      <AddSaleDialog
+      {/* <AddSaleDialog
         open={showDialog}
         onOpenChange={setShowDialog}
         onSave={handleAddSale}
         isEdit={isEditMode}
         editData={selectedSale}
-      />
+      /> */}
     </div>
   );
 }

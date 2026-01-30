@@ -65,6 +65,12 @@ interface Sale {
   sellingPrice: string;
   discount: string;
   advancePayment: number;
+  
+  // New payment tracking fields
+  amountPaid: number;
+  remainingAmount: number;
+  paymentStatus: 'none' | 'partial' | 'paid';
+  
   buyerName: string;
   buyerAddress: string;
   buyerPhone: string;
@@ -151,7 +157,8 @@ export function AddSaleDialog({
     buyerCompany: "",
     // Additional fields for controller
     paymentMethod: "Cash",
-    paymentStatus: "Completed",
+    paymentStatus: "none", // Changed from "Completed" to match backend
+    amountPaid: "0", // NEW FIELD: Initial amount paid
     transportationCost: "0",
     notes: "",
   });
@@ -173,6 +180,7 @@ export function AddSaleDialog({
     materialColor: string;
   } | null>(null);
   const [weightError, setWeightError] = useState<string>("");
+  const [paymentStatusError, setPaymentStatusError] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Calendar helper functions
@@ -261,6 +269,17 @@ export function AddSaleDialog({
     return `${hour12.toString().padStart(2, '0')}:${minute} ${ampm}`;
   };
 
+  // Calculate payment status based on amount paid and selling price
+  const calculatePaymentStatus = (amountPaid: number, sellingPrice: number): 'none' | 'partial' | 'paid' => {
+    if (amountPaid === 0) {
+      return 'none';
+    } else if (amountPaid >= sellingPrice) {
+      return 'paid';
+    } else {
+      return 'partial';
+    }
+  };
+
   // Populate form when editing
   useEffect(() => {
     if (open) {
@@ -324,7 +343,8 @@ export function AddSaleDialog({
           buyerCnic: editData.buyerCnic || "",
           buyerCompany: editData.buyerCompany || "",
           paymentMethod: "Cash",
-          paymentStatus: "Completed",
+          paymentStatus: editData.paymentStatus || "none",
+          amountPaid: editData.amountPaid?.toString() || "0",
           transportationCost: "0",
           notes: "",
         });
@@ -379,6 +399,17 @@ export function AddSaleDialog({
     const timeStr = `${selectedHour}:${selectedMinute} ${selectedAmPm}`;
     setFormData(prev => ({ ...prev, purchaseTime: timeStr }));
   }, [selectedHour, selectedMinute, selectedAmPm]);
+
+  // Update payment status when amount paid or selling price changes
+  useEffect(() => {
+    const amountPaid = parseFloat(formData.amountPaid) || 0;
+    const sellingPrice = parseFloat(formData.sellingPrice) || 0;
+    
+    if (sellingPrice > 0) {
+      const paymentStatus = calculatePaymentStatus(amountPaid, sellingPrice);
+      setFormData(prev => ({ ...prev, paymentStatus }));
+    }
+  }, [formData.amountPaid, formData.sellingPrice]);
 
   const fetchMaterials = async () => {
     try {
@@ -458,6 +489,16 @@ export function AddSaleDialog({
     if (!formData.branch) newErrors.branch = "Branch is required";
     if (!formData.actualPrice || parseFloat(formData.actualPrice.replace(/,/g, '')) <= 0) newErrors.actualPrice = "Valid actual price is required";
     if (!formData.sellingPrice || parseFloat(formData.sellingPrice.replace(/,/g, '')) <= 0) newErrors.sellingPrice = "Valid selling price is required";
+    
+    // Amount paid validation
+    const amountPaid = parseFloat(formData.amountPaid) || 0;
+    const sellingPrice = parseFloat(formData.sellingPrice) || 0;
+    if (amountPaid < 0) {
+      newErrors.amountPaid = "Amount paid cannot be negative";
+    } else if (amountPaid > sellingPrice) {
+      newErrors.amountPaid = "Amount paid cannot exceed selling price";
+    }
+    
     if (!formData.buyerName.trim()) newErrors.buyerName = "Buyer name is required";
     if (!formData.buyerPhone.trim()) newErrors.buyerPhone = "Buyer phone is required";
     if (formData.buyerEmail && !/^\S+@\S+\.\S+$/.test(formData.buyerEmail)) newErrors.buyerEmail = "Invalid email address";
@@ -507,6 +548,19 @@ export function AddSaleDialog({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    
+    // Handle amount paid special validation
+    if (name === 'amountPaid') {
+      const sellingPrice = parseFloat(formData.sellingPrice) || 0;
+      const amountPaid = parseFloat(value) || 0;
+      
+      if (amountPaid > sellingPrice) {
+        setPaymentStatusError(`Warning: Amount paid (${amountPaid}) exceeds selling price (${sellingPrice})`);
+      } else {
+        setPaymentStatusError("");
+      }
+    }
+    
     setFormData(prev => ({ ...prev, [name]: value }));
     
     // Validate weight when weight changes
@@ -578,6 +632,15 @@ export function AddSaleDialog({
       }
     }
 
+    // Amount paid validation
+    const amountPaid = parseFloat(formData.amountPaid) || 0;
+    const sellingPrice = parseFloat(formData.sellingPrice) || 0;
+    
+    if (amountPaid > sellingPrice) {
+      alert(`Amount paid (${amountPaid}) cannot exceed selling price (${sellingPrice})`);
+      return;
+    }
+
     setIsSubmitting(true);
     
     try {
@@ -608,7 +671,6 @@ export function AddSaleDialog({
       // Prepare FormData for API
       const formDataToSend = new FormData();
       
-      // ⭐⭐ FIXED: Map to what controller expects ⭐⭐
       // Required fields by controller:
       formDataToSend.append('purchaseId', selectedMaterialInfo?.purchaseId || '');
       formDataToSend.append('customerName', formData.buyerName); // buyerName → customerName
@@ -618,7 +680,7 @@ export function AddSaleDialog({
       formDataToSend.append('sellingWeight', formData.weight); // weight → sellingWeight
       formDataToSend.append('saleDate', dateTime);
       formDataToSend.append('paymentMethod', formData.paymentMethod);
-      formDataToSend.append('paymentStatus', formData.paymentStatus);
+      formDataToSend.append('amountPaid', formData.amountPaid); // NEW: Send amountPaid
       formDataToSend.append('invoiceNo', formData.invoiceNo);
       formDataToSend.append('transportationCost', formData.transportationCost);
       formDataToSend.append('notes', formData.notes);
@@ -640,6 +702,7 @@ export function AddSaleDialog({
       formDataToSend.append('buyerCnic', formData.buyerCnic || '');
       formDataToSend.append('buyerCompany', formData.buyerCompany || '');
       formDataToSend.append('finalAmount', finalAmount);
+      formDataToSend.append('paymentStatus', formData.paymentStatus); // This will be auto-calculated by backend
 
       // Add receipt file if exists
       if (receiptFile) {
@@ -742,7 +805,8 @@ export function AddSaleDialog({
       buyerCnic: "",
       buyerCompany: "",
       paymentMethod: "Cash",
-      paymentStatus: "Completed",
+      paymentStatus: "none", // Reset to 'none'
+      amountPaid: "0", // Reset to 0
       transportationCost: "0",
       notes: "",
     });
@@ -764,6 +828,7 @@ export function AddSaleDialog({
     setReceiptPreview(null);
     setSelectedMaterialInfo(null);
     setWeightError("");
+    setPaymentStatusError("");
     setErrors({});
   };
 
@@ -771,6 +836,12 @@ export function AddSaleDialog({
     const selling = parseFloat(formData.sellingPrice.replace(/,/g, '')) || 0;
     const discount = parseFloat(formData.discount.replace(/,/g, '')) || 0;
     return (selling - discount).toFixed(2);
+  };
+
+  const calculateRemainingAmount = () => {
+    const selling = parseFloat(formData.sellingPrice.replace(/,/g, '')) || 0;
+    const amountPaid = parseFloat(formData.amountPaid) || 0;
+    return Math.max(0, selling - amountPaid).toFixed(2);
   };
 
   const handleClose = () => {
@@ -1220,18 +1291,23 @@ export function AddSaleDialog({
               </select>
             </div>
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Payment Status</label>
-              <select
-                name="paymentStatus"
-                value={formData.paymentStatus}
+              <label className="block text-xs text-muted-foreground mb-1.5">Amount Paid *</label>
+              <input
+                type="number"
+                name="amountPaid"
+                placeholder="e.g 5000"
+                value={formData.amountPaid}
                 onChange={handleInputChange}
-                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="Pending">Pending</option>
-                <option value="Completed">Completed</option>
-                <option value="Partially Paid">Partially Paid</option>
-                <option value="Failed">Failed</option>
-              </select>
+                min="0"
+                step="0.01"
+                className={`w-full bg-cms-input-bg border ${errors.amountPaid ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+              />
+              {errors.amountPaid && (
+                <p className="text-xs text-red-500 mt-1">{errors.amountPaid}</p>
+              )}
+              {paymentStatusError && !errors.amountPaid && (
+                <p className="text-xs text-amber-600 mt-1">{paymentStatusError}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Transportation Cost</label>
@@ -1339,6 +1415,41 @@ export function AddSaleDialog({
               />
             </div>
           </div>
+          
+          {/* Payment Summary */}
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="bg-green-50 border border-green-200 rounded-md p-3">
+              <p className="text-xs text-green-700 mb-1">Amount Paid</p>
+              <p className="text-lg font-bold text-green-800">Rs. {parseFloat(formData.amountPaid || "0").toFixed(2)}</p>
+            </div>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+              <p className="text-xs text-yellow-700 mb-1">Remaining Amount</p>
+              <p className="text-lg font-bold text-yellow-800">Rs. {calculateRemainingAmount()}</p>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+              <p className="text-xs text-blue-700 mb-1">Payment Status</p>
+              <div className="flex items-center justify-between">
+                <p className={`text-lg font-bold ${
+                  formData.paymentStatus === 'paid' ? 'text-green-600' :
+                  formData.paymentStatus === 'partial' ? 'text-yellow-600' :
+                  'text-red-600'
+                }`}>
+                  {formData.paymentStatus === 'paid' ? 'Paid' :
+                   formData.paymentStatus === 'partial' ? 'Partial' : 'None'}
+                </p>
+                {formData.paymentStatus === 'paid' && (
+                  <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">✓ Completed</span>
+                )}
+                {formData.paymentStatus === 'partial' && (
+                  <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">⚠ Pending</span>
+                )}
+                {formData.paymentStatus === 'none' && (
+                  <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">✗ Not Paid</span>
+                )}
+              </div>
+            </div>
+          </div>
+          
           <div className="bg-cms-input-bg border border-border rounded-md px-4 py-3 text-right">
             <span className="text-sm text-muted-foreground">Final Amount: </span>
             <span className="text-lg font-bold text-primary">Rs. {calculateFinalAmount()}</span>

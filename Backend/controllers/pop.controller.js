@@ -6,7 +6,6 @@ const addPurchase = async (req, res) => {
   try {
     console.log('=== START addPurchase ===');
     console.log('Request body:', req.body);
-    console.log('Request file:', req.file);
     
     const {
       materialName,
@@ -24,12 +23,12 @@ const addPurchase = async (req, res) => {
       deliveryDate,
       receiptNo,
       advancePayment,
+      amountPaid,
     } = req.body;
 
-    console.log('Parsed values:');
-    console.log('materialColor:', materialColor);
-    console.log('vehicleColor:', vehicleColor);
+    console.log('Payment details from request:');
     console.log('advancePayment:', advancePayment);
+    console.log('amountPaid:', amountPaid);
 
     // Validate required fields
     if (!materialName || !vendor || !price || !weight || !purchaseDate) {
@@ -39,27 +38,50 @@ const addPurchase = async (req, res) => {
       });
     }
 
+    // Convert price to number
+    const priceNum = parseFloat(price) || 0;
+    
+    // Parse advance payment
+    let advancePaymentNum = 0;
+    if (advancePayment !== undefined && advancePayment !== null && advancePayment !== '') {
+      advancePaymentNum = parseFloat(advancePayment) || 0;
+    }
+    
+    // Parse amount paid during purchase
+    let amountPaidNum = 0;
+    if (amountPaid !== undefined && amountPaid !== null && amountPaid !== '') {
+      amountPaidNum = parseFloat(amountPaid) || 0;
+    }
+    
+    // Calculate total paid (advance + amount paid)
+    const totalPaid = advancePaymentNum + amountPaidNum;
+    
+    console.log('Payment calculations:');
+    console.log('Total Price:', priceNum);
+    console.log('Advance Payment:', advancePaymentNum);
+    console.log('Amount Paid:', amountPaidNum);
+    console.log('Total Paid:', totalPaid);
+
+    // Calculate payment status
+    let paidAmount = 'none';
+    let remainingAmount = priceNum;
+    
+    if (totalPaid === 0) {
+      paidAmount = 'none';
+      remainingAmount = priceNum;
+    } else if (totalPaid >= priceNum) {
+      paidAmount = 'paid';
+      remainingAmount = 0;
+    } else {
+      paidAmount = 'partial';
+      remainingAmount = priceNum - totalPaid;
+    }
+
+    console.log('Payment Status:', paidAmount);
+    console.log('Remaining Amount:', remainingAmount);
+
     // Handle vehicle image
     const vehicleImage = req.file ? `/uploads/${req.file.filename}` : "";
-
-    console.log('Creating purchase with:', {
-      materialName,
-      vendor,
-      price,
-      weight,
-      quality,
-      purchaseDate,
-      materialColor,
-      vehicleName,
-      vehicleType,
-      vehicleNumber,
-      driverName,
-      vehicleColor,
-      deliveryDate,
-      receiptNo,
-      advancePayment,
-      vehicleImage
-    });
 
     // Create purchase
     const purchase = await Purchase.create({
@@ -77,11 +99,20 @@ const addPurchase = async (req, res) => {
       vehicleColor,
       deliveryDate,
       receiptNo,
-      advancePayment: advancePayment || 0,
+      advancePayment: advancePaymentNum,
+      amountPaid: amountPaidNum,
+      totalPaid: totalPaid,
+      paidAmount: paidAmount,
+      remainingAmount: remainingAmount,
       vehicleImage,
     });
 
-    console.log('Purchase created successfully:', purchase._id);
+    console.log('Purchase created with payment summary:');
+    console.log('- Advance Payment:', purchase.advancePayment);
+    console.log('- Amount Paid:', purchase.amountPaid);
+    console.log('- Total Paid:', purchase.totalPaid);
+    console.log('- Payment Status:', purchase.paidAmount);
+    console.log('- Remaining Amount:', purchase.remainingAmount);
 
     res.status(201).json({
       success: true,
@@ -91,7 +122,7 @@ const addPurchase = async (req, res) => {
 
   } catch (error) {
     console.error('=== ERROR in addPurchase ===');
-    console.error('Error message:', error.message);
+    console.error('Error:', error);
     
     // Handle validation errors
     if (error.name === 'ValidationError') {
@@ -120,7 +151,6 @@ const addPurchase = async (req, res) => {
     console.log('=== END addPurchase ===');
   }
 };
-
 // Get All Purchases
 const getPurchases = async (req, res) => {
   try {

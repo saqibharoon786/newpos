@@ -24,6 +24,24 @@ const saleSchema = new mongoose.Schema(
     finalAmount: { type: String },
     advancePayment: { type: Number, default: 0 }, // ADDED THIS FIELD
 
+    // Payment Tracking Fields
+    amountPaid: { 
+      type: Number, 
+      default: 0,
+      required: true 
+    },
+    remainingAmount: { 
+      type: Number, 
+      default: 0,
+      required: true 
+    },
+    paymentStatus: { 
+      type: String, 
+      enum: ['none', 'partial', 'paid'], 
+      default: 'none',
+      required: true 
+    },
+
     // Buyer Details
     buyerName: { type: String, required: true },
     buyerAddress: { type: String, required: false },
@@ -41,5 +59,30 @@ const saleSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Pre-save middleware to automatically calculate remaining amount and payment status
+saleSchema.pre('save', function(next) {
+  const sellingPriceNum = parseFloat(this.sellingPrice) || 0;
+  const amountPaidNum = this.amountPaid || 0;
+  
+  // Calculate remaining amount
+  this.remainingAmount = Math.max(0, sellingPriceNum - amountPaidNum);
+  
+  // Determine payment status
+  if (amountPaidNum === 0) {
+    this.paymentStatus = 'none';
+  } else if (amountPaidNum >= sellingPriceNum) {
+    this.paymentStatus = 'paid';
+  } else {
+    this.paymentStatus = 'partial';
+  }
+  
+  // Set finalAmount if not already set
+  if (!this.finalAmount) {
+    this.finalAmount = this.sellingPrice;
+  }
+  
+  next();
+});
 
 module.exports = mongoose.model("Sale", saleSchema);

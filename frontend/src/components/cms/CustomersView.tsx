@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, Printer, Phone, Mail, Users, Eye, Edit2, Trash2, RefreshCw, FolderOpen, Download, MoreVertical, Calendar, Loader2 } from "lucide-react";
+import { Search, Plus, Printer, Phone, Mail, Users, Eye, Edit2, Trash2, RefreshCw, FolderOpen, Download, MoreVertical, Calendar, Loader2, DollarSign } from "lucide-react";
 import { AddCustomerDialog, CustomerFormData } from "./AddCustomerDialog";
 import { toast } from "sonner";
 import axios from "axios";
@@ -17,6 +17,9 @@ interface Customer {
   city: string;
   photo: string | null;
   documents: string[];
+  amount: number;
+  amountPaid: number;
+  paidAmount: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -45,6 +48,49 @@ const formatDateWithMonthName = (dateString: string | Date): string => {
     return `${day} ${month} ${year}`;
   } catch (error) {
     return "N/A";
+  }
+};
+
+// Format currency for display
+const formatCurrency = (value: number): string => {
+  return new Intl.NumberFormat('en-PK', {
+    style: 'currency',
+    currency: 'PKR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
+};
+
+// Calculate pending amount
+const calculatePendingAmount = (amount: number, amountPaid: number): number => {
+  return Math.max(0, amount - amountPaid);
+};
+
+// Get payment status badge color
+const getPaymentStatusColor = (paidAmount: string) => {
+  switch (paidAmount) {
+    case 'fully':
+      return 'bg-green-500/10 text-green-600';
+    case 'partial':
+      return 'bg-yellow-500/10 text-yellow-600';
+    case 'none':
+      return 'bg-gray-500/10 text-gray-600';
+    default:
+      return 'bg-gray-500/10 text-gray-600';
+  }
+};
+
+// Get payment status text
+const getPaymentStatusText = (paidAmount: string) => {
+  switch (paidAmount) {
+    case 'fully':
+      return 'Fully Paid';
+    case 'partial':
+      return 'Partially Paid';
+    case 'none':
+      return 'Not Paid';
+    default:
+      return 'Not Paid';
   }
 };
 
@@ -103,6 +149,9 @@ export default function CustomersView() {
           city: customer.city || "",
           photo: customer.photo || null,
           documents: customer.documents || [],
+          amount: customer.amount || 0,
+          amountPaid: customer.amountPaid || 0,
+          paidAmount: customer.paidAmount || 'none',
           isActive: customer.isActive !== undefined ? customer.isActive : true,
           createdAt: customer.createdAt || new Date().toISOString(),
           updatedAt: customer.updatedAt || new Date().toISOString(),
@@ -148,9 +197,21 @@ export default function CustomersView() {
     customer.customerId.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // Calculate summary statistics
+  const totalAmount = customers.reduce((sum, customer) => sum + customer.amount, 0);
+  const totalPaid = customers.reduce((sum, customer) => sum + customer.amountPaid, 0);
+  const totalPending = customers.reduce((sum, customer) => sum + calculatePendingAmount(customer.amount, customer.amountPaid), 0);
+  
+  // Count customers by payment status
+  const fullyPaidCustomers = customers.filter(c => c.paidAmount === 'fully').length;
+  const partiallyPaidCustomers = customers.filter(c => c.paidAmount === 'partial').length;
+  const notPaidCustomers = customers.filter(c => c.paidAmount === 'none').length;
+
   // Optimized Print Functionality for Single Page
   const handlePrintCustomer = (customer: Customer) => {
     setIsPrinting(true);
+    
+    const pendingAmount = calculatePendingAmount(customer.amount, customer.amountPaid);
     
     const printContent = `
       <!DOCTYPE html>
@@ -247,6 +308,44 @@ export default function CustomersView() {
           .customer-id {
             font-size: 9pt;
             color: #666;
+          }
+          
+          /* Financial Summary */
+          .financial-summary {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            padding: 8px;
+            border: 1px solid #dee2e6;
+          }
+          
+          .financial-item {
+            text-align: center;
+            flex: 1;
+            padding: 0 5px;
+          }
+          
+          .financial-label {
+            font-size: 7pt;
+            color: #666;
+            margin-bottom: 2px;
+          }
+          
+          .financial-value {
+            font-size: 10pt;
+            font-weight: bold;
+            color: #000;
+          }
+          
+          .financial-status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 7pt;
+            font-weight: bold;
+            margin-top: 2px;
           }
           
           /* Sections */
@@ -365,6 +464,34 @@ export default function CustomersView() {
               <div class="customer-name">${customer.customerName}</div>
               <div class="customer-id">ID: ${customer.customerId}</div>
               <div class="customer-id">Phone: ${customer.phoneNo} | Email: ${customer.email || 'N/A'}</div>
+            </div>
+          </div>
+          
+          <!-- Financial Summary -->
+          <div class="financial-summary">
+            <div class="financial-item">
+              <div class="financial-label">Total Amount</div>
+              <div class="financial-value">PKR ${customer.amount.toLocaleString()}</div>
+            </div>
+            <div class="financial-item">
+              <div class="financial-label">Amount Paid</div>
+              <div class="financial-value">PKR ${customer.amountPaid.toLocaleString()}</div>
+            </div>
+            <div class="financial-item">
+              <div class="financial-label">Pending Amount</div>
+              <div class="financial-value">PKR ${pendingAmount.toLocaleString()}</div>
+            </div>
+            <div class="financial-item">
+              <div class="financial-label">Payment Status</div>
+              <div class="financial-value">
+                <span class="financial-status" style="background-color: ${
+                  customer.paidAmount === 'fully' ? '#10b981' : 
+                  customer.paidAmount === 'partial' ? '#f59e0b' : 
+                  '#6b7280'
+                }; color: white;">
+                  ${getPaymentStatusText(customer.paidAmount)}
+                </span>
+              </div>
             </div>
           </div>
           
@@ -518,6 +645,8 @@ export default function CustomersView() {
       city: customer.city,
       photo: customer.photo,
       documents: customer.documents,
+      amount: customer.amount,
+      amountPaid: customer.amountPaid,
       isActive: customer.isActive,
       createdAt: customer.createdAt,
       updatedAt: customer.updatedAt,
@@ -594,6 +723,8 @@ export default function CustomersView() {
   const renderCustomerDetailView = () => {
     if (!selectedCustomer) return null;
 
+    const pendingAmount = calculatePendingAmount(selectedCustomer.amount, selectedCustomer.amountPaid);
+
     return (
       <div className="bg-cms-card rounded-xl p-6">
         <div className="flex items-center justify-between mb-6">
@@ -648,6 +779,59 @@ export default function CustomersView() {
               <Trash2 className="w-4 h-4" />
               Delete
             </button>
+          </div>
+        </div>
+
+        {/* Financial Summary */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+          <div className="bg-green-500/10 p-4 rounded-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                <DollarSign className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Total Amount</p>
+                <p className="text-lg font-bold text-foreground">{formatCurrency(selectedCustomer.amount)}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-blue-500/10 p-4 rounded-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                <DollarSign className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Amount Paid</p>
+                <p className="text-lg font-bold text-foreground">{formatCurrency(selectedCustomer.amountPaid)}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-yellow-500/10 p-4 rounded-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center">
+                <DollarSign className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Pending Amount</p>
+                <p className="text-lg font-bold text-foreground">{formatCurrency(pendingAmount)}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-purple-500/10 p-4 rounded-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-purple-500 rounded-full flex items-center justify-center">
+                <DollarSign className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Payment Status</p>
+                <p className={`text-lg font-bold ${getPaymentStatusColor(selectedCustomer.paidAmount).split(' ')[1]}`}>
+                  {getPaymentStatusText(selectedCustomer.paidAmount)}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -814,22 +998,41 @@ export default function CustomersView() {
       {!isLoading && (
         <>
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
+            <div className="bg-cms-card rounded-xl p-4">
+              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Total Amount</p>
+              <p className="text-2xl sm:text-3xl font-bold text-foreground">{formatCurrency(totalAmount)}</p>
+            </div>
+            <div className="bg-cms-card rounded-xl p-4">
+              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Amount Paid</p>
+              <p className="text-2xl sm:text-3xl font-bold text-foreground">{formatCurrency(totalPaid)}</p>
+            </div>
+            <div className="bg-cms-card rounded-xl p-4">
+              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Pending Amount</p>
+              <p className="text-2xl sm:text-3xl font-bold text-foreground">{formatCurrency(totalPending)}</p>
+            </div>
             <div className="bg-cms-card rounded-xl p-4">
               <p className="text-xs sm:text-sm text-muted-foreground mb-1">Total Customers</p>
               <p className="text-2xl sm:text-3xl font-bold text-foreground">{customers.length}</p>
             </div>
-            <div className="bg-cms-card rounded-xl p-4">
-              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Active Customers</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground">
-                {customers.filter(c => c.isActive).length}
-              </p>
+          </div>
+
+          {/* Payment Status Stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6">
+            <div className="bg-green-500/10 rounded-xl p-4">
+              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Fully Paid</p>
+              <p className="text-2xl sm:text-3xl font-bold text-green-600">{fullyPaidCustomers}</p>
+              <p className="text-xs text-muted-foreground mt-1">Customers</p>
             </div>
-            <div className="bg-cms-card rounded-xl p-4">
-              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Inactive Customers</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground">
-                {customers.filter(c => !c.isActive).length}
-              </p>
+            <div className="bg-yellow-500/10 rounded-xl p-4">
+              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Partially Paid</p>
+              <p className="text-2xl sm:text-3xl font-bold text-yellow-600">{partiallyPaidCustomers}</p>
+              <p className="text-xs text-muted-foreground mt-1">Customers</p>
+            </div>
+            <div className="bg-gray-500/10 rounded-xl p-4">
+              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Not Paid</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-600">{notPaidCustomers}</p>
+              <p className="text-xs text-muted-foreground mt-1">Customers</p>
             </div>
           </div>
 
@@ -911,10 +1114,13 @@ export default function CustomersView() {
                           Location
                         </th>
                         <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Registration Date
+                          Amount (PKR)
                         </th>
                         <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Status
+                          Payment Status
+                        </th>
+                        <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Registration Date
                         </th>
                         <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Actions
@@ -922,105 +1128,128 @@ export default function CustomersView() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {filteredCustomers.map((customer) => (
-                        <tr key={customer._id} className="hover:bg-cms-sidebar/50 transition-colors">
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-3">
-                              <div className="relative flex-shrink-0">
-                                <img 
-                                  src={customer.photo || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face"} 
-                                  alt={customer.customerName}
-                                  className="w-10 h-10 rounded-full object-cover border border-border"
-                                  onError={(e) => {
-                                    const target = e.target as HTMLImageElement;
-                                    target.src = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face";
-                                  }}
-                                />
-                                <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-white ${
-                                  customer.isActive ? 'bg-green-500' : 'bg-red-500'
-                                }`}></div>
+                      {filteredCustomers.map((customer) => {
+                        const pendingAmount = calculatePendingAmount(customer.amount, customer.amountPaid);
+                        
+                        return (
+                          <tr key={customer._id} className="hover:bg-cms-sidebar/50 transition-colors">
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-3">
+                                <div className="relative flex-shrink-0">
+                                  <img 
+                                    src={customer.photo || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face"} 
+                                    alt={customer.customerName}
+                                    className="w-10 h-10 rounded-full object-cover border border-border"
+                                    onError={(e) => {
+                                      const target = e.target as HTMLImageElement;
+                                      target.src = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face";
+                                    }}
+                                  />
+                                  <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-white ${
+                                    customer.isActive ? 'bg-green-500' : 'bg-red-500'
+                                  }`}></div>
+                                </div>
+                                <div>
+                                  <p className="font-medium text-foreground text-sm">{customer.customerName}</p>
+                                  <p className="text-xs text-muted-foreground">ID: {customer.customerId}</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="font-medium text-foreground text-sm">{customer.customerName}</p>
-                                <p className="text-xs text-muted-foreground">ID: {customer.customerId}</p>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <Phone className="w-3 h-3 text-muted-foreground" />
+                                  <span className="text-sm text-foreground">{customer.phoneNo}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Mail className="w-3 h-3 text-muted-foreground" />
+                                  <span className="text-sm text-foreground truncate max-w-[180px]">
+                                    {customer.email || "No email"}
+                                  </span>
+                                </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <Phone className="w-3 h-3 text-muted-foreground" />
-                                <span className="text-sm text-foreground">{customer.phoneNo}</span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="space-y-1">
+                                <p className="text-sm text-foreground">{customer.city || "N/A"}</p>
+                                <p className="text-xs text-muted-foreground">{customer.province || "N/A"}</p>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <Mail className="w-3 h-3 text-muted-foreground" />
-                                <span className="text-sm text-foreground truncate max-w-[180px]">
-                                  {customer.email || "No email"}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-xs text-muted-foreground">Total:</span>
+                                  <span className="text-sm font-medium text-foreground">{formatCurrency(customer.amount)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-xs text-muted-foreground">Paid:</span>
+                                  <span className="text-sm font-medium text-green-600">{formatCurrency(customer.amountPaid)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-xs text-muted-foreground">Pending:</span>
+                                  <span className="text-sm font-medium text-yellow-600">{formatCurrency(pendingAmount)}</span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex flex-col gap-1">
+                                <span className={`px-3 py-1 text-xs rounded-full ${getPaymentStatusColor(customer.paidAmount)}`}>
+                                  {getPaymentStatusText(customer.paidAmount)}
                                 </span>
+                                {customer.paidAmount === 'partial' && (
+                                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                    <div 
+                                      className="bg-yellow-500 h-1.5 rounded-full" 
+                                      style={{ width: `${(customer.amountPaid / customer.amount) * 100}%` }}
+                                    ></div>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="space-y-1">
-                              <p className="text-sm text-foreground">{customer.city || "N/A"}</p>
-                              <p className="text-xs text-muted-foreground">{customer.province || "N/A"}</p>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2">
-                              <Calendar className="w-4 h-4 text-muted-foreground" />
-                              <p className="text-sm text-foreground">
-                                {formatDateWithMonthName(customer.registrationDate)}
-                              </p>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`px-3 py-1 text-xs rounded-full ${
-                              customer.isActive 
-                                ? 'bg-green-500/10 text-green-600' 
-                                : 'bg-red-500/10 text-red-600'
-                            }`}>
-                              {customer.isActive ? 'Active' : 'Inactive'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleViewCustomer(customer)}
-                                className="p-1.5 hover:bg-muted rounded-md transition-colors text-green-600 hover:text-green-700"
-                                title="View details"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handlePrintCustomer(customer)}
-                                disabled={isPrinting}
-                                className="p-1.5 hover:bg-muted rounded-md transition-colors text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                title="Print customer details"
-                              >
-                                <Printer className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleEditCustomer(customer)}
-                                className="p-1.5 hover:bg-muted rounded-md transition-colors text-blue-600 hover:text-blue-700"
-                                title="Edit customer"
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteCustomer(customer._id)}
-                                className="p-1.5 hover:bg-destructive/10 rounded-md transition-colors text-red-600 hover:text-red-700"
-                                title="Delete customer"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                              <button className="p-1.5 hover:bg-muted rounded-md transition-colors text-gray-600 hover:text-gray-700">
-                                <MoreVertical className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2">
+                                <Calendar className="w-4 h-4 text-muted-foreground" />
+                                <p className="text-sm text-foreground">
+                                  {formatDateWithMonthName(customer.registrationDate)}
+                                </p>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleViewCustomer(customer)}
+                                  className="p-1.5 hover:bg-muted rounded-md transition-colors text-green-600 hover:text-green-700"
+                                  title="View details"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handlePrintCustomer(customer)}
+                                  disabled={isPrinting}
+                                  className="p-1.5 hover:bg-muted rounded-md transition-colors text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Print customer details"
+                                >
+                                  <Printer className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleEditCustomer(customer)}
+                                  className="p-1.5 hover:bg-muted rounded-md transition-colors text-blue-600 hover:text-blue-700"
+                                  title="Edit customer"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteCustomer(customer._id)}
+                                  className="p-1.5 hover:bg-destructive/10 rounded-md transition-colors text-red-600 hover:text-red-700"
+                                  title="Delete customer"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

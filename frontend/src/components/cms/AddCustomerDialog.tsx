@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Save, ChevronDown, Upload, Plus, X, Calendar } from "lucide-react";
+import { Save, ChevronDown, Upload, Plus, X, Calendar, DollarSign } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import axios from "axios";
@@ -25,6 +25,9 @@ export interface CustomerFormData {
   city: string;
   photo: string | null;
   documents: string[];
+  amount: number;
+  amountPaid: number;
+  paidAmount?: string; // Changed from paymentStatus to paidAmount
   _id?: string;
   isActive?: boolean;
   createdAt?: string;
@@ -113,6 +116,16 @@ const generateYears = () => {
   return years.reverse(); // Show most recent years first
 };
 
+// Format currency for display
+const formatCurrency = (value: number): string => {
+  return new Intl.NumberFormat('en-PK', {
+    style: 'currency',
+    currency: 'PKR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
+};
+
 export function AddCustomerDialog({ 
   open, 
   onOpenChange, 
@@ -133,6 +146,8 @@ export function AddCustomerDialog({
     city: "",
     photo: null,
     documents: [],
+    amount: 0,
+    amountPaid: 0,
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -151,6 +166,26 @@ export function AddCustomerDialog({
   ];
   const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+  // Calculate pending amount and payment status based on backend model logic
+  const pendingAmount = Math.max(0, formData.amount - formData.amountPaid);
+  
+  // This matches your backend model's pre-save middleware logic
+  const calculatePaidAmountStatus = (): string => {
+    if (formData.amount === 0) {
+      return 'none';
+    } else if (formData.amountPaid === 0) {
+      return 'none';
+    } else if (formData.amountPaid >= formData.amount) {
+      return 'fully';
+    } else if (formData.amountPaid > 0) {
+      return 'partial';
+    } else {
+      return 'none';
+    }
+  };
+
+  const paidAmountStatus = calculatePaidAmountStatus();
+
   // Initialize form with edit data when in edit mode
   useEffect(() => {
     if (isEditMode && customerToEdit) {
@@ -166,6 +201,9 @@ export function AddCustomerDialog({
         city: customerToEdit.city || "",
         photo: customerToEdit.photo || null,
         documents: customerToEdit.documents || [],
+        amount: customerToEdit.amount || 0,
+        amountPaid: customerToEdit.amountPaid || 0,
+        paidAmount: customerToEdit.paidAmount || 'none',
       });
       
       // Set selected date for calendar picker
@@ -202,7 +240,17 @@ export function AddCustomerDialog({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    
+    // Handle numeric inputs
+    if (name === 'amount' || name === 'amountPaid') {
+      const numValue = parseFloat(value) || 0;
+      setFormData(prev => ({ 
+        ...prev, 
+        [name]: numValue 
+      }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
     
     // If registrationDate changes, update selectedDate for calendar
     if (name === "registrationDate") {
@@ -294,6 +342,8 @@ export function AddCustomerDialog({
       city: "",
       photo: null,
       documents: [],
+      amount: 0,
+      amountPaid: 0,
     });
     setSelectedDate(new Date());
     setSelectedYear(new Date().getFullYear());
@@ -346,6 +396,22 @@ export function AddCustomerDialog({
       }
     }
     
+    // Validate amount fields
+    if (formData.amount < 0) {
+      toast.error("Total amount cannot be negative");
+      return false;
+    }
+    
+    if (formData.amountPaid < 0) {
+      toast.error("Paid amount cannot be negative");
+      return false;
+    }
+    
+    if (formData.amountPaid > formData.amount) {
+      toast.error("Paid amount cannot exceed total amount");
+      return false;
+    }
+    
     return true;
   };
 
@@ -365,6 +431,8 @@ export function AddCustomerDialog({
       // Convert DD-MM-YYYY to ISO string for backend
       const registrationDateForBackend = formatDateForBackend(formData.registrationDate);
 
+      // IMPORTANT: Backend expects amount and amountPaid (number)
+      // The paidAmount status will be calculated automatically by backend pre-save middleware
       const requestData = {
         customerName: formData.customerName.trim(),
         phoneNo: formData.phoneNo.trim(),
@@ -375,8 +443,13 @@ export function AddCustomerDialog({
         province: formData.province || "",
         city: formData.city || "",
         photo: formData.photo,
-        documents: formData.documents
+        documents: formData.documents,
+        amount: formData.amount,
+        amountPaid: formData.amountPaid // Send amountPaid, NOT paidAmount
+        // DO NOT send paidAmount - backend calculates it automatically
       };
+
+      console.log("📤 Frontend sending request data:", requestData);
 
       let url = `${API_BASE_URL}/create-customers`;
       let method: 'post' | 'put' = 'post';
@@ -385,10 +458,6 @@ export function AddCustomerDialog({
         url = `${API_BASE_URL}/${customerToEdit._id}`;
         method = 'put';
       }
-
-      console.log("📤 Sending to:", url);
-      console.log("📦 Method:", method);
-      console.log("📦 Request Data:", requestData);
 
       const response = await axios[method](
         url,
@@ -459,6 +528,8 @@ export function AddCustomerDialog({
               toast.error("This CNIC number is already registered");
             } else if (errorData.message.includes("Email")) {
               toast.error("This email is already registered");
+            } else if (errorData.message.includes("amount")) {
+              toast.error(errorData.message);
             }
           } else {
             toast.error("Validation failed. Please check your input.");
@@ -496,6 +567,17 @@ export function AddCustomerDialog({
   const getDaysInMonth = (year: number, month: number) => {
     return new Date(year, month + 1, 0).getDate();
   };
+
+  // Helper to update amountPaid when amount changes to keep them in sync
+  useEffect(() => {
+    // If amountPaid is greater than new amount, adjust it
+    if (formData.amountPaid > formData.amount) {
+      setFormData(prev => ({
+        ...prev,
+        amountPaid: formData.amount
+      }));
+    }
+  }, [formData.amount, formData.amountPaid]);
 
   return (
     <Dialog open={open} onOpenChange={handleDialogClose}>
@@ -808,6 +890,109 @@ export function AddCustomerDialog({
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* Financial Information Section */}
+          <div className="mb-6">
+            <h3 className="text-sm sm:text-base font-semibold text-primary mb-4 flex items-center gap-2">
+              <DollarSign className="w-4 h-4" />
+              Financial Information
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Total Amount (PKR)</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    name="amount"
+                    placeholder="0"
+                    value={formData.amount || ""}
+                    onChange={handleInputChange}
+                    min="0"
+                    step="1"
+                    className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary pr-10"
+                    disabled={isSubmitting}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    PKR
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Total amount for customer</p>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Amount Paid (PKR)</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    name="amountPaid"
+                    placeholder="0"
+                    value={formData.amountPaid || ""}
+                    onChange={handleInputChange}
+                    min="0"
+                    max={formData.amount}
+                    step="1"
+                    className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary pr-10"
+                    disabled={isSubmitting}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    PKR
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Amount already paid</p>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Payment Status</label>
+                <div className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      paidAmountStatus === 'fully' ? 'bg-green-100 text-green-800' :
+                      paidAmountStatus === 'partial' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {paidAmountStatus === 'fully' ? 'Fully Paid' :
+                       paidAmountStatus === 'partial' ? 'Partially Paid' :
+                       'Not Paid'}
+                    </span>
+                    <span className="text-sm font-medium">
+                      {formatCurrency(pendingAmount)} pending
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {paidAmountStatus === 'fully' ? 'All payments received' :
+                     paidAmountStatus === 'partial' ? 'Partial payment received' :
+                     'No payment received yet'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Quick Payment Buttons */}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, amountPaid: 0 }))}
+                className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-md"
+              >
+                Mark as Not Paid
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const partialAmount = Math.floor(formData.amount / 2);
+                  setFormData(prev => ({ ...prev, amountPaid: partialAmount }));
+                }}
+                className="px-3 py-1.5 text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-800 rounded-md"
+              >
+                Mark 50% Paid
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, amountPaid: formData.amount }))}
+                className="px-3 py-1.5 text-xs bg-green-100 hover:bg-green-200 text-green-800 rounded-md"
+              >
+                Mark Fully Paid
+              </button>
             </div>
           </div>
 

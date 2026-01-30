@@ -19,7 +19,8 @@ const addSale = async (req, res) => {
       sellingWeight,
       saleDate,
       paymentMethod,
-      paymentStatus,
+      paymentStatus, // Optional: can be 'none', 'partial', 'paid'
+      amountPaid = 0, // Add amountPaid from request
       invoiceNo,
       transportationCost,
       notes
@@ -72,40 +73,79 @@ const addSale = async (req, res) => {
     // Get receipt image if uploaded
     const receiptImage = req.file ? `/uploads/receipts/${req.file.filename}` : "";
 
+    // Convert payment amount to number
+    const paidAmount = parseFloat(amountPaid) || 0;
+    const sellingPriceNum = parseFloat(sellingPrice) || 0;
+
+    // Calculate remaining amount based on amount paid
+    const remainingAmount = Math.max(0, sellingPriceNum - paidAmount);
+
+    // Determine payment status if not provided
+    let finalPaymentStatus = paymentStatus;
+    if (!finalPaymentStatus) {
+      if (paidAmount === 0) {
+        finalPaymentStatus = 'none';
+      } else if (paidAmount >= sellingPriceNum) {
+        finalPaymentStatus = 'paid';
+      } else {
+        finalPaymentStatus = 'partial';
+      }
+    }
+
     // Create sale record using your Sale model fields
-    // Map frontend fields to Sale model fields
     const sale = await Sale.create({
-      // Map from frontend to Sale model
-      purchaseId,  // Add this to your Sale model if not exists
-      materialName: purchase.materialName,  // Get from purchase
-      supplierName: purchase.vendor,        // Get from purchase
+      purchaseId,  // Consider adding this field to your Sale schema
+      materialName: purchase.materialName,
+      supplierName: purchase.vendor || purchase.supplierName || "",
       invoiceNo,
-      weight: sellingWeight.toString(),     // Selling weight
-      unit: "kg",                           // Default or get from purchase
-      purchaseDate: saleDate || new Date().toISOString(),
+      weight: sellingWeight.toString(),
+      unit: purchase.unit || "kg",  // Use purchase unit if available
+      purchaseDate: saleDate || new Date().toISOString().split('T')[0],
       purchaseTime: new Date().toLocaleTimeString('en-US', { 
         hour12: false,
         hour: '2-digit',
         minute: '2-digit'
       }),
-      branch: "Main",                       // Default
-      materialColor: purchase.materialColor, // Get from purchase
-      actualPrice: purchase.price,          // Get from purchase
-      productionCost: "0",                   // Default or calculate
+      branch: "Main",  // You might want to make this configurable
+      materialColor: purchase.materialColor || "",
+      actualPrice: purchase.price || "0",
+      productionCost: "0",  // You can calculate this if needed
       sellingPrice: sellingPrice.toString(),
       discount: "0",
       finalAmount: sellingPrice.toString(),
-      advancePayment: 0,
+      advancePayment: paidAmount,  // Use amountPaid as advance payment
+      
+      // Payment Tracking Fields
+      amountPaid: paidAmount,
+      remainingAmount: remainingAmount,
+      paymentStatus: finalPaymentStatus,
+      
+      // Buyer Details
       buyerName: customerName,
       buyerAddress: "",
       buyerPhone: customerPhone || "",
       buyerEmail: customerEmail || "",
       buyerCnic: "",
       buyerCompany: "",
+      
+      // Receipt
       receiptImage,
+      
+      // Additional fields from request
       transportationCost: transportationCost || 0,
       notes: notes || ""
     });
+
+    // If there's an initial payment, you might want to create a payment record
+    if (paidAmount > 0) {
+      // Optional: Create initial payment record
+      // await PaymentRecord.create({
+      //   saleId: sale._id,
+      //   paymentMethod: paymentMethod || 'cash',
+      //   amount: paidAmount,
+      //   notes: "Initial payment during sale creation"
+      // });
+    }
 
     res.status(201).json({
       success: true,
@@ -116,6 +156,11 @@ const addSale = async (req, res) => {
           id: purchase._id,
           remainingWeight: newRemainingWeight,
           status: purchase.status
+        },
+        paymentSummary: {
+          amountPaid: paidAmount,
+          remainingAmount: remainingAmount,
+          paymentStatus: finalPaymentStatus
         }
       }
     });
