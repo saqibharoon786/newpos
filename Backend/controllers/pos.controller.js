@@ -19,8 +19,8 @@ const addSale = async (req, res) => {
       sellingWeight,
       saleDate,
       paymentMethod,
-      paymentStatus, // Optional: can be 'none', 'partial', 'paid'
-      amountPaid = 0, // Add amountPaid from request
+      paymentStatus,
+      amountPaid = 0,
       invoiceNo,
       transportationCost,
       notes
@@ -43,44 +43,74 @@ const addSale = async (req, res) => {
       });
     }
 
+    // DEBUG LOGGING - Add this to see what's happening
+    console.log('=== DEBUG SALE INFO ===');
+    console.log('Purchase ID:', purchaseId);
+    console.log('Purchase weight:', purchase.weight, 'Type:', typeof purchase.weight);
+    console.log('Purchase soldWeight:', purchase.soldWeight, 'Type:', typeof purchase.soldWeight);
+    console.log('Purchase remainingWeight:', purchase.remainingWeight, 'Type:', typeof purchase.remainingWeight);
+    console.log('Selling weight:', sellingWeight, 'Type:', typeof sellingWeight);
+
     // Convert weights to numbers
-    const purchaseWeight = parseFloat(purchase.weight) || 0;
+    const originalWeight = parseFloat(purchase.weight) || 0;
+    const currentSoldWeight = parseFloat(purchase.soldWeight) || 0;
     const weightToSell = parseFloat(sellingWeight);
+    
+    // DEBUG: Show parsed values
+    console.log('Parsed originalWeight:', originalWeight);
+    console.log('Parsed currentSoldWeight:', currentSoldWeight);
+    console.log('Parsed weightToSell:', weightToSell);
+
+    // Calculate current remaining weight
+    const currentRemainingWeight = originalWeight - currentSoldWeight;
+    console.log('Calculated currentRemainingWeight:', currentRemainingWeight);
 
     // Check if enough stock
-    if (weightToSell > purchaseWeight) {
+    if (weightToSell > currentRemainingWeight) {
+      console.log('ERROR: Not enough stock');
+      console.log('weightToSell:', weightToSell);
+      console.log('currentRemainingWeight:', currentRemainingWeight);
+      console.log('originalWeight:', originalWeight);
+      console.log('currentSoldWeight:', currentSoldWeight);
+      
       return res.status(400).json({
         success: false,
-        message: `Cannot sell ${weightToSell}kg. Only ${purchaseWeight}kg available.`
+        message: `Cannot sell ${weightToSell}kg. Only ${currentRemainingWeight}kg available.`
       });
     }
 
-    // Calculate new remaining weight
-    const newRemainingWeight = purchaseWeight - weightToSell;
+    // Calculate new sold weight
+    const newSoldWeight = currentSoldWeight + weightToSell;
+    const newRemainingWeight = originalWeight - newSoldWeight;
+
+    console.log('New soldWeight:', newSoldWeight);
+    console.log('New remainingWeight:', newRemainingWeight);
 
     // Update purchase record
-    purchase.weight = newRemainingWeight.toString();
+    purchase.soldWeight = newSoldWeight;
+    purchase.remainingWeight = newRemainingWeight;
     
-    // Update status if all sold
+    // Update status
     if (newRemainingWeight === 0) {
       purchase.status = 'sold_out';
-    } else {
+    } else if (newRemainingWeight < originalWeight) {
       purchase.status = 'partially_sold';
+    } else {
+      purchase.status = 'available';
     }
     
+    console.log('Updated purchase status:', purchase.status);
+    console.log('=== END DEBUG ===');
+
     await purchase.save();
 
-    // Get receipt image if uploaded
+    // Rest of your sale creation code...
     const receiptImage = req.file ? `/uploads/receipts/${req.file.filename}` : "";
-
-    // Convert payment amount to number
     const paidAmount = parseFloat(amountPaid) || 0;
     const sellingPriceNum = parseFloat(sellingPrice) || 0;
-
-    // Calculate remaining amount based on amount paid
     const remainingAmount = Math.max(0, sellingPriceNum - paidAmount);
 
-    // Determine payment status if not provided
+    // Determine payment status
     let finalPaymentStatus = paymentStatus;
     if (!finalPaymentStatus) {
       if (paidAmount === 0) {
@@ -92,28 +122,28 @@ const addSale = async (req, res) => {
       }
     }
 
-    // Create sale record using your Sale model fields
+    // Create sale record
     const sale = await Sale.create({
-      purchaseId,  // Consider adding this field to your Sale schema
+      purchaseId,
       materialName: purchase.materialName,
       supplierName: purchase.vendor || purchase.supplierName || "",
       invoiceNo,
       weight: sellingWeight.toString(),
-      unit: purchase.unit || "kg",  // Use purchase unit if available
+      unit: purchase.unit || "kg",
       purchaseDate: saleDate || new Date().toISOString().split('T')[0],
       purchaseTime: new Date().toLocaleTimeString('en-US', { 
         hour12: false,
         hour: '2-digit',
         minute: '2-digit'
       }),
-      branch: "Main",  // You might want to make this configurable
+      branch: "Main",
       materialColor: purchase.materialColor || "",
       actualPrice: purchase.price || "0",
-      productionCost: "0",  // You can calculate this if needed
+      productionCost: "0",
       sellingPrice: sellingPrice.toString(),
       discount: "0",
       finalAmount: sellingPrice.toString(),
-      advancePayment: paidAmount,  // Use amountPaid as advance payment
+      advancePayment: paidAmount,
       
       // Payment Tracking Fields
       amountPaid: paidAmount,
@@ -136,17 +166,6 @@ const addSale = async (req, res) => {
       notes: notes || ""
     });
 
-    // If there's an initial payment, you might want to create a payment record
-    if (paidAmount > 0) {
-      // Optional: Create initial payment record
-      // await PaymentRecord.create({
-      //   saleId: sale._id,
-      //   paymentMethod: paymentMethod || 'cash',
-      //   amount: paidAmount,
-      //   notes: "Initial payment during sale creation"
-      // });
-    }
-
     res.status(201).json({
       success: true,
       message: "Sale completed successfully",
@@ -154,6 +173,8 @@ const addSale = async (req, res) => {
         sale,
         updatedPurchase: {
           id: purchase._id,
+          originalWeight: originalWeight,
+          soldWeight: newSoldWeight,
           remainingWeight: newRemainingWeight,
           status: purchase.status
         },

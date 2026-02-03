@@ -21,7 +21,9 @@ interface Purchase {
   materialName: string;
   vendor: string;
   price: number;
-  weight: string;
+  weight: string; // Original weight
+  soldWeight: number; // Sold weight
+  remainingWeight: number; // Calculated remaining
   quality: string;
   purchaseDate: string;
   purchaseTime?: string;
@@ -39,14 +41,15 @@ interface Purchase {
   amountPaid: number;
   paidAmount: 'none' | 'partial' | 'paid';
   remainingAmount: number;
+  status: 'available' | 'partially_sold' | 'sold_out';
   createdAt: string;
   updatedAt: string;
 }
 
 interface PurchaseWithRemaining extends Purchase {
-  totalWeight: number;
-  soldWeight: number;
-  remainingWeight: number;
+  totalWeight: number; // Original weight (same as weight field)
+  soldWeight: number; // Already exists in Purchase
+  remainingWeight: number; // Already exists in Purchase
 }
 
 interface PaymentHistory {
@@ -101,6 +104,28 @@ const PaymentStatusBadge = ({ status }: { status: 'none' | 'partial' | 'paid' })
   );
 };
 
+const StockStatusBadge = ({ status }: { status: 'available' | 'partially_sold' | 'sold_out' }) => {
+  const getStatusConfig = (status: string) => {
+    switch (status) {
+      case 'available':
+        return { bg: 'bg-green-100', text: 'text-green-800', label: 'Available' };
+      case 'partially_sold':
+        return { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Partially Sold' };
+      case 'sold_out':
+        return { bg: 'bg-red-100', text: 'text-red-800', label: 'Sold Out' };
+      default:
+        return { bg: 'bg-gray-100', text: 'text-gray-800', label: 'Unknown' };
+    }
+  };
+
+  const config = getStatusConfig(status);
+  return (
+    <span className={`px-2 py-1 text-xs ${config.bg} ${config.text} rounded-full`}>
+      {config.label}
+    </span>
+  );
+};
+
 const PaymentModal = ({ 
   open, 
   onClose, 
@@ -113,7 +138,7 @@ const PaymentModal = ({
   onPaymentSuccess: (newPayment: PaymentHistory) => void;
 }) => {
   const [paymentAmount, setPaymentAmount] = useState<string>("");
-  const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [paymentDate, setPaymentDate] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<string>("cash");
   const [notes, setNotes] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -127,11 +152,41 @@ const PaymentModal = ({
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+  // Format date to YYYY-MM-DD
+  const formatDateToYMD = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Parse date from YYYY-MM-DD string to Date object (local time)
+  const parseDateFromYMD = (dateStr: string): Date => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    // Create date in local timezone (month is 0-indexed)
+    return new Date(year, month - 1, day);
+  };
+
+  // Format date for display
+  const formatDateForDisplay = (dateStr: string): string => {
+    const date = parseDateFromYMD(dateStr);
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  };
+
   useEffect(() => {
     if (open && purchase) {
+      const today = new Date();
+      const formattedToday = formatDateToYMD(today);
+      
       setPaymentAmount("");
-      setPaymentDate(new Date().toISOString().split('T')[0]);
-      setSelectedDate(new Date());
+      setPaymentDate(formattedToday);
+      setSelectedDate(today);
+      setCurrentMonth(today.getMonth());
+      setCurrentYear(today.getFullYear());
       setPaymentMethod("cash");
       setNotes("");
     }
@@ -173,16 +228,20 @@ const PaymentModal = ({
 
   const handleDateSelect = (day: number) => {
     const date = new Date(currentYear, currentMonth, day);
+    const formattedDate = formatDateToYMD(date);
+    
     setSelectedDate(date);
-    setPaymentDate(date.toISOString().split('T')[0]);
+    setPaymentDate(formattedDate);
     setCalendarOpen(false);
     setShowYearDropdown(false);
   };
 
   const handleToday = () => {
     const today = new Date();
+    const formattedToday = formatDateToYMD(today);
+    
     setSelectedDate(today);
-    setPaymentDate(today.toISOString().split('T')[0]);
+    setPaymentDate(formattedToday);
     setCurrentMonth(today.getMonth());
     setCurrentYear(today.getFullYear());
     setCalendarOpen(false);
@@ -273,13 +332,18 @@ const PaymentModal = ({
 
             {Array.from({ length: getDaysInMonth(currentYear, currentMonth) }).map((_, index) => {
               const day = index + 1;
-              const isToday = new Date().getDate() === day && 
-                              new Date().getMonth() === currentMonth &&
-                              new Date().getFullYear() === currentYear;
-              const isSelected = selectedDate && 
-                                selectedDate.getDate() === day &&
-                                selectedDate.getMonth() === currentMonth &&
-                                selectedDate.getFullYear() === currentYear;
+              
+              // Check if this day is selected
+              const selectedDateObj = parseDateFromYMD(paymentDate);
+              const isSelected = selectedDateObj.getDate() === day &&
+                                selectedDateObj.getMonth() === currentMonth &&
+                                selectedDateObj.getFullYear() === currentYear;
+              
+              // Check if this day is today
+              const today = new Date();
+              const isToday = today.getDate() === day && 
+                              today.getMonth() === currentMonth &&
+                              today.getFullYear() === currentYear;
 
               return (
                 <button
@@ -339,7 +403,7 @@ const PaymentModal = ({
         _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         purchaseId: purchase._id,
         amount: amount,
-        paymentDate: paymentDate,
+        paymentDate: paymentDate, // This is already in YYYY-MM-DD format
         paymentMethod: paymentMethod,
         notes: notes || `Payment of Rs. ${amount.toLocaleString()}`,
         receiptNo: purchase.receiptNo,
@@ -460,11 +524,7 @@ const PaymentModal = ({
                   <input
                     type="text"
                     readOnly
-                    value={new Date(paymentDate).toLocaleDateString('en-GB', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric'
-                    })}
+                    value={formatDateForDisplay(paymentDate)}
                     className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 pr-10 text-sm text-foreground cursor-pointer"
                   />
                   <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
@@ -1430,7 +1490,9 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         advancePayment: advancePaymentNum,
         amountPaid: totalAmountPaid,
         paidAmount: paidAmount,
-        remainingAmount: remainingAmount > 0 ? remainingAmount : 0
+        remainingAmount: remainingAmount > 0 ? remainingAmount : 0,
+        soldWeight: 0, // Initialize soldWeight as 0 for new purchases
+        status: 'available' // Initialize status
       };
 
       Object.entries(fields).forEach(([key, value]) => {
@@ -2302,31 +2364,22 @@ export function POPView() {
     fetchPurchases();
   }, []);
 
-  // FIXED: Function to parse concatenated price strings like "01000012000060002000010010"
   const parseConcatenatedPrices = (priceString: string | number): number => {
     if (!priceString) return 0;
     
-    // If it's already a number, return it
     if (typeof priceString === 'number') {
       return priceString;
     }
     
-    // If it's a string that can be parsed as a single number, do that
     const asNumber = Number(priceString);
     if (!isNaN(asNumber)) {
       return asNumber;
     }
     
-    // If it looks like concatenated prices (e.g., "01000012000060002000010010")
-    // This string would be: 010000 + 120000 + 600020 + 00010010
-    // But actually from your example: 10000 + 120000 + 600020 + 10010 = 740030
-    
-    // Remove any non-digit characters
     const cleanString = priceString.toString().replace(/[^\d]/g, '');
     
     if (cleanString.length === 0) return 0;
     
-    // Try to parse as individual 6-digit chunks first
     if (cleanString.length % 6 === 0) {
       let total = 0;
       const chunkSize = 6;
@@ -2341,18 +2394,15 @@ export function POPView() {
       return total;
     }
     
-    // Otherwise, try to parse the whole string as a single number
     const parsed = parseFloat(cleanString);
     return isNaN(parsed) ? 0 : parsed;
   };
 
-  // FIXED: Enhanced formatCurrency function
   const formatCurrency = (amount: number | string) => {
     try {
       let numAmount: number;
       
       if (typeof amount === 'string') {
-        // Parse concatenated price strings
         numAmount = parseConcatenatedPrices(amount);
       } else {
         numAmount = amount;
@@ -2369,10 +2419,8 @@ export function POPView() {
     }
   };
 
-  // FIXED: Calculate totals properly
   const calculateTotals = () => {
     const totalPrice = purchases.reduce((sum, p) => {
-      // Use the parseConcatenatedPrices function for each purchase price
       return sum + parseConcatenatedPrices(p.price);
     }, 0);
     
@@ -2384,14 +2432,28 @@ export function POPView() {
       return sum + (Number(p.remainingAmount) || 0);
     }, 0);
     
+    // IMPORTANT: Use the original weight from the purchase, not soldWeight
+    const totalWeight = purchases.reduce((sum, p) => {
+      const weight = parseFloat(p.weight) || 0;
+      return sum + weight;
+    }, 0);
+    
+    const totalSoldWeight = purchases.reduce((sum, p) => {
+      return sum + (p.soldWeight || 0);
+    }, 0);
+    
+    const totalRemainingWeight = purchases.reduce((sum, p) => {
+      return sum + (p.remainingWeight || 0);
+    }, 0);
+    
     return {
       totalPurchases: purchases.length,
       totalPrice: totalPrice,
       totalAmountPaid: totalAmountPaid,
       totalRemainingAmount: totalRemainingAmount,
-      totalWeight: purchases.reduce((sum, p) => sum + (p.totalWeight || 0), 0),
-      totalSoldWeight: purchases.reduce((sum, p) => sum + (p.soldWeight || 0), 0),
-      totalRemainingWeight: purchases.reduce((sum, p) => sum + (p.remainingWeight || 0), 0),
+      totalWeight: totalWeight,
+      totalSoldWeight: totalSoldWeight,
+      totalRemainingWeight: totalRemainingWeight,
     };
   };
 
@@ -2404,54 +2466,28 @@ export function POPView() {
       if (response.data.success) {
         const purchasesData = response.data.data || [];
         
-        // Debug: Log what we're getting from the API
         console.log('Raw purchases data:', purchasesData);
         
-        const purchasesWithRemaining = await Promise.all(
-          purchasesData.map(async (purchase: Purchase) => {
-            try {
-              const salesResponse = await api.get(`${API_BASE_URL}/api/sales/purchase/${purchase._id}`).catch(() => ({ data: { data: [] } }));
-              const sales = salesResponse?.data?.data || [];
-              
-              let soldWeight = 0;
-              sales.forEach((sale: any) => {
-                soldWeight += parseFloat(sale.weight) || 0;
-              });
-              
-              const totalWeight = parseFloat(purchase.weight) || 0;
-              const remainingWeight = totalWeight - soldWeight;
-              
-              // Parse the price properly
-              const parsedPrice = parseConcatenatedPrices(purchase.price);
-              
-              // Debug: Log individual purchase parsing
-              console.log(`Purchase ${purchase.receiptNo}: Original price: ${purchase.price}, Parsed: ${parsedPrice}`);
-              
-              return {
-                ...purchase,
-                price: parsedPrice, // Use the parsed price
-                totalWeight,
-                soldWeight,
-                remainingWeight: remainingWeight > 0 ? remainingWeight : 0,
-              };
-            } catch (error) {
-              const totalWeight = parseFloat(purchase.weight) || 0;
-              const parsedPrice = parseConcatenatedPrices(purchase.price);
-              
-              return {
-                ...purchase,
-                price: parsedPrice,
-                totalWeight,
-                soldWeight: 0,
-                remainingWeight: totalWeight,
-              };
-            }
-          })
-        );
+        // Now the backend already provides soldWeight, remainingWeight, and status
+        const purchasesWithRemaining = purchasesData.map((purchase: any) => {
+          const originalWeight = parseFloat(purchase.weight) || 0;
+          const soldWeight = purchase.soldWeight || 0;
+          const remainingWeight = purchase.remainingWeight || (originalWeight - soldWeight);
+          
+          const parsedPrice = parseConcatenatedPrices(purchase.price);
+          
+          return {
+            ...purchase,
+            price: parsedPrice,
+            totalWeight: originalWeight, // Original purchase weight
+            soldWeight: soldWeight, // Already sold weight from backend
+            remainingWeight: remainingWeight, // Calculated remaining from backend
+            status: purchase.status || 'available'
+          };
+        });
         
         setPurchases(purchasesWithRemaining);
         
-        // Log the final calculated total
         const totals = calculateTotals();
         console.log('Final calculated total price:', totals.totalPrice);
         
@@ -2596,7 +2632,7 @@ export function POPView() {
         <h1 className="text-lg font-semibold text-foreground">Point Of Purchase (POP)</h1>
       </div>
 
-      {/* UPDATED: Added Total Weight Card */}
+      {/* Updated Totals Section */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <div className="bg-cms-card rounded-lg p-4 border border-border">
           <div className="flex items-center justify-between">
@@ -2648,7 +2684,6 @@ export function POPView() {
             </div>
           </div>
         </div>
-        {/* ADDED: Total Weight Card */}
         <div className="bg-cms-card rounded-lg p-4 border border-border">
           <div className="flex items-center justify-between">
             <div>
@@ -2739,14 +2774,14 @@ export function POPView() {
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Price</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Amount Paid</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining Amount</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Status</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Payment Status</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total Weight (kg)</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Sold Weight (kg)</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining Weight (kg)</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Stock Status</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Supplier</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date & Time</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Stock Status</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
                 </tr>
               </thead>
@@ -2790,6 +2825,7 @@ export function POPView() {
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground">
                         <div className="font-medium">{formatCurrency(purchase.totalWeight)} kg</div>
+                        <div className="text-xs text-muted-foreground">Original: {formatCurrency(purchase.weight)} kg</div>
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground">
                         <div className={`font-medium ${purchase.soldWeight > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
@@ -2807,30 +2843,12 @@ export function POPView() {
                           {formatCurrency(purchase.remainingWeight)} kg
                         </div>
                       </td>
+                      <td className="px-4 py-3">
+                        <StockStatusBadge status={purchase.status || 'available'} />
+                      </td>
                       <td className="px-4 py-3 text-sm text-foreground">{purchase.vendor || 'N/A'}</td>
                       <td className="px-4 py-3 text-sm text-foreground">{purchase.vehicleNumber || 'N/A'}</td>
                       <td className="px-4 py-3 text-sm text-primary">{formatDateTime(purchase.purchaseDate || purchase.createdAt)}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex">
-                          {purchase.remainingWeight > purchase.totalWeight * 0.5 ? (
-                            <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
-                              In Stock
-                            </span>
-                          ) : purchase.remainingWeight > 0 ? (
-                            <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
-                              Low Stock
-                            </span>
-                          ) : purchase.remainingWeight === 0 ? (
-                            <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">
-                              Out of Stock
-                            </span>
-                          ) : (
-                            <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">
-                              Over Sold
-                            </span>
-                          )}
-                        </div>
-                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <button 

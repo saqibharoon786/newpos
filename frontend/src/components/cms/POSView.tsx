@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package, ChevronDown, CheckCircle, DollarSign, History } from "lucide-react";
+import { AddSaleDialog } from "./AddSaleDialog"; // CHANGED: Import AddSaleDialog instead of AddAssetDialog
 import { SaleDetailsView } from "./SaleDetailsView";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
@@ -108,7 +109,7 @@ const PaymentModal = ({
   onPaymentSuccess: (newPayment: PaymentHistory) => void;
 }) => {
   const [paymentAmount, setPaymentAmount] = useState<string>("");
-  const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [paymentDate, setPaymentDate] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<string>("cash");
   const [notes, setNotes] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -122,11 +123,41 @@ const PaymentModal = ({
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+  // Format date to YYYY-MM-DD
+  const formatDateToYMD = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Parse date from YYYY-MM-DD string to Date object (local time)
+  const parseDateFromYMD = (dateStr: string): Date => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    // Create date in local timezone (month is 0-indexed)
+    return new Date(year, month - 1, day);
+  };
+
+  // Format date for display
+  const formatDateForDisplay = (dateStr: string): string => {
+    const date = parseDateFromYMD(dateStr);
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  };
+
   useEffect(() => {
     if (open && sale) {
+      const today = new Date();
+      const formattedToday = formatDateToYMD(today);
+      
       setPaymentAmount("");
-      setPaymentDate(new Date().toISOString().split('T')[0]);
-      setSelectedDate(new Date());
+      setPaymentDate(formattedToday);
+      setSelectedDate(today);
+      setCurrentMonth(today.getMonth());
+      setCurrentYear(today.getFullYear());
       setPaymentMethod("cash");
       setNotes("");
     }
@@ -168,16 +199,20 @@ const PaymentModal = ({
 
   const handleDateSelect = (day: number) => {
     const date = new Date(currentYear, currentMonth, day);
+    const formattedDate = formatDateToYMD(date);
+    
     setSelectedDate(date);
-    setPaymentDate(date.toISOString().split('T')[0]);
+    setPaymentDate(formattedDate);
     setCalendarOpen(false);
     setShowYearDropdown(false);
   };
 
   const handleToday = () => {
     const today = new Date();
+    const formattedToday = formatDateToYMD(today);
+    
     setSelectedDate(today);
-    setPaymentDate(today.toISOString().split('T')[0]);
+    setPaymentDate(formattedToday);
     setCurrentMonth(today.getMonth());
     setCurrentYear(today.getFullYear());
     setCalendarOpen(false);
@@ -268,13 +303,18 @@ const PaymentModal = ({
 
             {Array.from({ length: getDaysInMonth(currentYear, currentMonth) }).map((_, index) => {
               const day = index + 1;
-              const isToday = new Date().getDate() === day && 
-                              new Date().getMonth() === currentMonth &&
-                              new Date().getFullYear() === currentYear;
-              const isSelected = selectedDate && 
-                                selectedDate.getDate() === day &&
-                                selectedDate.getMonth() === currentMonth &&
-                                selectedDate.getFullYear() === currentYear;
+              
+              // Check if this day is selected
+              const selectedDateObj = parseDateFromYMD(paymentDate);
+              const isSelected = selectedDateObj.getDate() === day &&
+                                selectedDateObj.getMonth() === currentMonth &&
+                                selectedDateObj.getFullYear() === currentYear;
+              
+              // Check if this day is today
+              const today = new Date();
+              const isToday = today.getDate() === day && 
+                              today.getMonth() === currentMonth &&
+                              today.getFullYear() === currentYear;
 
               return (
                 <button
@@ -334,7 +374,7 @@ const PaymentModal = ({
         _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         saleId: sale._id,
         amount: amount,
-        paymentDate: paymentDate,
+        paymentDate: paymentDate, // This is already in YYYY-MM-DD format
         paymentMethod: paymentMethod,
         notes: notes || `Payment of Rs. ${amount.toLocaleString()}`,
         invoiceNo: sale.invoiceNo,
@@ -455,11 +495,7 @@ const PaymentModal = ({
                   <input
                     type="text"
                     readOnly
-                    value={new Date(paymentDate).toLocaleDateString('en-GB', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric'
-                    })}
+                    value={formatDateForDisplay(paymentDate)}
                     className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 pr-10 text-sm text-foreground cursor-pointer"
                   />
                   <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
@@ -1029,6 +1065,7 @@ export function POSView() {
 
   const handleAddSale = async () => {
     await fetchSales();
+    setShowDialog(false); // Close the dialog after saving
   };
 
   const handleEdit = (sale: Sale) => {
@@ -1584,15 +1621,14 @@ export function POSView() {
         allPayments={allPayments}
       />
 
-      {/* Note: AddSaleDialog should be imported and used here */}
-      {/* Add/Edit Dialog */}
-      {/* <AddSaleDialog
+      {/* Add/Edit Dialog - UNCOMMENTED AND CORRECTED */}
+      <AddSaleDialog
         open={showDialog}
         onOpenChange={setShowDialog}
         onSave={handleAddSale}
         isEdit={isEditMode}
         editData={selectedSale}
-      /> */}
+      />
     </div>
   );
 }

@@ -1,18 +1,27 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose'); // ADD THIS LINE
 
 const purchaseSchema = new mongoose.Schema(
   {
     materialName: { type: String, required: true },
     vendor: { type: String, required: true },
     price: { type: String, required: true },
-    weight: { type: String, required: true },
+    weight: { type: String, required: true }, // Original total weight
+    soldWeight: { type: Number, default: 0 }, // Total weight sold so far
+    remainingWeight: { type: Number }, // Calculated: weight - soldWeight
     quality: { type: String, required: false },
     
+    // Add status field
+    status: { 
+      type: String, 
+      enum: ['available', 'partially_sold', 'sold_out'], 
+      default: 'available' 
+    },
+    
     // Payment tracking
-    advancePayment: { type: Number, default: 0 }, // Advance paid before purchase
-    amountPaid: { type: Number, default: 0 }, // Amount paid during purchase
-    totalPaid: { type: Number, default: 0 }, // advancePayment + amountPaid
-    paidAmount: { // Payment status
+    advancePayment: { type: Number, default: 0 },
+    amountPaid: { type: Number, default: 0 },
+    totalPaid: { type: Number, default: 0 },
+    paidAmount: { 
       type: String, 
       enum: ['none', 'partial', 'paid'], 
       default: 'none' 
@@ -36,4 +45,23 @@ const purchaseSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Purchase", purchaseSchema);
+// Add pre-save middleware to calculate remainingWeight
+purchaseSchema.pre('save', function(next) {
+  const originalWeight = parseFloat(this.weight) || 0;
+  const soldWeight = this.soldWeight || 0;
+  this.remainingWeight = originalWeight - soldWeight;
+  
+  // Update status based on remaining weight
+  if (this.remainingWeight === 0) {
+    this.status = 'sold_out';
+  } else if (this.remainingWeight < originalWeight) {
+    this.status = 'partially_sold';
+  } else {
+    this.status = 'available';
+  }
+  
+  next();
+});
+
+// Don't forget to export the model
+module.exports = mongoose.model('Purchase', purchaseSchema);

@@ -1,30 +1,36 @@
 import { useState, useEffect, useRef } from "react";
-import { Save, Upload, Calendar, Edit, Trash2, Eye, Loader2, ChevronDown, Clock, Image as ImageIcon, X, Package, ChevronLeft, ChevronRight } from "lucide-react";
+import { 
+  Save, 
+  Upload, 
+  Calendar, 
+  ChevronDown, 
+  Clock, 
+  Package, 
+  ChevronLeft, 
+  ChevronRight,
+  Loader2 
+} from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import axios from "axios";
 
 // Configure axios with environment variable
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
-// Create axios instance with environment variable as base URL
+// Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
 });
 
-// Define endpoints using environment variable
-const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
-const SALES_API_URL = `${API_BASE_URL}/api/sales`;
-
-// Updated API endpoints to match your backend routes
+// Define API endpoints
 const API_ENDPOINTS = {
-  GET_ALL: PURCHASES_API_URL + "/get-all",
-  GET_ONE: (id: string) => `${PURCHASES_API_URL}/${id}`,
-  UPDATE: (id: string) => `${PURCHASES_API_URL}/${id}`,
-  DELETE: (id: string) => `${PURCHASES_API_URL}/${id}`,
-  ADD_SALE: `${SALES_API_URL}/add-sale`,
-  UPDATE_SALE: (id: string) => `${SALES_API_URL}/${id}`,
-  GET_SALES: `${SALES_API_URL}`,
+  PURCHASES_GET_ALL: `${API_BASE_URL}/api/purchases/get-all`,
+  SALES_ADD: `${API_BASE_URL}/api/sales/add-sale`,
+  SALES_UPDATE: (id: string) => `${API_BASE_URL}/api/sales/${id}`,
+  SALES_GET_ALL: `${API_BASE_URL}/api/sales`,
 };
 
 interface Purchase {
@@ -32,7 +38,7 @@ interface Purchase {
   materialName: string;
   vendor: string;
   price: string;
-  weight: string; // Total weight in POP
+  weight: string;
   quality: string;
   purchaseDate: string;
   materialColor: string;
@@ -45,8 +51,8 @@ interface Purchase {
   receiptNo: string;
   vehicleImage: string;
   advancePayment: number;
-  soldWeight: number; // Weight already sold
-  availableWeight: number; // Weight still available
+  soldWeight: number;
+  availableWeight: number;
   createdAt: string;
 }
 
@@ -55,7 +61,7 @@ interface Sale {
   materialName: string;
   supplierName: string;
   invoiceNo: string;
-  weight: string; // Sale weight
+  weight: string;
   unit: string;
   purchaseDate: string;
   branch: string;
@@ -65,12 +71,9 @@ interface Sale {
   sellingPrice: string;
   discount: string;
   advancePayment: number;
-  
-  // New payment tracking fields
   amountPaid: number;
   remainingAmount: number;
   paymentStatus: 'none' | 'partial' | 'paid';
-  
   buyerName: string;
   buyerAddress: string;
   buyerPhone: string;
@@ -80,8 +83,8 @@ interface Sale {
   finalAmount: string;
   receiptImage?: string;
   createdAt: string;
-  originalPurchaseId?: string; // Reference to purchase record
-  originalWeight?: number; // Original available weight before sale
+  originalPurchaseId?: string;
+  originalWeight?: number;
 }
 
 interface AddSaleDialogProps {
@@ -92,7 +95,6 @@ interface AddSaleDialogProps {
   editData?: Sale | null;
 }
 
-// Updated color options with Black
 const colorOptions = [
   { name: "White", color: "bg-white", value: "#FFFFFF" },
   { name: "Yellow", color: "bg-yellow-400", value: "#FACC15" },
@@ -103,7 +105,6 @@ const colorOptions = [
   { name: "Black", color: "bg-black", value: "#000000" },
 ];
 
-// Allowed file types for receipt
 const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf'];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -130,10 +131,12 @@ export function AddSaleDialog({
   const [selectedMinute, setSelectedMinute] = useState("00");
   const [selectedAmPm, setSelectedAmPm] = useState<"AM" | "PM">("PM");
 
-  // Refs for click outside handling
+  // Refs
   const calendarRef = useRef<HTMLDivElement>(null);
   const timeRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Form states
   const [formData, setFormData] = useState({
     materialName: "",
     supplierName: "",
@@ -155,10 +158,9 @@ export function AddSaleDialog({
     buyerEmail: "",
     buyerCnic: "",
     buyerCompany: "",
-    // Additional fields for controller
     paymentMethod: "Cash",
-    paymentStatus: "none", // Changed from "Completed" to match backend
-    amountPaid: "0", // NEW FIELD: Initial amount paid
+    paymentStatus: "none",
+    amountPaid: "0",
     transportationCost: "0",
     notes: "",
   });
@@ -181,7 +183,7 @@ export function AddSaleDialog({
   } | null>(null);
   const [weightError, setWeightError] = useState<string>("");
   const [paymentStatusError, setPaymentStatusError] = useState<string>("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [apiError, setApiError] = useState<string>("");
 
   // Calendar helper functions
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -190,6 +192,309 @@ export function AddSaleDialog({
   const getDaysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
   const getFirstDayOfMonth = (y: number, m: number) => new Date(y, m, 1).getDay();
 
+  // Helper functions
+  const getTodayDate = (): string => {
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yyyy = today.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
+
+  const getCurrentTime = (): string => {
+    const now = new Date();
+    let hour = now.getHours();
+    const minute = String(now.getMinutes()).padStart(2, '0');
+    const ampm: "AM" | "PM" = hour >= 12 ? "PM" : "AM";
+    const hour12 = hour % 12 || 12;
+    return `${hour12.toString().padStart(2, '0')}:${minute} ${ampm}`;
+  };
+
+  // Click outside handlers
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
+        setShowCalendar(false);
+        setShowYearDropdown(false);
+      }
+      if (timeRef.current && !timeRef.current.contains(event.target as Node)) {
+        setShowTimePicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Fetch materials when dialog opens
+  useEffect(() => {
+    if (open) {
+      fetchMaterials();
+      
+      if (isEdit && editData) {
+        // Populate form for editing
+        populateEditForm();
+      } else {
+        // Set default values for new sale
+        const todayStr = getTodayDate();
+        const currentTimeStr = getCurrentTime();
+        
+        setFormData(prev => ({
+          ...prev,
+          purchaseDate: todayStr,
+          purchaseTime: currentTimeStr,
+        }));
+        
+        setSelectedDate(new Date());
+      }
+    }
+  }, [open, isEdit, editData]);
+
+  // Populate form for editing
+  const populateEditForm = () => {
+    if (!editData) return;
+    
+    let saleDateParsed: Date | null = null;
+    let saleDateStr = getTodayDate();
+    if (editData.purchaseDate) {
+      try {
+        saleDateParsed = new Date(editData.purchaseDate);
+        if (!isNaN(saleDateParsed.getTime())) {
+          const dd = String(saleDateParsed.getDate()).padStart(2, '0');
+          const mm = String(saleDateParsed.getMonth() + 1).padStart(2, '0');
+          const yyyy = saleDateParsed.getFullYear();
+          saleDateStr = `${dd}/${mm}/${yyyy}`;
+        }
+      } catch (error) {
+        console.error("Error parsing sale date:", error);
+      }
+    }
+
+    let saleTimeStr = getCurrentTime();
+    if (editData.purchaseDate) {
+      try {
+        const saleTimeParsed = new Date(editData.purchaseDate);
+        if (!isNaN(saleTimeParsed.getTime())) {
+          let hour = saleTimeParsed.getHours();
+          const minute = String(saleTimeParsed.getMinutes()).padStart(2, '0');
+          const ampm: "AM" | "PM" = hour >= 12 ? "PM" : "AM";
+          const hour12 = hour % 12 || 12;
+          saleTimeStr = `${hour12.toString().padStart(2, '0')}:${minute} ${ampm}`;
+        }
+      } catch (error) {
+        console.error("Error parsing sale time:", error);
+      }
+    }
+
+    setFormData({
+      materialName: editData.materialName || "",
+      supplierName: editData.supplierName || "",
+      invoiceNo: editData.invoiceNo || "",
+      weight: editData.weight || "",
+      unit: editData.unit || "",
+      purchaseDate: saleDateStr,
+      purchaseTime: saleTimeStr,
+      branch: editData.branch || "",
+      materialColor: editData.materialColor || "#FFFFFF",
+      actualPrice: editData.actualPrice || "",
+      productionCost: editData.productionCost || "",
+      sellingPrice: editData.sellingPrice || "",
+      discount: editData.discount || "0",
+      advancePayment: editData.advancePayment?.toString() || "",
+      buyerName: editData.buyerName || "",
+      buyerAddress: editData.buyerAddress || "",
+      buyerPhone: editData.buyerPhone || "",
+      buyerEmail: editData.buyerEmail || "",
+      buyerCnic: editData.buyerCnic || "",
+      buyerCompany: editData.buyerCompany || "",
+      paymentMethod: "Cash",
+      paymentStatus: editData.paymentStatus || "none",
+      amountPaid: editData.amountPaid?.toString() || "0",
+      transportationCost: "0",
+      notes: "",
+    });
+    
+    setSelectedColor(editData.materialColor || "#FFFFFF");
+    
+    if (saleDateParsed) {
+      setSelectedDate(saleDateParsed);
+      setCurrentMonth(saleDateParsed.getMonth());
+      setCurrentYear(saleDateParsed.getFullYear());
+    }
+    
+    if (editData.receiptImage) {
+      setReceiptPreview(`${API_BASE_URL}${editData.receiptImage}`);
+    }
+  };
+
+  // Fetch materials from API
+  const fetchMaterials = async () => {
+    try {
+      setLoadingMaterials(true);
+      setApiError("");
+      
+      console.log("Fetching materials from:", API_ENDPOINTS.PURCHASES_GET_ALL);
+      
+      const response = await api.get(API_ENDPOINTS.PURCHASES_GET_ALL);
+      console.log("API Response:", response.data);
+      
+      let materialsData = [];
+      
+      // Handle different response structures
+      if (Array.isArray(response.data)) {
+        materialsData = response.data;
+      } else if (response.data && Array.isArray(response.data.data)) {
+        materialsData = response.data.data;
+      } else if (response.data && Array.isArray(response.data.purchases)) {
+        materialsData = response.data.purchases;
+      } else {
+        console.warn("Unexpected response structure:", response.data);
+        throw new Error("Invalid response format from server");
+      }
+      
+      // Process materials
+      const processedMaterials = materialsData.map((material: any) => ({
+        _id: material._id || material.id || `temp-${Math.random()}`,
+        materialName: material.materialName || material.name || "Unknown Material",
+        vendor: material.vendor || material.supplier || "Unknown Vendor",
+        price: material.price || "0",
+        weight: material.weight || "0",
+        quality: material.quality || "Standard",
+        purchaseDate: material.purchaseDate || new Date().toISOString(),
+        materialColor: material.materialColor || "#FFFFFF",
+        vehicleName: material.vehicleName || "",
+        vehicleType: material.vehicleType || "",
+        vehicleNumber: material.vehicleNumber || "",
+        driverName: material.driverName || "",
+        vehicleColor: material.vehicleColor || "",
+        deliveryDate: material.deliveryDate || "",
+        receiptNo: material.receiptNo || "",
+        vehicleImage: material.vehicleImage || "",
+        advancePayment: material.advancePayment || 0,
+        soldWeight: 0,
+        availableWeight: parseFloat(material.weight || "0"),
+        createdAt: material.createdAt || new Date().toISOString(),
+      }));
+      
+      console.log("Processed materials:", processedMaterials);
+      setMaterials(processedMaterials);
+      
+    } catch (error: any) {
+      console.error('Error fetching materials:', error);
+      setApiError(`Failed to load materials: ${error.message}`);
+      setMaterials([]);
+    } finally {
+      setLoadingMaterials(false);
+    }
+  };
+
+  // Handle file change
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+      alert('Invalid file type. Please upload JPEG, PNG, GIF, or PDF files only.');
+      return;
+    }
+
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      alert('File size too large. Maximum size is 5MB.');
+      return;
+    }
+
+    setReceiptFile(file);
+    
+    // Create preview for images
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setReceiptPreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else if (file.type === 'application/pdf') {
+      setReceiptPreview('pdf');
+    }
+  };
+
+  const removeReceipt = () => {
+    setReceiptFile(null);
+    setReceiptPreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Handle input changes
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    
+    setFormData(prev => ({ ...prev, [name]: value }));
+    
+    // Clear error for this field
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: "" }));
+    }
+    
+    // Validate weight when changed
+    if (name === 'weight' && selectedMaterialInfo) {
+      const saleWeight = parseFloat(value);
+      if (saleWeight > selectedMaterialInfo.availableWeight) {
+        setWeightError(`Warning: Sale weight exceeds available weight. Available: ${selectedMaterialInfo.availableWeight} kg`);
+      } else {
+        setWeightError("");
+      }
+    }
+    
+    // Validate amount paid
+    if (name === 'amountPaid') {
+      const sellingPrice = parseFloat(formData.sellingPrice) || 0;
+      const amountPaid = parseFloat(value) || 0;
+      
+      if (amountPaid > sellingPrice) {
+        setPaymentStatusError(`Warning: Amount paid (${amountPaid}) exceeds selling price (${sellingPrice})`);
+      } else {
+        setPaymentStatusError("");
+      }
+    }
+  };
+
+  // Handle material selection
+  const handleMaterialSelect = (materialName: string) => {
+    const selectedMaterial = materials.find(m => m.materialName === materialName);
+    
+    if (selectedMaterial) {
+      setFormData(prev => ({ 
+        ...prev, 
+        materialName,
+        supplierName: selectedMaterial.vendor || prev.supplierName,
+        actualPrice: selectedMaterial.price || prev.actualPrice,
+        branch: selectedMaterial.materialName || prev.branch,
+      }));
+      
+      setSelectedColor(selectedMaterial.materialColor || "#FFFFFF");
+      
+      const totalWeight = parseFloat(selectedMaterial.weight) || 0;
+      const availableWeight = selectedMaterial.availableWeight || totalWeight;
+      
+      setSelectedMaterialInfo({
+        totalWeight,
+        availableWeight,
+        soldWeight: selectedMaterial.soldWeight || 0,
+        purchaseId: selectedMaterial._id,
+        vendor: selectedMaterial.vendor,
+        price: selectedMaterial.price,
+        materialColor: selectedMaterial.materialColor
+      });
+      
+      // Reset weight field
+      setFormData(prev => ({ ...prev, weight: "" }));
+      setWeightError("");
+    }
+  };
+
+  // Calendar handlers
   const handlePrevMonth = () => {
     if (currentMonth === 0) {
       setCurrentMonth(11);
@@ -219,7 +524,10 @@ export function AddSaleDialog({
     const date = new Date(currentYear, currentMonth, day);
     setSelectedDate(date);
     setShowCalendar(false);
-    setShowYearDropdown(false);
+    setFormData(prev => ({ 
+      ...prev, 
+      purchaseDate: `${String(day).padStart(2, '0')}/${String(currentMonth + 1).padStart(2, '0')}/${currentYear}`
+    }));
   };
 
   const handleToday = () => {
@@ -228,242 +536,30 @@ export function AddSaleDialog({
     setCurrentMonth(today.getMonth());
     setCurrentYear(today.getFullYear());
     setShowCalendar(false);
-    setShowYearDropdown(false);
+    setFormData(prev => ({
+      ...prev,
+      purchaseDate: getTodayDate()
+    }));
   };
 
   // Time picker options
   const hours = Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0'));
   const minutes = ['00', '15', '30', '45'];
 
-  // Click outside handlers
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
-        setShowCalendar(false);
-        setShowYearDropdown(false);
-      }
-      if (timeRef.current && !timeRef.current.contains(event.target as Node)) {
-        setShowTimePicker(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  // Helper function to get today's date in dd/mm/yyyy format
-  const getTodayDate = (): string => {
-    const today = new Date();
-    const dd = String(today.getDate()).padStart(2, '0');
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const yyyy = today.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
+  // Calculate amounts
+  const calculateFinalAmount = () => {
+    const selling = parseFloat(formData.sellingPrice.replace(/,/g, '')) || 0;
+    const discount = parseFloat(formData.discount.replace(/,/g, '')) || 0;
+    return (selling - discount).toFixed(2);
   };
 
-  // Helper function to get current time in HH:MM AM/PM format
-  const getCurrentTime = (): string => {
-    const now = new Date();
-    let hour = now.getHours();
-    const minute = String(now.getMinutes()).padStart(2, '0');
-    const ampm: "AM" | "PM" = hour >= 12 ? "PM" : "AM";
-    const hour12 = hour % 12 || 12;
-    return `${hour12.toString().padStart(2, '0')}:${minute} ${ampm}`;
-  };
-
-  // Calculate payment status based on amount paid and selling price
-  const calculatePaymentStatus = (amountPaid: number, sellingPrice: number): 'none' | 'partial' | 'paid' => {
-    if (amountPaid === 0) {
-      return 'none';
-    } else if (amountPaid >= sellingPrice) {
-      return 'paid';
-    } else {
-      return 'partial';
-    }
-  };
-
-  // Populate form when editing
-  useEffect(() => {
-    if (open) {
-      const todayStr = getTodayDate();
-      const currentTimeStr = getCurrentTime();
-
-      if (isEdit && editData) {
-        // Parse sale date
-        let saleDateParsed: Date | null = null;
-        let saleDateStr = todayStr;
-        if (editData.purchaseDate) {
-          try {
-            saleDateParsed = new Date(editData.purchaseDate);
-            if (!isNaN(saleDateParsed.getTime())) {
-              const dd = String(saleDateParsed.getDate()).padStart(2, '0');
-              const mm = String(saleDateParsed.getMonth() + 1).padStart(2, '0');
-              const yyyy = saleDateParsed.getFullYear();
-              saleDateStr = `${dd}/${mm}/${yyyy}`;
-            }
-          } catch (error) {
-            console.error("Error parsing sale date:", error);
-          }
-        }
-
-        // Parse sale time
-        let saleTimeStr = currentTimeStr;
-        if (editData.purchaseDate) {
-          try {
-            const saleTimeParsed = new Date(editData.purchaseDate);
-            if (!isNaN(saleTimeParsed.getTime())) {
-              let hour = saleTimeParsed.getHours();
-              const minute = String(saleTimeParsed.getMinutes()).padStart(2, '0');
-              const ampm: "AM" | "PM" = hour >= 12 ? "PM" : "AM";
-              const hour12 = hour % 12 || 12;
-              saleTimeStr = `${hour12.toString().padStart(2, '0')}:${minute} ${ampm}`;
-            }
-          } catch (error) {
-            console.error("Error parsing sale time:", error);
-          }
-        }
-
-        setFormData({
-          materialName: editData.materialName || "",
-          supplierName: editData.supplierName || "",
-          invoiceNo: editData.invoiceNo || "",
-          weight: editData.weight || "",
-          unit: editData.unit || "",
-          purchaseDate: saleDateStr,
-          purchaseTime: saleTimeStr,
-          branch: editData.branch || "",
-          materialColor: editData.materialColor || "#FFFFFF",
-          actualPrice: editData.actualPrice || "",
-          productionCost: editData.productionCost || "",
-          sellingPrice: editData.sellingPrice || "",
-          discount: editData.discount || "0",
-          advancePayment: editData.advancePayment?.toString() || "",
-          buyerName: editData.buyerName || "",
-          buyerAddress: editData.buyerAddress || "",
-          buyerPhone: editData.buyerPhone || "",
-          buyerEmail: editData.buyerEmail || "",
-          buyerCnic: editData.buyerCnic || "",
-          buyerCompany: editData.buyerCompany || "",
-          paymentMethod: "Cash",
-          paymentStatus: editData.paymentStatus || "none",
-          amountPaid: editData.amountPaid?.toString() || "0",
-          transportationCost: "0",
-          notes: "",
-        });
-        
-        setSelectedColor(editData.materialColor || "#FFFFFF");
-        
-        // Set date picker states
-        if (saleDateParsed) {
-          setSelectedDate(saleDateParsed);
-          setCurrentMonth(saleDateParsed.getMonth());
-          setCurrentYear(saleDateParsed.getFullYear());
-        } else {
-          const now = new Date();
-          setSelectedDate(now);
-          setCurrentMonth(now.getMonth());
-          setCurrentYear(now.getFullYear());
-        }
-
-        // Set time picker states
-        const saleTimeMatch = saleTimeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-        if (saleTimeMatch) {
-          setSelectedHour(saleTimeMatch[1].padStart(2, '0'));
-          setSelectedMinute(saleTimeMatch[2]);
-          setSelectedAmPm((saleTimeMatch[3] as "AM" | "PM") || "AM");
-        }
-        
-        // Set receipt preview if exists
-        if (editData.receiptImage) {
-          setReceiptPreview(`${API_BASE_URL}${editData.receiptImage}`);
-        }
-      } else {
-        resetForm();
-      }
-      
-      // Fetch materials
-      fetchMaterials();
-    }
-  }, [open, isEdit, editData]);
-
-  // Update form data when date changes
-  useEffect(() => {
-    if (selectedDate) {
-      const dd = String(selectedDate.getDate()).padStart(2, '0');
-      const mm = String(selectedDate.getMonth() + 1).padStart(2, '0');
-      const yyyy = selectedDate.getFullYear();
-      setFormData(prev => ({ ...prev, purchaseDate: `${dd}/${mm}/${yyyy}` }));
-    }
-  }, [selectedDate]);
-
-  // Update form data when time changes
-  useEffect(() => {
-    const timeStr = `${selectedHour}:${selectedMinute} ${selectedAmPm}`;
-    setFormData(prev => ({ ...prev, purchaseTime: timeStr }));
-  }, [selectedHour, selectedMinute, selectedAmPm]);
-
-  // Update payment status when amount paid or selling price changes
-  useEffect(() => {
+  const calculateRemainingAmount = () => {
+    const selling = parseFloat(formData.sellingPrice.replace(/,/g, '')) || 0;
     const amountPaid = parseFloat(formData.amountPaid) || 0;
-    const sellingPrice = parseFloat(formData.sellingPrice) || 0;
-    
-    if (sellingPrice > 0) {
-      const paymentStatus = calculatePaymentStatus(amountPaid, sellingPrice);
-      setFormData(prev => ({ ...prev, paymentStatus }));
-    }
-  }, [formData.amountPaid, formData.sellingPrice]);
-
-  const fetchMaterials = async () => {
-    try {
-      setLoadingMaterials(true);
-      const response = await api.get(API_ENDPOINTS.GET_ALL);
-      
-      if (response.data.success) {
-        const materialsData = response.data.data || [];
-        
-        // Calculate available weight for each material
-        const materialsWithAvailableWeight = await Promise.all(
-          materialsData.map(async (material: Purchase) => {
-            try {
-              // Fetch sales for this material to calculate sold weight
-              const salesResponse = await api.get(`${SALES_API_URL}/get-by-material/${material.materialName}`);
-              let totalSoldWeight = 0;
-              
-              if (salesResponse.data.success && salesResponse.data.data) {
-                salesResponse.data.data.forEach((sale: Sale) => {
-                  totalSoldWeight += parseFloat(sale.weight) || 0;
-                });
-              }
-              
-              const totalWeight = parseFloat(material.weight) || 0;
-              const availableWeight = totalWeight - totalSoldWeight;
-              
-              return {
-                ...material,
-                soldWeight: totalSoldWeight,
-                availableWeight: availableWeight > 0 ? availableWeight : 0,
-              };
-            } catch (error) {
-              // If error fetching sales, assume no sales yet
-              const totalWeight = parseFloat(material.weight) || 0;
-              return {
-                ...material,
-                soldWeight: 0,
-                availableWeight: totalWeight,
-              };
-            }
-          })
-        );
-        
-        setMaterials(materialsWithAvailableWeight);
-      } else {
-        throw new Error(response.data.message || 'Failed to fetch materials');
-      }
-    } catch (error: any) {
-      console.error('Error fetching materials:', error);
-    } finally {
-      setLoadingMaterials(false);
-    }
+    return Math.max(0, selling - amountPaid).toFixed(2);
   };
 
+  // Validate form
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     
@@ -471,7 +567,6 @@ export function AddSaleDialog({
     if (!formData.supplierName.trim()) newErrors.supplierName = "Supplier name is required";
     if (!formData.invoiceNo.trim()) newErrors.invoiceNo = "Invoice number is required";
     
-    // Weight validation with custom logic
     if (!formData.weight.trim()) {
       newErrors.weight = "Weight is required";
     } else {
@@ -490,7 +585,6 @@ export function AddSaleDialog({
     if (!formData.actualPrice || parseFloat(formData.actualPrice.replace(/,/g, '')) <= 0) newErrors.actualPrice = "Valid actual price is required";
     if (!formData.sellingPrice || parseFloat(formData.sellingPrice.replace(/,/g, '')) <= 0) newErrors.sellingPrice = "Valid selling price is required";
     
-    // Amount paid validation
     const amountPaid = parseFloat(formData.amountPaid) || 0;
     const sellingPrice = parseFloat(formData.sellingPrice) || 0;
     if (amountPaid < 0) {
@@ -507,123 +601,13 @@ export function AddSaleDialog({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
-      alert('Invalid file type. Please upload JPEG, PNG, GIF, or PDF files only.');
-      return;
-    }
-
-    // Validate file size
-    if (file.size > MAX_FILE_SIZE) {
-      alert('File size too large. Maximum size is 5MB.');
-      return;
-    }
-
-    setReceiptFile(file);
-    
-    // Create preview for images
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setReceiptPreview(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    } else if (file.type === 'application/pdf') {
-      // For PDF files, show a PDF icon preview
-      setReceiptPreview('pdf');
-    }
-  };
-
-  const removeReceipt = () => {
-    setReceiptFile(null);
-    setReceiptPreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    
-    // Handle amount paid special validation
-    if (name === 'amountPaid') {
-      const sellingPrice = parseFloat(formData.sellingPrice) || 0;
-      const amountPaid = parseFloat(value) || 0;
-      
-      if (amountPaid > sellingPrice) {
-        setPaymentStatusError(`Warning: Amount paid (${amountPaid}) exceeds selling price (${sellingPrice})`);
-      } else {
-        setPaymentStatusError("");
-      }
-    }
-    
-    setFormData(prev => ({ ...prev, [name]: value }));
-    
-    // Validate weight when weight changes
-    if (name === 'weight' && selectedMaterialInfo) {
-      const saleWeight = parseFloat(value);
-      if (saleWeight > selectedMaterialInfo.availableWeight) {
-        setWeightError(`Warning: Sale weight exceeds available weight. Available: ${selectedMaterialInfo.availableWeight} kg`);
-      } else {
-        setWeightError("");
-      }
-    }
-    
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: "" }));
-    }
-  };
-
-  const handleMaterialSelect = (materialName: string) => {
-    const selectedMaterial = materials.find(m => m.materialName === materialName);
-    
-    if (selectedMaterial) {
-      setFormData(prev => ({ 
-        ...prev, 
-        materialName,
-        supplierName: selectedMaterial.vendor || prev.supplierName,
-        actualPrice: selectedMaterial.price || prev.actualPrice
-      }));
-      
-      setSelectedColor(selectedMaterial.materialColor || "#FFFFFF");
-      
-      // Set material info for weight validation
-      const totalWeight = parseFloat(selectedMaterial.weight) || 0;
-      const soldWeight = selectedMaterial.soldWeight || 0;
-      const availableWeight = selectedMaterial.availableWeight || totalWeight;
-      
-      setSelectedMaterialInfo({
-        totalWeight,
-        availableWeight,
-        soldWeight,
-        purchaseId: selectedMaterial._id,
-        vendor: selectedMaterial.vendor,
-        price: selectedMaterial.price,
-        materialColor: selectedMaterial.materialColor
-      });
-      
-      // Reset weight field
-      setFormData(prev => ({ ...prev, weight: "" }));
-      setWeightError("");
-    }
-  };
-
-  const handleBranchSelect = (materialName: string) => {
-    handleMaterialSelect(materialName);
-    setFormData(prev => ({ ...prev, branch: materialName }));
-  };
-
+  // Handle form submission
   const handleSubmit = async () => {
     if (!validateForm()) {
       alert("Please fill in all required fields correctly.");
       return;
     }
 
-    // Additional weight validation
     if (selectedMaterialInfo) {
       const saleWeight = parseFloat(formData.weight);
       if (saleWeight > selectedMaterialInfo.availableWeight) {
@@ -632,7 +616,6 @@ export function AddSaleDialog({
       }
     }
 
-    // Amount paid validation
     const amountPaid = parseFloat(formData.amountPaid) || 0;
     const sellingPrice = parseFloat(formData.sellingPrice) || 0;
     
@@ -644,7 +627,7 @@ export function AddSaleDialog({
     setIsSubmitting(true);
     
     try {
-      // Parse date from dd/mm/yyyy format
+      // Parse date and time
       const parseDate = (dateStr: string, timeStr: string): string => {
         const [dd, mm, yyyy] = dateStr.split('/').map(Number);
         const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
@@ -662,30 +645,28 @@ export function AddSaleDialog({
       };
 
       const dateTime = parseDate(formData.purchaseDate, formData.purchaseTime);
-
-      // Calculate final amount
       const selling = parseFloat(formData.sellingPrice.replace(/,/g, '')) || 0;
       const discount = parseFloat(formData.discount.replace(/,/g, '')) || 0;
       const finalAmount = (selling - discount).toFixed(2);
 
-      // Prepare FormData for API
+      // Prepare form data
       const formDataToSend = new FormData();
       
-      // Required fields by controller:
+      // Required fields
       formDataToSend.append('purchaseId', selectedMaterialInfo?.purchaseId || '');
-      formDataToSend.append('customerName', formData.buyerName); // buyerName → customerName
+      formDataToSend.append('customerName', formData.buyerName);
       formDataToSend.append('customerPhone', formData.buyerPhone);
       formDataToSend.append('customerEmail', formData.buyerEmail || '');
       formDataToSend.append('sellingPrice', formData.sellingPrice);
-      formDataToSend.append('sellingWeight', formData.weight); // weight → sellingWeight
+      formDataToSend.append('sellingWeight', formData.weight);
       formDataToSend.append('saleDate', dateTime);
       formDataToSend.append('paymentMethod', formData.paymentMethod);
-      formDataToSend.append('amountPaid', formData.amountPaid); // NEW: Send amountPaid
+      formDataToSend.append('amountPaid', formData.amountPaid);
       formDataToSend.append('invoiceNo', formData.invoiceNo);
       formDataToSend.append('transportationCost', formData.transportationCost);
       formDataToSend.append('notes', formData.notes);
 
-      // Also include original Sale model fields (optional for backend)
+      // Additional fields
       formDataToSend.append('materialName', formData.materialName);
       formDataToSend.append('supplierName', formData.supplierName);
       formDataToSend.append('unit', formData.unit);
@@ -695,91 +676,54 @@ export function AddSaleDialog({
       formDataToSend.append('productionCost', formData.productionCost || '0');
       formDataToSend.append('discount', formData.discount);
       formDataToSend.append('advancePayment', formData.advancePayment || '0');
-      formDataToSend.append('buyerName', formData.buyerName);
       formDataToSend.append('buyerAddress', formData.buyerAddress || '');
-      formDataToSend.append('buyerPhone', formData.buyerPhone);
-      formDataToSend.append('buyerEmail', formData.buyerEmail || '');
       formDataToSend.append('buyerCnic', formData.buyerCnic || '');
       formDataToSend.append('buyerCompany', formData.buyerCompany || '');
       formDataToSend.append('finalAmount', finalAmount);
-      formDataToSend.append('paymentStatus', formData.paymentStatus); // This will be auto-calculated by backend
 
-      // Add receipt file if exists
+      // Add receipt file
       if (receiptFile) {
         formDataToSend.append('receiptImage', receiptFile);
       }
 
       let response;
       if (isEdit && editData && editData._id) {
-        // If editing and want to remove existing receipt
-        if (!receiptFile && !receiptPreview && editData.receiptImage) {
-          // Remove receipt - your backend should handle this based on removeReceipt field
-          formDataToSend.append('removeReceipt', 'true');
-        }
-        
-        // UPDATE request using PUT to /api/sales/:id
-        response = await api.put(
-          API_ENDPOINTS.UPDATE_SALE(editData._id),
+        response = await axios.put(
+          API_ENDPOINTS.SALES_UPDATE(editData._id),
           formDataToSend,
           {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
+            headers: { 'Content-Type': 'multipart/form-data' },
           }
         );
       } else {
-        // CREATE request using POST to /api/sales/add-sale
-        response = await api.post(
-          API_ENDPOINTS.ADD_SALE,
+        response = await axios.post(
+          API_ENDPOINTS.SALES_ADD,
           formDataToSend,
           {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
+            headers: { 'Content-Type': 'multipart/form-data' },
           }
         );
       }
       
       if (response.data.success) {
+        alert(isEdit ? 'Sale updated successfully!' : 'Sale added successfully!');
         onSave();
         onOpenChange(false);
         resetForm();
-        alert(isEdit ? 'Sale updated successfully!' : 'Sale added successfully!');
       } else {
         throw new Error(response.data.message || 'Failed to save sale');
       }
       
     } catch (error: any) {
       console.error('Error saving sale:', error);
-      
-      // Detailed error handling
-      if (error.response) {
-        console.log('Response error:', error.response);
-        const errorMessage = error.response.data?.message || 'Failed to save sale';
-        const errors = error.response.data?.errors;
-        
-        if (errors && Array.isArray(errors)) {
-          alert(`Validation errors:\n${errors.join('\n')}`);
-        } else if (errors && typeof errors === 'object') {
-          const errorList = Object.values(errors).flat().join('\n');
-          alert(`Validation errors:\n${errorList}`);
-        } else {
-          alert(`Error: ${errorMessage}`);
-        }
-      } else if (error.request) {
-        console.log('Request error:', error.request);
-        alert(`Network error. Please check if the backend server is running at ${API_BASE_URL}.`);
-      } else {
-        console.log('Error message:', error.message);
-        alert('Error: ' + error.message);
-      }
+      alert(error.response?.data?.message || error.message || 'Failed to save sale');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // Reset form
   const resetForm = () => {
-    const now = new Date();
     const todayStr = getTodayDate();
     const currentTimeStr = getCurrentTime();
 
@@ -805,43 +749,20 @@ export function AddSaleDialog({
       buyerCnic: "",
       buyerCompany: "",
       paymentMethod: "Cash",
-      paymentStatus: "none", // Reset to 'none'
-      amountPaid: "0", // Reset to 0
+      paymentStatus: "none",
+      amountPaid: "0",
       transportationCost: "0",
       notes: "",
     });
     
     setSelectedColor("#FFFFFF");
-    setSelectedDate(now);
-    setCurrentMonth(now.getMonth());
-    setCurrentYear(now.getFullYear());
-    setShowYearDropdown(false);
-    
-    const currentTimeMatch = currentTimeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-    if (currentTimeMatch) {
-      setSelectedHour(currentTimeMatch[1].padStart(2, '0'));
-      setSelectedMinute(currentTimeMatch[2]);
-      setSelectedAmPm((currentTimeMatch[3] as "AM" | "PM") || "AM");
-    }
-    
+    setSelectedDate(new Date());
+    setSelectedMaterialInfo(null);
     setReceiptFile(null);
     setReceiptPreview(null);
-    setSelectedMaterialInfo(null);
     setWeightError("");
     setPaymentStatusError("");
     setErrors({});
-  };
-
-  const calculateFinalAmount = () => {
-    const selling = parseFloat(formData.sellingPrice.replace(/,/g, '')) || 0;
-    const discount = parseFloat(formData.discount.replace(/,/g, '')) || 0;
-    return (selling - discount).toFixed(2);
-  };
-
-  const calculateRemainingAmount = () => {
-    const selling = parseFloat(formData.sellingPrice.replace(/,/g, '')) || 0;
-    const amountPaid = parseFloat(formData.amountPaid) || 0;
-    return Math.max(0, selling - amountPaid).toFixed(2);
   };
 
   const handleClose = () => {
@@ -976,7 +897,13 @@ export function AddSaleDialog({
                 {hours.map(h => (
                   <button
                     key={h}
-                    onClick={() => setSelectedHour(h)}
+                    onClick={() => {
+                      setSelectedHour(h);
+                      setFormData(prev => ({ 
+                        ...prev, 
+                        purchaseTime: `${h}:${selectedMinute} ${selectedAmPm}` 
+                      }));
+                    }}
                     className={`py-1.5 text-sm rounded ${selectedHour === h ? 'bg-primary text-white' : 'hover:bg-muted text-foreground'}`}
                   >
                     {h}
@@ -990,7 +917,13 @@ export function AddSaleDialog({
                 {minutes.map(m => (
                   <button
                     key={m}
-                    onClick={() => setSelectedMinute(m)}
+                    onClick={() => {
+                      setSelectedMinute(m);
+                      setFormData(prev => ({ 
+                        ...prev, 
+                        purchaseTime: `${selectedHour}:${m} ${selectedAmPm}` 
+                      }));
+                    }}
                     className={`py-1.5 text-sm rounded ${selectedMinute === m ? 'bg-primary text-white' : 'hover:bg-muted text-foreground'}`}
                   >
                     {m}
@@ -1002,13 +935,25 @@ export function AddSaleDialog({
 
           <div className="flex border rounded overflow-hidden">
             <button
-              onClick={() => setSelectedAmPm("AM")}
+              onClick={() => {
+                setSelectedAmPm("AM");
+                setFormData(prev => ({ 
+                  ...prev, 
+                  purchaseTime: `${selectedHour}:${selectedMinute} AM` 
+                }));
+              }}
               className={`flex-1 py-2 text-sm ${selectedAmPm === "AM" ? "bg-primary text-white" : "hover:bg-muted text-foreground"}`}
             >
               AM
             </button>
             <button
-              onClick={() => setSelectedAmPm("PM")}
+              onClick={() => {
+                setSelectedAmPm("PM");
+                setFormData(prev => ({ 
+                  ...prev, 
+                  purchaseTime: `${selectedHour}:${selectedMinute} PM` 
+                }));
+              }}
               className={`flex-1 py-2 text-sm ${selectedAmPm === "PM" ? "bg-primary text-white" : "hover:bg-muted text-foreground"}`}
             >
               PM
@@ -1035,6 +980,31 @@ export function AddSaleDialog({
           <p className="text-xs text-muted-foreground">
             Point Of Sale / {isEdit ? 'Edit Sale' : 'Add Sale'}
           </p>
+        </div>
+
+        {/* Debug Info - Remove in production */}
+        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+          <h4 className="text-sm font-semibold text-yellow-800 mb-2">Debug Info</h4>
+          <p className="text-xs text-yellow-700">
+            API Base URL: {API_BASE_URL}
+          </p>
+          <p className="text-xs text-yellow-700">
+            Materials Count: {materials.length}
+          </p>
+          <p className="text-xs text-yellow-700">
+            Loading: {loadingMaterials ? "Yes" : "No"}
+          </p>
+          {apiError && (
+            <p className="text-xs text-red-600 mt-1">
+              API Error: {apiError}
+            </p>
+          )}
+          <button 
+            onClick={fetchMaterials}
+            className="mt-2 px-3 py-1 text-xs bg-blue-500 text-white rounded"
+          >
+            Refresh Materials
+          </button>
         </div>
 
         {/* Product Details Section */}
@@ -1074,27 +1044,38 @@ export function AddSaleDialog({
                   value={formData.materialName}
                   onChange={(e) => handleMaterialSelect(e.target.value)}
                   className={`w-full bg-cms-input-bg border ${errors.materialName ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary`}
+                  disabled={loadingMaterials}
                 >
-                  <option value="">Select Material</option>
-                  {loadingMaterials ? (
-                    <option disabled>Loading materials...</option>
-                  ) : materials.length === 0 ? (
-                    <option disabled>No materials found in purchases</option>
+                  <option value="">{loadingMaterials ? "Loading materials..." : "Select Material"}</option>
+                  
+                  {!loadingMaterials && materials.length === 0 ? (
+                    <option value="" disabled>
+                      {apiError ? `Error: ${apiError}` : "No materials available. Add purchases first."}
+                    </option>
                   ) : (
                     materials.map((material) => (
-                      <option key={material._id} value={material.materialName}>
-                        {material.materialName} - {material.quality} 
-                        (Stock: {material.availableWeight}/{material.weight} kg)
+                      <option 
+                        key={material._id} 
+                        value={material.materialName}
+                        style={{ color: '#000' }}
+                      >
+                        {material.materialName} - {material.quality} ({material.availableWeight} kg)
                       </option>
                     ))
                   )}
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                {loadingMaterials && (
+                  <div className="absolute right-8 top-1/2 -translate-y-1/2">
+                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
               </div>
               {errors.materialName && (
                 <p className="text-xs text-red-500 mt-1">{errors.materialName}</p>
               )}
             </div>
+
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Supplier Name *</label>
               <input
@@ -1109,6 +1090,7 @@ export function AddSaleDialog({
                 <p className="text-xs text-red-500 mt-1">{errors.supplierName}</p>
               )}
             </div>
+
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Invoice No. *</label>
               <input
@@ -1146,10 +1128,11 @@ export function AddSaleDialog({
               )}
               {selectedMaterialInfo && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Available: {selectedMaterialInfo.availableWeight} kg
+                  Available: {selectedMaterialInfo.availableWeight.toFixed(2)} kg
                 </p>
               )}
             </div>
+
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Unit *</label>
               <input
@@ -1164,18 +1147,16 @@ export function AddSaleDialog({
                 <p className="text-xs text-red-500 mt-1">{errors.unit}</p>
               )}
             </div>
+
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Sale Date & Time *</label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <div 
-                    className="relative cursor-pointer select-none touch-manipulation"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setShowCalendar(prev => !prev);
+                    className="relative cursor-pointer"
+                    onClick={() => {
+                      setShowCalendar(!showCalendar);
                       setShowTimePicker(false);
-                      setShowYearDropdown(false);
                     }}
                   >
                     <input
@@ -1183,7 +1164,7 @@ export function AddSaleDialog({
                       readOnly
                       placeholder="dd/mm/yyyy"
                       value={formData.purchaseDate}
-                      className={`w-full bg-cms-input-bg border ${errors.purchaseDate ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer select-none`}
+                      className={`w-full bg-cms-input-bg border ${errors.purchaseDate ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer`}
                     />
                     <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                   </div>
@@ -1191,13 +1172,10 @@ export function AddSaleDialog({
                 </div>
                 <div className="relative flex-1">
                   <div 
-                    className="relative cursor-pointer select-none touch-manipulation"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setShowTimePicker(prev => !prev);
+                    className="relative cursor-pointer"
+                    onClick={() => {
+                      setShowTimePicker(!showTimePicker);
                       setShowCalendar(false);
-                      setShowYearDropdown(false);
                     }}
                   >
                     <input
@@ -1205,7 +1183,7 @@ export function AddSaleDialog({
                       readOnly
                       placeholder="-- : --"
                       value={formData.purchaseTime}
-                      className={`w-full bg-cms-input-bg border ${errors.purchaseTime ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer select-none`}
+                      className={`w-full bg-cms-input-bg border ${errors.purchaseTime ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer`}
                     />
                     <Clock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                   </div>
@@ -1227,31 +1205,23 @@ export function AddSaleDialog({
                 <select
                   name="branch"
                   value={formData.branch}
-                  onChange={(e) => handleBranchSelect(e.target.value)}
+                  onChange={handleInputChange}
                   className={`w-full bg-cms-input-bg border ${errors.branch ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary`}
                 >
-                  <option value="">Select Material/Branch</option>
-                  {loadingMaterials ? (
-                    <option disabled>Loading materials...</option>
-                  ) : materials.length === 0 ? (
-                    <option disabled>No materials found in purchases</option>
-                  ) : (
-                    materials.map((material) => (
-                      <option key={`branch-${material._id}`} value={material.materialName}>
-                        {material.materialName} - Available: {material.availableWeight} kg
-                      </option>
-                    ))
-                  )}
+                  <option value="">Select Branch</option>
+                  <option value="Main Branch">Main Branch</option>
+                  <option value="North Branch">North Branch</option>
+                  <option value="South Branch">South Branch</option>
+                  <option value="East Branch">East Branch</option>
+                  <option value="West Branch">West Branch</option>
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
               </div>
               {errors.branch && (
                 <p className="text-xs text-red-500 mt-1">{errors.branch}</p>
               )}
-              <p className="text-xs text-muted-foreground mt-1">
-                Select a material to link this sale to raw material inventory
-              </p>
             </div>
+
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Material Color</label>
               <div className="flex items-center gap-2 flex-wrap">
@@ -1273,7 +1243,6 @@ export function AddSaleDialog({
             </div>
           </div>
 
-          {/* Additional fields for controller */}
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Payment Method</label>
@@ -1290,6 +1259,7 @@ export function AddSaleDialog({
                 <option value="Online Payment">Online Payment</option>
               </select>
             </div>
+
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Amount Paid *</label>
               <input
@@ -1305,10 +1275,8 @@ export function AddSaleDialog({
               {errors.amountPaid && (
                 <p className="text-xs text-red-500 mt-1">{errors.amountPaid}</p>
               )}
-              {paymentStatusError && !errors.amountPaid && (
-                <p className="text-xs text-amber-600 mt-1">{paymentStatusError}</p>
-              )}
             </div>
+
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Transportation Cost</label>
               <input
@@ -1323,15 +1291,16 @@ export function AddSaleDialog({
               />
             </div>
           </div>
+
           <div className="mb-4">
             <label className="block text-xs text-muted-foreground mb-1.5">Notes</label>
-            <input
-              type="text"
+            <textarea
               name="notes"
               placeholder="Additional notes..."
               value={formData.notes}
               onChange={handleInputChange}
-              className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              rows={2}
+              className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
             />
           </div>
         </div>
@@ -1339,6 +1308,7 @@ export function AddSaleDialog({
         {/* Price Details Section */}
         <div className="mb-6">
           <h3 className="text-base font-semibold text-foreground mb-4">Price Details</h3>
+          
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Actual Price *</label>
@@ -1356,6 +1326,7 @@ export function AddSaleDialog({
                 <p className="text-xs text-red-500 mt-1">{errors.actualPrice}</p>
               )}
             </div>
+
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Production Cost</label>
               <input
@@ -1369,6 +1340,7 @@ export function AddSaleDialog({
                 className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
+
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Advance Payment</label>
               <input
@@ -1381,9 +1353,9 @@ export function AddSaleDialog({
                 step="0.01"
                 className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               />
-              <p className="text-xs text-muted-foreground mt-1">Optional</p>
             </div>
           </div>
+
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Selling Price *</label>
@@ -1401,6 +1373,7 @@ export function AddSaleDialog({
                 <p className="text-xs text-red-500 mt-1">{errors.sellingPrice}</p>
               )}
             </div>
+
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Discount</label>
               <input
@@ -1415,7 +1388,7 @@ export function AddSaleDialog({
               />
             </div>
           </div>
-          
+
           {/* Payment Summary */}
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div className="bg-green-50 border border-green-200 rounded-md p-3">
@@ -1428,25 +1401,10 @@ export function AddSaleDialog({
             </div>
             <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
               <p className="text-xs text-blue-700 mb-1">Payment Status</p>
-              <div className="flex items-center justify-between">
-                <p className={`text-lg font-bold ${
-                  formData.paymentStatus === 'paid' ? 'text-green-600' :
-                  formData.paymentStatus === 'partial' ? 'text-yellow-600' :
-                  'text-red-600'
-                }`}>
-                  {formData.paymentStatus === 'paid' ? 'Paid' :
-                   formData.paymentStatus === 'partial' ? 'Partial' : 'None'}
-                </p>
-                {formData.paymentStatus === 'paid' && (
-                  <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">✓ Completed</span>
-                )}
-                {formData.paymentStatus === 'partial' && (
-                  <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">⚠ Pending</span>
-                )}
-                {formData.paymentStatus === 'none' && (
-                  <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">✗ Not Paid</span>
-                )}
-              </div>
+              <p className="text-lg font-bold text-blue-800">
+                {formData.paymentStatus === 'paid' ? 'Paid' :
+                 formData.paymentStatus === 'partial' ? 'Partial' : 'None'}
+              </p>
             </div>
           </div>
           
@@ -1485,6 +1443,13 @@ export function AddSaleDialog({
               <div className="mt-4">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-foreground">Existing Receipt</p>
+                  <button
+                    type="button"
+                    onClick={removeReceipt}
+                    className="text-sm text-red-500 hover:text-red-600 flex items-center gap-1"
+                  >
+                    Remove
+                  </button>
                 </div>
                 <div className="border border-border rounded-lg p-4 bg-cms-input-bg">
                   <div className="flex flex-col items-center">
@@ -1493,14 +1458,6 @@ export function AddSaleDialog({
                       alt="Receipt preview" 
                       className="max-w-full h-auto max-h-64 rounded-md border border-border"
                     />
-                    <button
-                      type="button"
-                      onClick={removeReceipt}
-                      className="mt-2 px-3 py-1.5 text-sm bg-red-500 hover:bg-red-600 text-white rounded-md flex items-center gap-1"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Remove Receipt
-                    </button>
                   </div>
                 </div>
               </div>
@@ -1515,7 +1472,6 @@ export function AddSaleDialog({
                     onClick={removeReceipt}
                     className="text-sm text-red-500 hover:text-red-600 flex items-center gap-1"
                   >
-                    <X className="w-4 h-4" />
                     Remove
                   </button>
                 </div>
@@ -1653,7 +1609,7 @@ export function AddSaleDialog({
           >
             {isSubmitting ? (
               <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
                 {isEdit ? 'Updating...' : 'Saving...'}
               </>
             ) : (
