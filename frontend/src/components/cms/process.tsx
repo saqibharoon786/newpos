@@ -26,6 +26,8 @@ import {
   PackageOpen,
   ArrowRight,
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   BarChart3,
   Settings,
   Users,
@@ -1858,6 +1860,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
   const [filterDate, setFilterDate] = useState<string>("");
   const [filterShift, setFilterShift] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedProduction, setSelectedProduction] = useState<ProductionData | null>(null);
   const [editingProduction, setEditingProduction] = useState<ProductionData | null>(null);
 
@@ -1884,6 +1887,20 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
     }
     return true;
   });
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentItems = filteredData.slice(startIndex, endIndex);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterDate, filterShift, filterStatus]);
+
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages >= 1) setCurrentPage(totalPages);
+  }, [totalPages, currentPage]);
 
   // Material summary: total produced, sold, remaining per material
   const materialSummary = React.useMemo(() => {
@@ -2004,8 +2021,9 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
               <tr className="bg-cms-table-header">
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Batch No.</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Available</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total (kg)</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Sold (kg)</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining (kg)</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Bags</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Efficiency</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Shift</th>
@@ -2015,7 +2033,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
               </tr>
             </thead>
             <tbody>
-              {filteredData.map((prod) => (
+              {currentItems.map((prod) => (
                 <tr key={prod._id} className="border-t border-border hover:bg-cms-card-hover transition-colors">
                   <td className="px-4 py-3 text-sm text-foreground font-medium">
                     {prod.batchNo}
@@ -2036,9 +2054,12 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
                   </td>
                   <td className="px-4 py-3 text-sm font-semibold text-foreground">
                     {prod.outputWeight} kg
-                    <div className="text-xs text-red-600">
-                      Waste: {prod.wasteWeight || 0} kg
-                    </div>
+                    {prod.wasteWeight > 0 && (
+                      <div className="text-xs text-red-600">Waste: {prod.wasteWeight} kg</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-sm font-semibold text-green-600">
+                    {Math.round((prod.outputWeight ?? 0) - (prod.availableWeight ?? prod.outputWeight ?? 0))} kg
                   </td>
                   <td className="px-4 py-3 text-sm font-semibold text-primary">
                     {(prod.availableWeight ?? prod.outputWeight ?? 0)} kg
@@ -2103,6 +2124,66 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
               ))}
             </tbody>
           </table>
+
+          {(filteredData.length > 0 && (
+            <div className="flex items-center justify-center gap-2 py-4 border-t border-border bg-cms-card">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-sm text-muted-foreground px-2">
+                Page {currentPage} of {totalPages || 1}
+              </span>
+              {totalPages > 1 && Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum: number;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
+                      currentPage === pageNum ? "bg-primary text-primary-foreground" : "hover:bg-secondary text-muted-foreground"
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+              {totalPages > 1 && totalPages > 5 && currentPage < totalPages - 2 && (
+                <span className="text-muted-foreground px-2">...</span>
+              )}
+              {totalPages > 1 && totalPages > 5 && currentPage < totalPages - 2 && (
+                <button
+                  onClick={() => setCurrentPage(totalPages)}
+                  className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
+                    currentPage === totalPages ? "bg-primary text-primary-foreground" : "hover:bg-secondary text-muted-foreground"
+                  }`}
+                >
+                  {totalPages}
+                </button>
+              )}
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Next page"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
       
@@ -2294,8 +2375,10 @@ export function ProcessingModule() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch production history
-      const productionResponse = await axios.get(`${PROCESSING_API_URL}/production`);
+      // Fetch all production records for client-side pagination (backend defaults to limit=10, so request high limit)
+      const productionResponse = await axios.get(`${PROCESSING_API_URL}/production`, {
+        params: { page: 1, limit: 10000 },
+      });
       if (productionResponse.data.success) {
         setProductionData(productionResponse.data.data || []);
       }

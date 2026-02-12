@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package, ChevronDown, CheckCircle, DollarSign, History } from "lucide-react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package, ChevronDown, CheckCircle, DollarSign, History, Users } from "lucide-react";
 import { AddSaleDialog } from "./AddSaleDialog"; // CHANGED: Import AddSaleDialog instead of AddAssetDialog
 import { SaleDetailsView } from "./SaleDetailsView";
 import { toast } from "@/hooks/use-toast";
@@ -1219,6 +1219,32 @@ export function POSView() {
 
   const totals = calculateTotals();
 
+  // Customer-wise summary (from filtered sales)
+  const customerSummary = useMemo(() => {
+    const byCustomer: Record<string, { sales: number; totalAmount: number; amountPaid: number; remainingAmount: number; weight: number; units: number }> = {};
+    filteredSales.forEach((sale) => {
+      const name = (sale.buyerName || "Unknown").trim() || "Unknown";
+      const totalAmount = parseFloat(sale.finalAmount || sale.sellingPrice) || 0;
+      const paid = sale.amountPaid || 0;
+      const remaining = sale.remainingAmount || 0;
+      const weight = parseFloat(sale.weight) || 0;
+      const units = parseInt(sale.unit, 10) || 0;
+      if (!byCustomer[name]) {
+        byCustomer[name] = { sales: 0, totalAmount: 0, amountPaid: 0, remainingAmount: 0, weight: 0, units: 0 };
+      }
+      byCustomer[name].sales += 1;
+      byCustomer[name].totalAmount += totalAmount;
+      byCustomer[name].amountPaid += paid;
+      byCustomer[name].remainingAmount += remaining;
+      byCustomer[name].weight += weight;
+      byCustomer[name].units += units;
+    });
+    return Object.entries(byCustomer).map(([customerName, data]) => ({
+      customerName,
+      ...data,
+    })).sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [filteredSales]);
+
   // Pagination
   const itemsPerPage = 10;
   const totalPages = Math.ceil(filteredSales.length / itemsPerPage);
@@ -1316,6 +1342,52 @@ export function POSView() {
           </div>
         </div>
       </div>
+
+      {/* Customer-wise Summary */}
+      {customerSummary.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <Users className="w-4 h-4 text-primary" />
+            Customer-wise Summary
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {customerSummary.map((row) => (
+              <div
+                key={row.customerName}
+                className="bg-cms-card rounded-lg p-4 border border-border"
+              >
+                <div className="font-medium text-foreground mb-3 truncate" title={row.customerName}>
+                  {row.customerName}
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Sales</span>
+                    <span className="font-medium text-foreground">{row.sales}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total</span>
+                    <span className="font-semibold text-foreground">Rs. {formatCurrency(row.totalAmount)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Paid</span>
+                    <span className="font-semibold text-green-600">Rs. {formatCurrency(row.amountPaid)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Remaining</span>
+                    <span className={`font-semibold ${row.remainingAmount > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                      Rs. {formatCurrency(row.remainingAmount)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t border-border">
+                    <span>{row.weight} kg</span>
+                    <span>{row.units} units</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Error Alert */}
       {error && (

@@ -134,7 +134,8 @@ interface Purchase {
 
 interface PurchaseWithRemaining extends Purchase {
   totalWeight: number; // Original weight (same as weight field)
-  soldWeight: number; // Already exists in Purchase
+  soldWeight: number; // Already exists in Purchase (sales from POP)
+  processWeight?: number; // Weight sent to processing (productionConsumedWeight)
   remainingWeight: number; // Already exists in Purchase
   materialColorName: string;
   materialColorSearchNames: string[];
@@ -268,7 +269,7 @@ const VendorSummary = ({
       totalAmountPaid: number;
       totalRemainingAmount: number;
       totalWeight: number;
-      totalSoldWeight: number;
+      totalProcessWeight: number;
       totalRemainingWeight: number;
       materials: {name: string, weight: number, remainingAmount: number}[];
       paymentStatus: {
@@ -289,7 +290,7 @@ const VendorSummary = ({
       const amountPaid = purchase.amountPaid || 0;
       const remainingAmount = purchase.remainingAmount || 0;
       const weight = parseFloat(purchase.weight) || 0;
-      const soldWeight = purchase.soldWeight || 0;
+      const processWeight = purchase.processWeight ?? purchase.productionConsumedWeight ?? 0;
       const remainingWeight = purchase.remainingWeight || 0;
       
       if (!vendorSummary[vendor]) {
@@ -299,7 +300,7 @@ const VendorSummary = ({
           totalAmountPaid: 0,
           totalRemainingAmount: 0,
           totalWeight: 0,
-          totalSoldWeight: 0,
+          totalProcessWeight: 0,
           totalRemainingWeight: 0,
           materials: [],
           paymentStatus: {
@@ -321,7 +322,7 @@ const VendorSummary = ({
       vendorSummary[vendor].totalAmountPaid += amountPaid;
       vendorSummary[vendor].totalRemainingAmount += remainingAmount;
       vendorSummary[vendor].totalWeight += weight;
-      vendorSummary[vendor].totalSoldWeight += soldWeight;
+      vendorSummary[vendor].totalProcessWeight += processWeight;
       vendorSummary[vendor].totalRemainingWeight += remainingWeight;
       
       // Add material if not already in list
@@ -497,10 +498,10 @@ const VendorSummary = ({
                           </div>
                         </div>
                         <div className="bg-background rounded p-2">
-                          <div className="text-xs text-muted-foreground">Sold Weight</div>
-                          <div className="text-sm font-semibold text-red-600">
-                            {data.totalSoldWeight.toLocaleString()} kg
-                          </div>
+                      <div className="text-xs text-muted-foreground">Process Weight</div>
+                      <div className="text-sm font-semibold text-primary">
+                        {data.totalProcessWeight.toLocaleString()} kg
+                      </div>
                         </div>
                         <div className="bg-background rounded p-2">
                           <div className="text-xs text-muted-foreground">Remaining Weight</div>
@@ -610,22 +611,22 @@ const WeightSummary = ({
   const calculateWeightSummary = () => {
     const colorSummary: Record<string, {
       totalWeight: number;
-      soldWeight: number;
+      processWeight: number;
       remainingWeight: number;
       qualities: Record<string, {
         totalWeight: number;
-        soldWeight: number;
+        processWeight: number;
         remainingWeight: number;
       }>;
     }> = {};
     
     const qualitySummary: Record<string, {
       totalWeight: number;
-      soldWeight: number;
+      processWeight: number;
       remainingWeight: number;
       colors: Record<string, {
         totalWeight: number;
-        soldWeight: number;
+        processWeight: number;
         remainingWeight: number;
       }>;
     }> = {};
@@ -634,61 +635,61 @@ const WeightSummary = ({
       const colorName = purchase.materialColorName || 'Unknown';
       const quality = purchase.quality || 'Unknown';
       const weight = parseFloat(purchase.weight) || 0;
-      const soldWeight = purchase.soldWeight || 0;
+      const processWeight = purchase.processWeight ?? purchase.productionConsumedWeight ?? 0;
       const remainingWeight = purchase.remainingWeight || 0;
       
       // Color summary
       if (!colorSummary[colorName]) {
         colorSummary[colorName] = {
           totalWeight: 0,
-          soldWeight: 0,
+          processWeight: 0,
           remainingWeight: 0,
           qualities: {}
         };
       }
       
       colorSummary[colorName].totalWeight += weight;
-      colorSummary[colorName].soldWeight += soldWeight;
+      colorSummary[colorName].processWeight += processWeight;
       colorSummary[colorName].remainingWeight += remainingWeight;
       
       // Quality within color
       if (!colorSummary[colorName].qualities[quality]) {
         colorSummary[colorName].qualities[quality] = {
           totalWeight: 0,
-          soldWeight: 0,
+          processWeight: 0,
           remainingWeight: 0
         };
       }
       
       colorSummary[colorName].qualities[quality].totalWeight += weight;
-      colorSummary[colorName].qualities[quality].soldWeight += soldWeight;
+      colorSummary[colorName].qualities[quality].processWeight += processWeight;
       colorSummary[colorName].qualities[quality].remainingWeight += remainingWeight;
       
       // Quality summary
       if (!qualitySummary[quality]) {
         qualitySummary[quality] = {
           totalWeight: 0,
-          soldWeight: 0,
+          processWeight: 0,
           remainingWeight: 0,
           colors: {}
         };
       }
       
       qualitySummary[quality].totalWeight += weight;
-      qualitySummary[quality].soldWeight += soldWeight;
+      qualitySummary[quality].processWeight += processWeight;
       qualitySummary[quality].remainingWeight += remainingWeight;
       
       // Color within quality
       if (!qualitySummary[quality].colors[colorName]) {
         qualitySummary[quality].colors[colorName] = {
           totalWeight: 0,
-          soldWeight: 0,
+          processWeight: 0,
           remainingWeight: 0
         };
       }
       
       qualitySummary[quality].colors[colorName].totalWeight += weight;
-      qualitySummary[quality].colors[colorName].soldWeight += soldWeight;
+      qualitySummary[quality].colors[colorName].processWeight += processWeight;
       qualitySummary[quality].colors[colorName].remainingWeight += remainingWeight;
     });
     
@@ -786,8 +787,8 @@ const WeightSummary = ({
                         <span className="font-medium text-foreground">{data.totalWeight.toLocaleString()} kg</span>
                       </div>
                       <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">Sold Weight:</span>
-                        <span className="font-medium text-red-600">{data.soldWeight.toLocaleString()} kg</span>
+                        <span className="text-muted-foreground">Process Weight:</span>
+                        <span className="font-medium text-primary">{data.processWeight.toLocaleString()} kg</span>
                       </div>
                       <div className="flex justify-between text-xs">
                         <span className="text-muted-foreground">Remaining Weight:</span>
@@ -858,8 +859,8 @@ const WeightSummary = ({
                       <span className="font-medium text-foreground">{data.totalWeight.toLocaleString()} kg</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">Sold Weight:</span>
-                      <span className="font-medium text-red-600">{data.soldWeight.toLocaleString()} kg</span>
+                      <span className="text-muted-foreground">Process Weight:</span>
+                      <span className="font-medium text-primary">{data.processWeight.toLocaleString()} kg</span>
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-muted-foreground">Remaining Weight:</span>
@@ -912,10 +913,10 @@ const WeightSummary = ({
             <div className="text-xs text-muted-foreground">Total Weight</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-red-600">
-              {purchases.reduce((sum, p) => sum + (p.soldWeight || 0), 0).toLocaleString()} kg
+            <div className="text-2xl font-bold text-primary">
+              {purchases.reduce((sum, p) => sum + (p.processWeight ?? p.productionConsumedWeight ?? 0), 0).toLocaleString()} kg
             </div>
-            <div className="text-xs text-muted-foreground">Total Sold</div>
+            <div className="text-xs text-muted-foreground">Total Process</div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-green-600">
@@ -3694,8 +3695,8 @@ export function POPView() {
       return sum + weight;
     }, 0);
     
-    const totalSoldWeight = purchases.reduce((sum, p) => {
-      return sum + (p.soldWeight || 0);
+    const totalProcessWeight = purchases.reduce((sum, p) => {
+      return sum + (p.processWeight ?? p.productionConsumedWeight ?? 0);
     }, 0);
     
     const totalRemainingWeight = purchases.reduce((sum, p) => {
@@ -3708,7 +3709,7 @@ export function POPView() {
       totalAmountPaid: totalAmountPaid,
       totalRemainingAmount: totalRemainingAmount,
       totalWeight: totalWeight,
-      totalSoldWeight: totalSoldWeight,
+      totalProcessWeight,
       totalRemainingWeight: totalRemainingWeight,
     };
   };
@@ -3737,6 +3738,7 @@ export function POPView() {
             price: parsedPrice,
             totalWeight: originalWeight,
             soldWeight: soldWeight,
+            processWeight: productionConsumed,
             remainingWeight: remainingWeight,
             status: purchase.status || 'available',
             materialColorName: getColorName(purchase.materialColor),
@@ -3965,7 +3967,7 @@ export function POPView() {
               </p>
               <div className="flex items-center gap-2 mt-1">
                 <div className="flex items-center text-xs text-muted-foreground">
-                  <span className="text-red-600">Sold: {formatCurrency(totals.totalSoldWeight)} kg</span>
+                  <span className="text-primary">Process: {formatCurrency(totals.totalProcessWeight)} kg</span>
                   <span className="mx-1">•</span>
                   <span className="text-green-600">Remaining: {formatCurrency(totals.totalRemainingWeight)} kg</span>
                 </div>
@@ -4065,7 +4067,7 @@ export function POPView() {
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining Amount</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Payment Status</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total Weight (kg)</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Sold Weight (kg)</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Process Weight (kg)</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining Weight (kg)</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Stock Status</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vendor</th>
@@ -4125,8 +4127,8 @@ export function POPView() {
                         <div className="text-xs text-muted-foreground">Original: {formatCurrency(purchase.weight)} kg</div>
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground">
-                        <div className={`font-medium ${purchase.soldWeight > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
-                          {formatCurrency(purchase.soldWeight)} kg
+                        <div className={`font-medium ${(purchase.processWeight ?? purchase.productionConsumedWeight ?? 0) > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
+                          {formatCurrency(purchase.processWeight ?? purchase.productionConsumedWeight ?? 0)} kg
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground">
@@ -4203,18 +4205,21 @@ export function POPView() {
               </tbody>
             </table>
 
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
+            {filteredPurchases.length > 0 && (
+              <div className="flex items-center justify-center gap-2 py-4 border-t border-border bg-cms-card">
                 <button 
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
                   className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="Previous page"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum;
+                <span className="text-sm text-muted-foreground px-2">
+                  Page {currentPage} of {totalPages || 1}
+                </span>
+                {totalPages > 1 && Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum: number;
                   if (totalPages <= 5) {
                     pageNum = i + 1;
                   } else if (currentPage <= 3) {
@@ -4224,7 +4229,6 @@ export function POPView() {
                   } else {
                     pageNum = currentPage - 2 + i;
                   }
-
                   return (
                     <button
                       key={pageNum}
@@ -4239,12 +4243,10 @@ export function POPView() {
                     </button>
                   );
                 })}
-
-                {totalPages > 5 && currentPage < totalPages - 2 && (
+                {totalPages > 1 && totalPages > 5 && currentPage < totalPages - 2 && (
                   <span className="text-muted-foreground px-2">...</span>
                 )}
-
-                {totalPages > 5 && currentPage < totalPages - 2 && (
+                {totalPages > 1 && totalPages > 5 && currentPage < totalPages - 2 && (
                   <button
                     onClick={() => setCurrentPage(totalPages)}
                     className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
@@ -4256,11 +4258,11 @@ export function POPView() {
                     {totalPages}
                   </button>
                 )}
-
                 <button 
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
                   className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="Next page"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
