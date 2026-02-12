@@ -499,14 +499,6 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
             <div class="print-section">
               <h3>Pricing Details</h3>
               <div class="print-row">
-                <span class="print-label">Actual Price:</span>
-                <span class="print-value">${formatCurrency(sale?.actualPrice || '0')}</span>
-              </div>
-              <div class="print-row">
-                <span class="print-label">Production Cost:</span>
-                <span class="print-value">${formatCurrency(sale?.productionCost || '0')}</span>
-              </div>
-              <div class="print-row">
                 <span class="print-label">Selling Price:</span>
                 <span class="print-value">${formatCurrency(sale?.sellingPrice || '0')}</span>
               </div>
@@ -611,13 +603,13 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
             </div>
           </div>` : ''}
           
-          <!-- Buyer Information -->
+          <!-- Customer Information -->
           <div class="print-section" style="margin-top: 15px;">
-            <h3>Buyer Information</h3>
+            <h3>Customer Information</h3>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
               <div>
                 <div class="print-row">
-                  <span class="print-label">Buyer Name:</span>
+                  <span class="print-label">Customer Name:</span>
                   <span class="print-value">${sale?.buyerName || 'N/A'}</span>
                 </div>
                 ${sale?.buyerCompany ? `
@@ -953,20 +945,6 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
-                <IndianRupee className="w-4 h-4" />
-                <span className="text-sm">Actual Price</span>
-              </div>
-              <span className="text-sm text-foreground">{formatCurrency(sale.actualPrice)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3 text-muted-foreground">
-                <Tag className="w-4 h-4" />
-                <span className="text-sm">Production Cost</span>
-              </div>
-              <span className="text-sm text-foreground">{formatCurrency(sale.productionCost)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3 text-muted-foreground">
                 <DollarSign className="w-4 h-4" />
                 <span className="text-sm">Selling Price</span>
               </div>
@@ -1172,15 +1150,15 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
         </div>
       )}
 
-      {/* Buyer Details */}
+      {/* Customer Details */}
       <div className="bg-cms-card rounded-xl p-5 border border-border mb-6">
-        <h3 className="text-base font-semibold text-foreground mb-4 pb-3 border-b border-border">Buyer Information</h3>
+        <h3 className="text-base font-semibold text-foreground mb-4 pb-3 border-b border-border">Customer Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
                 <User className="w-4 h-4" />
-                <span className="text-sm">Buyer Name</span>
+                <span className="text-sm">Customer Name</span>
               </div>
               <span className="text-sm text-foreground">{sale.buyerName || 'N/A'}</span>
             </div>

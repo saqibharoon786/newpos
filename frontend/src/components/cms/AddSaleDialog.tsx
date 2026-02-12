@@ -28,6 +28,7 @@ const api = axios.create({
 // Define API endpoints
 const API_ENDPOINTS = {
   PURCHASES_GET_ALL: `${API_BASE_URL}/api/purchases/get-all`,
+  PRODUCTION_FOR_POS: `${API_BASE_URL}/api/processing/production/for-pos`,
   SALES_ADD: `${API_BASE_URL}/api/sales/add-sale`,
   SALES_UPDATE: (id: string) => `${API_BASE_URL}/api/sales/${id}`,
   SALES_GET_ALL: `${API_BASE_URL}/api/sales`,
@@ -176,7 +177,8 @@ export function AddSaleDialog({
     totalWeight: number;
     availableWeight: number;
     soldWeight: number;
-    purchaseId: string;
+    purchaseId?: string;
+    productionId?: string;
     vendor: string;
     price: string;
     materialColor: string;
@@ -326,61 +328,46 @@ export function AddSaleDialog({
     }
   };
 
-  // Fetch materials from API
+  // Fetch materials from Production List (for POS selling)
   const fetchMaterials = async () => {
     try {
       setLoadingMaterials(true);
       setApiError("");
-      
-      console.log("Fetching materials from:", API_ENDPOINTS.PURCHASES_GET_ALL);
-      
-      const response = await api.get(API_ENDPOINTS.PURCHASES_GET_ALL);
-      console.log("API Response:", response.data);
-      
-      let materialsData = [];
-      
-      // Handle different response structures
-      if (Array.isArray(response.data)) {
-        materialsData = response.data;
-      } else if (response.data && Array.isArray(response.data.data)) {
+      const response = await api.get(API_ENDPOINTS.PRODUCTION_FOR_POS);
+      let materialsData: any[] = [];
+      if (response.data && response.data.success && Array.isArray(response.data.data)) {
         materialsData = response.data.data;
-      } else if (response.data && Array.isArray(response.data.purchases)) {
-        materialsData = response.data.purchases;
-      } else {
-        console.warn("Unexpected response structure:", response.data);
-        throw new Error("Invalid response format from server");
       }
-      
-      // Process materials
-      const processedMaterials = materialsData.map((material: any) => ({
-        _id: material._id || material.id || `temp-${Math.random()}`,
-        materialName: material.materialName || material.name || "Unknown Material",
-        vendor: material.vendor || material.supplier || "Unknown Vendor",
-        price: material.price || "0",
-        weight: material.weight || "0",
-        quality: material.quality || "Standard",
-        purchaseDate: material.purchaseDate || new Date().toISOString(),
-        materialColor: material.materialColor || "#FFFFFF",
-        vehicleName: material.vehicleName || "",
-        vehicleType: material.vehicleType || "",
-        vehicleNumber: material.vehicleNumber || "",
-        driverName: material.driverName || "",
-        vehicleColor: material.vehicleColor || "",
-        deliveryDate: material.deliveryDate || "",
-        receiptNo: material.receiptNo || "",
-        vehicleImage: material.vehicleImage || "",
-        advancePayment: material.advancePayment || 0,
+      const processedMaterials = materialsData.map((item: any) => ({
+        _id: item._id,
+        materialName: item.materialName || "Unknown",
+        vendor: "Production",
+        price: "0",
+        weight: String(item.totalWeight ?? 0),
+        quality: item.quality || "Standard",
+        purchaseDate: item.productionDate || new Date().toISOString(),
+        materialColor: item.color || "#FFFFFF",
+        vehicleName: "",
+        vehicleType: "",
+        vehicleNumber: "",
+        driverName: "",
+        vehicleColor: "",
+        deliveryDate: "",
+        receiptNo: item.batchNo || "",
+        vehicleImage: "",
+        advancePayment: 0,
         soldWeight: 0,
-        availableWeight: parseFloat(material.weight || "0"),
-        createdAt: material.createdAt || new Date().toISOString(),
+        availableWeight: item.availableWeight ?? item.totalWeight ?? 0,
+        batchNo: item.batchNo,
+        createdAt: item.productionDate || new Date().toISOString(),
       }));
-      
-      console.log("Processed materials:", processedMaterials);
       setMaterials(processedMaterials);
-      
+      if (processedMaterials.length === 0) {
+        setApiError("No production stock. Add production via Start Process in Factory Processing.");
+      }
     } catch (error: any) {
-      console.error('Error fetching materials:', error);
-      setApiError(`Failed to load materials: ${error.message}`);
+      console.error("Error fetching production list:", error);
+      setApiError(`Failed to load production list: ${error.message}`);
       setMaterials([]);
     } finally {
       setLoadingMaterials(false);
@@ -460,38 +447,32 @@ export function AddSaleDialog({
     }
   };
 
-  // Handle material selection
-  const handleMaterialSelect = (materialName: string) => {
-    const selectedMaterial = materials.find(m => m.materialName === materialName);
-    
-    if (selectedMaterial) {
-      setFormData(prev => ({ 
-        ...prev, 
-        materialName,
-        supplierName: selectedMaterial.vendor || prev.supplierName,
-        actualPrice: selectedMaterial.price || prev.actualPrice,
-        branch: selectedMaterial.materialName || prev.branch,
-      }));
-      
-      setSelectedColor(selectedMaterial.materialColor || "#FFFFFF");
-      
-      const totalWeight = parseFloat(selectedMaterial.weight) || 0;
-      const availableWeight = selectedMaterial.availableWeight || totalWeight;
-      
-      setSelectedMaterialInfo({
-        totalWeight,
-        availableWeight,
-        soldWeight: selectedMaterial.soldWeight || 0,
-        purchaseId: selectedMaterial._id,
-        vendor: selectedMaterial.vendor,
-        price: selectedMaterial.price,
-        materialColor: selectedMaterial.materialColor
-      });
-      
-      // Reset weight field
-      setFormData(prev => ({ ...prev, weight: "" }));
-      setWeightError("");
-    }
+  // Handle material selection (value is material _id from Production List)
+  const handleMaterialSelect = (selectedId: string) => {
+    const selectedMaterial = materials.find(m => m._id === selectedId);
+    if (!selectedMaterial) return;
+    const name = selectedMaterial.materialName;
+    setFormData(prev => ({
+      ...prev,
+      materialName: name,
+      supplierName: selectedMaterial.vendor || prev.supplierName,
+      actualPrice: selectedMaterial.price || prev.actualPrice,
+      branch: name || prev.branch,
+    }));
+    setSelectedColor(selectedMaterial.materialColor || "#FFFFFF");
+    const totalWeight = parseFloat(selectedMaterial.weight) || 0;
+    const availableWeight = selectedMaterial.availableWeight ?? totalWeight;
+    setSelectedMaterialInfo({
+      totalWeight,
+      availableWeight,
+      soldWeight: selectedMaterial.soldWeight || 0,
+      productionId: selectedMaterial._id,
+      vendor: selectedMaterial.vendor,
+      price: selectedMaterial.price,
+      materialColor: selectedMaterial.materialColor,
+    });
+    setFormData(prev => ({ ...prev, weight: "" }));
+    setWeightError("");
   };
 
   // Calendar handlers
@@ -582,7 +563,6 @@ export function AddSaleDialog({
     if (!formData.purchaseDate) newErrors.purchaseDate = "Sale date is required";
     if (!formData.purchaseTime) newErrors.purchaseTime = "Sale time is required";
     if (!formData.branch) newErrors.branch = "Branch is required";
-    if (!formData.actualPrice || parseFloat(formData.actualPrice.replace(/,/g, '')) <= 0) newErrors.actualPrice = "Valid actual price is required";
     if (!formData.sellingPrice || parseFloat(formData.sellingPrice.replace(/,/g, '')) <= 0) newErrors.sellingPrice = "Valid selling price is required";
     
     const amountPaid = parseFloat(formData.amountPaid) || 0;
@@ -593,7 +573,7 @@ export function AddSaleDialog({
       newErrors.amountPaid = "Amount paid cannot exceed selling price";
     }
     
-    if (!formData.buyerName.trim()) newErrors.buyerName = "Buyer name is required";
+    if (!formData.buyerName.trim()) newErrors.buyerName = "Customer name is required";
     if (!formData.buyerPhone.trim()) newErrors.buyerPhone = "Buyer phone is required";
     if (formData.buyerEmail && !/^\S+@\S+\.\S+$/.test(formData.buyerEmail)) newErrors.buyerEmail = "Invalid email address";
     
@@ -651,9 +631,11 @@ export function AddSaleDialog({
 
       // Prepare form data
       const formDataToSend = new FormData();
-      
-      // Required fields
-      formDataToSend.append('purchaseId', selectedMaterialInfo?.purchaseId || '');
+      if (selectedMaterialInfo?.productionId) {
+        formDataToSend.append('productionId', selectedMaterialInfo.productionId);
+      } else {
+        formDataToSend.append('purchaseId', selectedMaterialInfo?.purchaseId || '');
+      }
       formDataToSend.append('customerName', formData.buyerName);
       formDataToSend.append('customerPhone', formData.buyerPhone);
       formDataToSend.append('customerEmail', formData.buyerEmail || '');
@@ -672,8 +654,8 @@ export function AddSaleDialog({
       formDataToSend.append('unit', formData.unit);
       formDataToSend.append('branch', formData.branch);
       formDataToSend.append('materialColor', selectedColor);
-      formDataToSend.append('actualPrice', formData.actualPrice);
-      formDataToSend.append('productionCost', formData.productionCost || '0');
+      formDataToSend.append('actualPrice', '0');
+      formDataToSend.append('productionCost', '0');
       formDataToSend.append('discount', formData.discount);
       formDataToSend.append('advancePayment', formData.advancePayment || '0');
       formDataToSend.append('buyerAddress', formData.buyerAddress || '');
@@ -1041,25 +1023,20 @@ export function AddSaleDialog({
               <div className="relative">
                 <select
                   name="materialName"
-                  value={formData.materialName}
+                  value={selectedMaterialInfo?.productionId ?? ""}
                   onChange={(e) => handleMaterialSelect(e.target.value)}
                   className={`w-full bg-cms-input-bg border ${errors.materialName ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary`}
                   disabled={loadingMaterials}
                 >
-                  <option value="">{loadingMaterials ? "Loading materials..." : "Select Material"}</option>
-                  
+                  <option value="">{loadingMaterials ? "Loading production list..." : "Select Material (Production List)"}</option>
                   {!loadingMaterials && materials.length === 0 ? (
                     <option value="" disabled>
-                      {apiError ? `Error: ${apiError}` : "No materials available. Add purchases first."}
+                      {apiError || "No production stock. Use Start Process in Factory Processing first."}
                     </option>
                   ) : (
                     materials.map((material) => (
-                      <option 
-                        key={material._id} 
-                        value={material.materialName}
-                        style={{ color: '#000' }}
-                      >
-                        {material.materialName} - {material.quality} ({material.availableWeight} kg)
+                      <option key={material._id} value={material._id} style={{ color: "#000" }}>
+                        {material.materialName} ({material.receiptNo || material._id}) — {material.availableWeight} kg available
                       </option>
                     ))
                   )}
@@ -1134,11 +1111,11 @@ export function AddSaleDialog({
             </div>
 
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Unit *</label>
+              <label className="block text-xs text-muted-foreground mb-1.5">Units (number e.g. 3, 5, 7) *</label>
               <input
                 type="text"
                 name="unit"
-                placeholder="e.g 2"
+                placeholder="e.g. 3, 5, 7"
                 value={formData.unit}
                 onChange={handleInputChange}
                 className={`w-full bg-cms-input-bg border ${errors.unit ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
@@ -1311,37 +1288,6 @@ export function AddSaleDialog({
           
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Actual Price *</label>
-              <input
-                type="number"
-                name="actualPrice"
-                placeholder="e.g 10000"
-                value={formData.actualPrice}
-                onChange={handleInputChange}
-                min="0"
-                step="0.01"
-                className={`w-full bg-cms-input-bg border ${errors.actualPrice ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-              />
-              {errors.actualPrice && (
-                <p className="text-xs text-red-500 mt-1">{errors.actualPrice}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Production Cost</label>
-              <input
-                type="number"
-                name="productionCost"
-                placeholder="e.g 5000"
-                value={formData.productionCost}
-                onChange={handleInputChange}
-                min="0"
-                step="0.01"
-                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-
-            <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Advance Payment</label>
               <input
                 type="number"
@@ -1509,12 +1455,12 @@ export function AddSaleDialog({
           </div>
         </div>
 
-        {/* Buyer Details Section */}
+        {/* Customer Details Section */}
         <div className="mb-6">
-          <h3 className="text-base font-semibold text-foreground mb-4">Buyer Details</h3>
+          <h3 className="text-base font-semibold text-foreground mb-4">Customer Details</h3>
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Name *</label>
+              <label className="block text-xs text-muted-foreground mb-1.5">Customer Name *</label>
               <input
                 type="text"
                 name="buyerName"

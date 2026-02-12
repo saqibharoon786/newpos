@@ -10,6 +10,7 @@ import { AssetsView } from "./AssetsView";
 import CustomersView from "./CustomersView";
 import Employee from "./Employee";
 import Finance from "./Finance";
+import Process from "./process";
 import { LogOut } from "lucide-react";
 
 const SUPER_ADMIN = {
@@ -94,6 +95,8 @@ export function CMSDashboard() {
         return <Employee />;
       case "Finance":
         return <Finance />;
+        case"process":
+          return <Process />;
       // default:
       //   return (
       //     <div className="flex-1 flex items-center justify-center">

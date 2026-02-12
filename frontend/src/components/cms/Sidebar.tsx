@@ -9,6 +9,7 @@ interface SidebarProps {
 const menuItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "pop", label: "POP", icon: ShoppingCart },
+    { id: "process", label: "Process", icon: ShoppingCart },
   { id: "pos", label: "POS", icon: Store },
   { id: "roznamcha", label: "Roznamcha", icon: BookOpen },
   { id: "assets", label: "Assets", icon: Package },

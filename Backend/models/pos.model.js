@@ -16,6 +16,10 @@ const saleSchema = new mongoose.Schema(
     branch: { type: String, required: false },
     materialColor: { type: String, required: true },
 
+    // Source: either purchase (POP) or production
+    purchaseId: { type: mongoose.Schema.Types.ObjectId, ref: "Purchase", required: false },
+    productionId: { type: mongoose.Schema.Types.ObjectId, ref: "ProductionData", required: false },
+
     // Price Details
     actualPrice: { type: String, required: true },
     productionCost: { type: String, required: true },

@@ -1,17 +1,17 @@
 const mongoose = require("mongoose");
 const Sale = require("../models/pos.model");
 const Purchase = require("../models/pop.model");
+const { ProductionData } = require("../models/process.model.js");
 const path = require("path");
 const fs = require("fs");
 
 // ➕ Add Sale (with optional receipt image)
-// controllers/pos.controller.js
-
-// Add Sale function - UPDATED VERSION
+// Supports sale from POP purchase (purchaseId) OR from Production List (productionId)
 const addSale = async (req, res) => {
   try {
     const {
       purchaseId,
+      productionId,
       customerName,
       customerPhone,
       customerEmail,
@@ -23,161 +23,183 @@ const addSale = async (req, res) => {
       amountPaid = 0,
       invoiceNo,
       transportationCost,
-      notes
+      notes,
+      materialName: bodyMaterialName,
+      supplierName: bodySupplierName,
+      materialColor: bodyMaterialColor,
+      actualPrice: bodyActualPrice,
+      unit: requestUnit,
     } = req.body;
 
-    // Validate required fields
-    if (!purchaseId || !customerName || !sellingPrice || !sellingWeight || !invoiceNo) {
+    if (!customerName || !sellingPrice || !sellingWeight || !invoiceNo) {
       return res.status(400).json({
         success: false,
-        message: "Required fields missing: purchaseId, customerName, sellingPrice, sellingWeight, invoiceNo"
+        message: "Required fields missing: customerName, sellingPrice, sellingWeight, invoiceNo"
       });
     }
-
-    // Find purchase
-    const purchase = await Purchase.findById(purchaseId);
-    if (!purchase) {
-      return res.status(404).json({
+    if (productionId && purchaseId) {
+      return res.status(400).json({
         success: false,
-        message: "Purchase not found"
+        message: "Provide either purchaseId or productionId, not both"
+      });
+    }
+    if (!productionId && !purchaseId) {
+      return res.status(400).json({
+        success: false,
+        message: "Required: purchaseId (POP) or productionId (Production List)"
       });
     }
 
-    // DEBUG LOGGING - Add this to see what's happening
-    console.log('=== DEBUG SALE INFO ===');
-    console.log('Purchase ID:', purchaseId);
-    console.log('Purchase weight:', purchase.weight, 'Type:', typeof purchase.weight);
-    console.log('Purchase soldWeight:', purchase.soldWeight, 'Type:', typeof purchase.soldWeight);
-    console.log('Purchase remainingWeight:', purchase.remainingWeight, 'Type:', typeof purchase.remainingWeight);
-    console.log('Selling weight:', sellingWeight, 'Type:', typeof sellingWeight);
-
-    // Convert weights to numbers
-    const originalWeight = parseFloat(purchase.weight) || 0;
-    const currentSoldWeight = parseFloat(purchase.soldWeight) || 0;
     const weightToSell = parseFloat(sellingWeight);
-    
-    // DEBUG: Show parsed values
-    console.log('Parsed originalWeight:', originalWeight);
-    console.log('Parsed currentSoldWeight:', currentSoldWeight);
-    console.log('Parsed weightToSell:', weightToSell);
-
-    // Calculate current remaining weight
-    const currentRemainingWeight = originalWeight - currentSoldWeight;
-    console.log('Calculated currentRemainingWeight:', currentRemainingWeight);
-
-    // Check if enough stock
-    if (weightToSell > currentRemainingWeight) {
-      console.log('ERROR: Not enough stock');
-      console.log('weightToSell:', weightToSell);
-      console.log('currentRemainingWeight:', currentRemainingWeight);
-      console.log('originalWeight:', originalWeight);
-      console.log('currentSoldWeight:', currentSoldWeight);
-      
+    if (isNaN(weightToSell) || weightToSell <= 0) {
       return res.status(400).json({
         success: false,
-        message: `Cannot sell ${weightToSell}kg. Only ${currentRemainingWeight}kg available.`
+        message: "Valid selling weight is required"
       });
     }
 
-    // Calculate new sold weight
-    const newSoldWeight = currentSoldWeight + weightToSell;
-    const newRemainingWeight = originalWeight - newSoldWeight;
-
-    console.log('New soldWeight:', newSoldWeight);
-    console.log('New remainingWeight:', newRemainingWeight);
-
-    // Update purchase record
-    purchase.soldWeight = newSoldWeight;
-    purchase.remainingWeight = newRemainingWeight;
-    
-    // Update status
-    if (newRemainingWeight === 0) {
-      purchase.status = 'sold_out';
-    } else if (newRemainingWeight < originalWeight) {
-      purchase.status = 'partially_sold';
-    } else {
-      purchase.status = 'available';
-    }
-    
-    console.log('Updated purchase status:', purchase.status);
-    console.log('=== END DEBUG ===');
-
-    await purchase.save();
-
-    // Rest of your sale creation code...
     const receiptImage = req.file ? `/uploads/receipts/${req.file.filename}` : "";
     const paidAmount = parseFloat(amountPaid) || 0;
     const sellingPriceNum = parseFloat(sellingPrice) || 0;
     const remainingAmount = Math.max(0, sellingPriceNum - paidAmount);
-
-    // Determine payment status
     let finalPaymentStatus = paymentStatus;
     if (!finalPaymentStatus) {
-      if (paidAmount === 0) {
-        finalPaymentStatus = 'none';
-      } else if (paidAmount >= sellingPriceNum) {
-        finalPaymentStatus = 'paid';
-      } else {
-        finalPaymentStatus = 'partial';
-      }
+      if (paidAmount === 0) finalPaymentStatus = 'none';
+      else if (paidAmount >= sellingPriceNum) finalPaymentStatus = 'paid';
+      else finalPaymentStatus = 'partial';
     }
 
-    // Create sale record
-    const sale = await Sale.create({
-      purchaseId,
-      materialName: purchase.materialName,
-      supplierName: purchase.vendor || purchase.supplierName || "",
-      invoiceNo,
-      weight: sellingWeight.toString(),
-      unit: purchase.unit || "kg",
-      purchaseDate: saleDate || new Date().toISOString().split('T')[0],
-      purchaseTime: new Date().toLocaleTimeString('en-US', { 
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit'
-      }),
-      branch: "Main",
-      materialColor: purchase.materialColor || "",
-      actualPrice: purchase.price || "0",
-      productionCost: "0",
-      sellingPrice: sellingPrice.toString(),
-      discount: "0",
-      finalAmount: sellingPrice.toString(),
-      advancePayment: paidAmount,
-      
-      // Payment Tracking Fields
-      amountPaid: paidAmount,
-      remainingAmount: remainingAmount,
-      paymentStatus: finalPaymentStatus,
-      
-      // Buyer Details
-      buyerName: customerName,
-      buyerAddress: "",
-      buyerPhone: customerPhone || "",
-      buyerEmail: customerEmail || "",
-      buyerCnic: "",
-      buyerCompany: "",
-      
-      // Receipt
-      receiptImage,
-      
-      // Additional fields from request
-      transportationCost: transportationCost || 0,
-      notes: notes || ""
-    });
+    let materialName, supplierName, materialColor, actualPrice, salePayload;
+
+    if (productionId) {
+      // Sale from Production List
+      const production = await ProductionData.findById(productionId);
+      if (!production) {
+        return res.status(404).json({
+          success: false,
+          message: "Production record not found"
+        });
+      }
+      const available = production.availableWeight ?? production.totalWeight ?? 0;
+      if (weightToSell > available) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot sell ${weightToSell}kg. Only ${available}kg available for this production.`
+        });
+      }
+      const newAvailable = available - weightToSell;
+      production.availableWeight = newAvailable;
+      await production.save();
+
+      materialName = bodyMaterialName || production.materialName;
+      supplierName = bodySupplierName || "Production";
+      materialColor = bodyMaterialColor || production.color || "";
+      actualPrice = bodyActualPrice || "0";
+
+      salePayload = {
+        productionId: production._id,
+        purchaseId: undefined,
+        materialName,
+        supplierName,
+        invoiceNo,
+        weight: sellingWeight.toString(),
+        unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : "0",
+        purchaseDate: saleDate ? (typeof saleDate === 'string' && saleDate.includes('T') ? saleDate.split('T')[0] : saleDate) : new Date().toISOString().split('T')[0],
+        purchaseTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+        branch: "Main",
+        materialColor,
+        actualPrice,
+        productionCost: "0",
+        sellingPrice: sellingPrice.toString(),
+        discount: "0",
+        finalAmount: sellingPrice.toString(),
+        advancePayment: paidAmount,
+        amountPaid: paidAmount,
+        remainingAmount: remainingAmount,
+        paymentStatus: finalPaymentStatus,
+        buyerName: customerName,
+        buyerAddress: "",
+        buyerPhone: customerPhone || "",
+        buyerEmail: customerEmail || "",
+        buyerCnic: "",
+        buyerCompany: "",
+        receiptImage,
+        transportationCost: transportationCost || 0,
+        notes: notes || ""
+      };
+    } else {
+      // Sale from POP purchase
+      const purchase = await Purchase.findById(purchaseId);
+      if (!purchase) {
+        return res.status(404).json({
+          success: false,
+          message: "Purchase not found"
+        });
+      }
+      const originalWeight = parseFloat(purchase.weight) || 0;
+      const currentSoldWeight = parseFloat(purchase.soldWeight) || 0;
+      const currentRemainingWeight = originalWeight - currentSoldWeight;
+
+      if (weightToSell > currentRemainingWeight) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot sell ${weightToSell}kg. Only ${currentRemainingWeight}kg available.`
+        });
+      }
+      const newSoldWeight = currentSoldWeight + weightToSell;
+      const newRemainingWeight = originalWeight - newSoldWeight;
+      purchase.soldWeight = newSoldWeight;
+      purchase.remainingWeight = newRemainingWeight;
+      if (newRemainingWeight === 0) purchase.status = 'sold_out';
+      else if (newRemainingWeight < originalWeight) purchase.status = 'partially_sold';
+      else purchase.status = 'available';
+      await purchase.save();
+
+      materialName = purchase.materialName;
+      supplierName = purchase.vendor || purchase.supplierName || "";
+      materialColor = purchase.materialColor || "";
+      actualPrice = purchase.price || "0";
+
+      salePayload = {
+        purchaseId: purchase._id,
+        productionId: undefined,
+        materialName,
+        supplierName,
+        invoiceNo,
+        weight: sellingWeight.toString(),
+        unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : (purchase.unit || "0"),
+        purchaseDate: saleDate ? (typeof saleDate === 'string' && saleDate.includes('T') ? saleDate.split('T')[0] : saleDate) : new Date().toISOString().split('T')[0],
+        purchaseTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+        branch: "Main",
+        materialColor,
+        actualPrice,
+        productionCost: "0",
+        sellingPrice: sellingPrice.toString(),
+        discount: "0",
+        finalAmount: sellingPrice.toString(),
+        advancePayment: paidAmount,
+        amountPaid: paidAmount,
+        remainingAmount: remainingAmount,
+        paymentStatus: finalPaymentStatus,
+        buyerName: customerName,
+        buyerAddress: "",
+        buyerPhone: customerPhone || "",
+        buyerEmail: customerEmail || "",
+        buyerCnic: "",
+        buyerCompany: "",
+        receiptImage,
+        transportationCost: transportationCost || 0,
+        notes: notes || ""
+      };
+    }
+
+    const sale = await Sale.create(salePayload);
 
     res.status(201).json({
       success: true,
       message: "Sale completed successfully",
       data: {
         sale,
-        updatedPurchase: {
-          id: purchase._id,
-          originalWeight: originalWeight,
-          soldWeight: newSoldWeight,
-          remainingWeight: newRemainingWeight,
-          status: purchase.status
-        },
         paymentSummary: {
           amountPaid: paidAmount,
           remainingAmount: remainingAmount,
@@ -185,7 +207,6 @@ const addSale = async (req, res) => {
         }
       }
     });
-
   } catch (error) {
     console.error('Sale error:', error);
     res.status(500).json({

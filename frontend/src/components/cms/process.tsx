@@ -1,0 +1,2413 @@
+import React, { useState, useEffect } from "react";
+import { 
+  Factory, 
+  Package, 
+  Scale, 
+  Filter, 
+  Thermometer, 
+  Timer, 
+  Zap, 
+  Droplets, 
+  CheckCircle, 
+  X, 
+  Plus, 
+  Search, 
+  Eye, 
+  History, 
+  TrendingUp, 
+  AlertCircle,
+  ChevronDown,
+  Calendar,
+  Clock,
+  Printer,
+  Download,
+  Upload,
+  RotateCw,
+  PackageOpen,
+  ArrowRight,
+  ArrowLeft,
+  BarChart3,
+  Settings,
+  Users,
+  User,
+  Pencil,
+  Trash2
+} from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import axios from "axios";
+
+// Configure axios with environment variable
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
+// Create axios instance with base URL
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 10000,
+});
+
+// API endpoints
+const PROCESSING_API_URL = `${API_BASE_URL}/api/processing`;
+const EMPLOYEE_API_URL = `${API_BASE_URL}/api/employees`;
+
+// Color options (POP se match karein)
+const colorOptions = [
+  { name: "White", color: "bg-white", value: "#FFFFFF" },
+  { name: "Yellow", color: "bg-yellow-400", value: "#FACC15" },
+  { name: "Red", color: "bg-red-500", value: "#EF4444" },
+  { name: "Blue", color: "bg-blue-600", value: "#2563EB" },
+  { name: "Orange", color: "bg-orange-500", value: "#F97316" },
+  { name: "Green", color: "bg-green-500", value: "#22C55E" },
+  { name: "Black", color: "bg-black", value: "#000000" },
+  { name: "Pink", color: "bg-pink-500", value: "#EC4899" },
+  { name: "Purple", color: "bg-purple-500", value: "#A855F7" },
+  { name: "Gray", color: "bg-gray-500", value: "#6B7280" },
+  { name: "Brown", color: "bg-amber-900", value: "#92400E" },
+];
+
+interface Employee {
+  _id: string;
+  employeeId: string;
+  name: string;
+  title: string;
+  department: string;
+  phone: string;
+  email?: string;
+}
+
+interface ProcessingMaterial {
+  _id: string;
+  purchaseId: string;
+  receiptNo: string;
+  materialName: string;
+  quality: string;
+  color: string;
+  originalWeight: number;
+  availableWeight: number;
+  vendor: string;
+  purchaseDate: string;
+  status: 'pending' | 'in_progress' | 'processed' | 'on_hold';
+  batchNo?: string;
+}
+
+interface ProcessingStage {
+  _id: string;
+  name: string;
+  description: string;
+  duration: number; // in minutes
+  temperature?: number; // in Celsius
+  pressure?: number; // in PSI
+  powerConsumption?: number; // in kWh
+  waterUsage?: number; // in liters
+  sequence: number;
+}
+
+interface ProcessingBatch {
+  _id: string;
+  batchNo: string;
+  materialId: string;
+  materialName: string;
+  quality: string;
+  color: string;
+  inputWeight: number;
+  totalBags: number;
+  bagWeight: number;
+  expectedOutput: number;
+  actualOutput?: number;
+  wastePercentage?: number;
+  stages: Array<{
+    stageId: string;
+    stageName: string;
+    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+    startTime?: string;
+    endTime?: string;
+    operator?: string;
+    notes?: string;
+  }>;
+  employees: Employee[];
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'on_hold';
+  startTime?: string;
+  endTime?: string;
+  qualityCheck?: {
+    passed: boolean;
+    inspector: string;
+    notes: string;
+    timestamp: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ProductionData {
+  _id: string;
+  batchId: string;
+  batchNo: string;
+  materialName: string;
+  quality: string;
+  color: string;
+  outputWeight: number;
+  availableWeight?: number;
+  wasteWeight: number;
+  efficiency: number;
+  productionDate: string;
+  operator: string;
+  shift: 'morning' | 'evening' | 'night';
+  machineUsed: string;
+  energyConsumed: number;
+  waterUsed: number;
+  status: 'completed' | 'partial' | 'failed';
+  notes?: string;
+  totalBags?: number;
+  bagWeight?: number;
+}
+
+// Stage configuration
+const defaultStages: ProcessingStage[] = [
+  {
+    _id: "stage_1",
+    name: "Sorting & Cleaning",
+    description: "Raw material sorting and cleaning process",
+    duration: 30,
+    sequence: 1
+  },
+  {
+    _id: "stage_2",
+    name: "Shredding",
+    description: "Material shredding into smaller pieces",
+    duration: 45,
+    powerConsumption: 150,
+    sequence: 2
+  },
+  {
+    _id: "stage_3",
+    name: "Washing",
+    description: "Thorough washing with detergent",
+    duration: 60,
+    waterUsage: 500,
+    sequence: 3
+  },
+  {
+    _id: "stage_4",
+    name: "Drying",
+    description: "High-temperature drying process",
+    duration: 120,
+    temperature: 80,
+    sequence: 4
+  },
+  {
+    _id: "stage_5",
+    name: "Melting & Extrusion",
+    description: "Melting and extrusion into pellets",
+    duration: 90,
+    temperature: 200,
+    pressure: 150,
+    powerConsumption: 300,
+    sequence: 5
+  },
+  {
+    _id: "stage_6",
+    name: "Cooling & Cutting",
+    description: "Cooling and cutting into final pellets",
+    duration: 45,
+    sequence: 6
+  },
+  {
+    _id: "stage_7",
+    name: "Quality Check",
+    description: "Final quality inspection",
+    duration: 30,
+    sequence: 7
+  },
+  {
+    _id: "stage_8",
+    name: "Packaging",
+    description: "Packaging for storage/shipment",
+    duration: 30,
+    sequence: 8
+  }
+];
+
+// Available machines
+const machines = [
+  { id: "machine_1", name: "Shredder X-100", status: "available", capacity: 500 },
+  { id: "machine_2", name: "Washer Pro", status: "available", capacity: 300 },
+  { id: "machine_3", name: "Dryer Master", status: "maintenance", capacity: 400 },
+  { id: "machine_4", name: "Extruder Elite", status: "available", capacity: 200 },
+  { id: "machine_5", name: "Cutter Max", status: "available", capacity: 600 },
+];
+
+// Status Badge Component
+const StatusBadge = ({ status }: { status: string }) => {
+  const getStatusConfig = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Pending' };
+      case 'in_progress':
+        return { bg: 'bg-blue-100', text: 'text-blue-800', label: 'In Progress' };
+      case 'processed':
+        return { bg: 'bg-green-100', text: 'text-green-800', label: 'Processed' };
+      case 'on_hold':
+        return { bg: 'bg-red-100', text: 'text-red-800', label: 'On Hold' };
+      case 'completed':
+        return { bg: 'bg-green-100', text: 'text-green-800', label: 'Completed' };
+      case 'failed':
+        return { bg: 'bg-red-100', text: 'text-red-800', label: 'Failed' };
+      case 'available':
+        return { bg: 'bg-green-100', text: 'text-green-800', label: 'Available' };
+      case 'maintenance':
+        return { bg: 'bg-red-100', text: 'text-red-800', label: 'Maintenance' };
+      case 'active':
+        return { bg: 'bg-green-100', text: 'text-green-800', label: 'Active' };
+      case 'off':
+        return { bg: 'bg-gray-100', text: 'text-gray-800', label: 'Off' };
+      default:
+        return { bg: 'bg-gray-100', text: 'text-gray-800', label: 'Unknown' };
+    }
+  };
+
+  const config = getStatusConfig(status);
+  return (
+    <span className={`px-2 py-1 text-xs ${config.bg} ${config.text} rounded-full`}>
+      {config.label}
+    </span>
+  );
+};
+
+// Processing Dashboard Summary
+const ProcessingDashboard = ({ 
+  materials, 
+  batches, 
+  productionData 
+}: { 
+  materials: ProcessingMaterial[], 
+  batches: ProcessingBatch[], 
+  productionData: ProductionData[] 
+}) => {
+  const [timeRange, setTimeRange] = useState<'today' | 'week' | 'month'>('today');
+  
+  const calculateMetrics = () => {
+    const pendingMaterials = materials.filter(m => m.status === 'pending').length;
+    const inProgressBatches = batches.filter(b => b.status === 'processing').length;
+    const completedToday = productionData.filter(p => {
+      const today = new Date().toDateString();
+      return new Date(p.productionDate).toDateString() === today;
+    }).length;
+    
+    const totalInput = materials.reduce((sum, m) => sum + m.originalWeight, 0);
+    const totalOutput = productionData.reduce((sum, p) => sum + p.outputWeight, 0);
+    const efficiency = totalInput > 0 ? (totalOutput / totalInput) * 100 : 0;
+    
+    const recentProduction = productionData.slice(0, 5);
+    
+    return {
+      pendingMaterials,
+      inProgressBatches,
+      completedToday,
+      totalInput,
+      totalOutput,
+      efficiency,
+      recentProduction
+    };
+  };
+  
+  const metrics = calculateMetrics();
+  
+  return (
+    <div className="space-y-6">
+      {/* Quick Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-cms-card rounded-lg p-4 border border-border">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Pending Materials</p>
+              <p className="text-2xl font-semibold text-foreground">{metrics.pendingMaterials}</p>
+            </div>
+            <div className="w-10 h-10 bg-yellow-500/10 rounded-lg flex items-center justify-center">
+              <Package className="w-5 h-5 text-yellow-500" />
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-cms-card rounded-lg p-4 border border-border">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Materials in Progress</p>
+              <p className="text-2xl font-semibold text-foreground">{metrics.inProgressBatches}</p>
+            </div>
+            <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
+              <Factory className="w-5 h-5 text-blue-500" />
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-cms-card rounded-lg p-4 border border-border">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Today's Output</p>
+              <p className="text-2xl font-semibold text-foreground">{metrics.completedToday}</p>
+            </div>
+            <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center">
+              <CheckCircle className="w-5 h-5 text-green-500" />
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-cms-card rounded-lg p-4 border border-border">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Efficiency</p>
+              <p className="text-2xl font-semibold text-foreground">
+                {metrics.efficiency.toFixed(1)}%
+              </p>
+              <div className="flex items-center gap-2 mt-1">
+                <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full ${
+                      metrics.efficiency >= 90 ? 'bg-green-500' :
+                      metrics.efficiency >= 75 ? 'bg-yellow-500' : 'bg-red-500'
+                    }`}
+                    style={{ width: `${Math.min(100, metrics.efficiency)}%` }}
+                  />
+                </div>
+                <TrendingUp className={`w-4 h-4 ${
+                  metrics.efficiency >= 90 ? 'text-green-500' :
+                  metrics.efficiency >= 75 ? 'text-yellow-500' : 'text-red-500'
+                }`} />
+              </div>
+            </div>
+            <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
+              <BarChart3 className="w-5 h-5 text-purple-500" />
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Production Pipeline */}
+      <div className="bg-cms-card rounded-lg p-6 border border-border">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              <Factory className="w-5 h-5 text-primary" />
+              Production Pipeline
+            </h3>
+            <p className="text-sm text-muted-foreground">Real-time processing status</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setTimeRange('today')}
+              className={`px-3 py-1 text-xs rounded-md ${
+                timeRange === 'today' 
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'bg-cms-card-hover text-muted-foreground'
+              }`}
+            >
+              Today
+            </button>
+            <button
+              onClick={() => setTimeRange('week')}
+              className={`px-3 py-1 text-xs rounded-md ${
+                timeRange === 'week' 
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'bg-cms-card-hover text-muted-foreground'
+              }`}
+            >
+              This Week
+            </button>
+            <button
+              onClick={() => setTimeRange('month')}
+              className={`px-3 py-1 text-xs rounded-md ${
+                timeRange === 'month' 
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'bg-cms-card-hover text-muted-foreground'
+              }`}
+            >
+              This Month
+            </button>
+          </div>
+        </div>
+        
+        {/* Processing Stages Visualization */}
+        <div className="mb-8">
+          <div className="flex justify-between items-center mb-4">
+            <h4 className="text-sm font-medium text-foreground">Processing Stages</h4>
+            <div className="text-xs text-muted-foreground">
+              {batches.filter(b => b.status === 'processing').length} active materials
+            </div>
+          </div>
+          <div className="grid grid-cols-8 gap-2">
+            {defaultStages.map((stage, index) => {
+              const activeBatches = batches.filter(b => 
+                b.status === 'processing' && 
+                b.stages.some(s => s.stageId === stage._id && s.status === 'in_progress')
+              ).length;
+              
+              return (
+                <div key={stage._id} className="text-center">
+                  <div className={`relative h-16 rounded-lg border flex items-center justify-center ${
+                    activeBatches > 0 
+                      ? 'bg-blue-50 border-blue-200' 
+                      : 'bg-cms-card-hover border-border'
+                  }`}>
+                    <div className="absolute -top-2 left-1/2 -translate-x-1/2">
+                      <div className="w-6 h-6 rounded-full bg-background border border-border flex items-center justify-center">
+                        <span className="text-xs font-semibold text-foreground">
+                          {index + 1}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      {activeBatches > 0 && (
+                        <div className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center mx-auto mb-1">
+                          {activeBatches}
+                        </div>
+                      )}
+                      <div className="text-xs text-muted-foreground">{stage.name}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        
+        {/* Recent Production */}
+        <div>
+          <h4 className="text-sm font-medium text-foreground mb-4">Recent Production</h4>
+          <div className="space-y-3">
+            {metrics.recentProduction.length > 0 ? (
+              metrics.recentProduction.map((prod) => (
+                <div key={prod._id} className="flex items-center justify-between p-3 bg-cms-card-hover rounded-lg border border-border">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <PackageOpen className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-foreground">
+                        {prod.batchNo} - {prod.materialName}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {prod.quality} • {prod.color}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-semibold text-foreground">
+                      {prod.outputWeight} kg
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(prod.productionDate).toLocaleDateString()}
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-6 text-muted-foreground">
+                No recent production data
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Processing Queue Component
+const ProcessingQueue = ({
+  materials,
+  onStartProcessing,
+  onStartProcess,
+}: {
+  materials: ProcessingMaterial[];
+  onStartProcessing: (material: ProcessingMaterial) => void;
+  onStartProcess?: (material: ProcessingMaterial) => void;
+}) => {
+  const [selectedMaterial, setSelectedMaterial] = useState<ProcessingMaterial | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'date' | 'weight' | 'name'>('date');
+  
+  const filteredMaterials = materials.filter(material => {
+    if (filterStatus === 'all') return true;
+    return material.status === filterStatus;
+  }).sort((a, b) => {
+    switch (sortBy) {
+      case 'date':
+        return new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime();
+      case 'weight':
+        return b.availableWeight - a.availableWeight;
+      case 'name':
+        return a.materialName.localeCompare(b.materialName);
+      default:
+        return 0;
+    }
+  });
+  
+  const pendingMaterials = materials.filter(m => m.status === 'pending');
+  
+  return (
+    <div className="bg-cms-card rounded-lg p-6 border border-border">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <Package className="w-5 h-5 text-primary" />
+            Processing Queue
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            {pendingMaterials.length} materials pending processing
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Filter:</span>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="bg-cms-card-hover border border-border rounded-md px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="all">All</option>
+              <option value="pending">Pending</option>
+              <option value="in_progress">In Progress</option>
+              <option value="processed">Processed</option>
+              <option value="on_hold">On Hold</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Sort:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="bg-cms-card-hover border border-border rounded-md px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="date">Purchase Date</option>
+              <option value="weight">Weight</option>
+              <option value="name">Material Name</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      
+      {filteredMaterials.length === 0 ? (
+        <div className="text-center py-12">
+          <Package className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+          <p className="text-muted-foreground">No materials found</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filteredMaterials.map((material) => (
+            <div key={material._id} className="flex items-center justify-between p-4 bg-cms-card-hover rounded-lg border border-border hover:border-primary transition-colors">
+              <div className="flex items-center gap-4">
+                <div 
+                  className="w-4 h-4 rounded-full border border-border"
+                  style={{ backgroundColor: material.color || '#FFFFFF' }}
+                />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-foreground">
+                      {material.materialName}
+                    </span>
+                    <StatusBadge status={material.status} />
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Quality: {material.quality} • Receipt: {material.receiptNo} • Vendor: {material.vendor}
+                  </div>
+                  <div className="flex items-center gap-4 mt-2 text-xs">
+                    <div className="flex items-center gap-1">
+                      <Scale className="w-3 h-3" />
+                      <span className="text-foreground">
+                        Available: <span className="font-semibold">{material.availableWeight} kg</span>
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      <span className="text-muted-foreground">
+                        {new Date(material.purchaseDate).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedMaterial(material);
+                    setShowDetails(true);
+                  }}
+                  className="p-2 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                  title="View Details"
+                >
+                  <Eye className="w-4 h-4" />
+                </button>
+                {onStartProcess && (
+                  <button
+                    onClick={() => onStartProcess(material)}
+                    className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 transition-colors"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                    Start Process
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      
+      {/* Material Details Modal */}
+      {showDetails && selectedMaterial && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-2xl">
+            <div className="bg-cms-table-header px-6 py-3 border-b border-border flex justify-between items-center">
+              <p className="text-xs text-muted-foreground">Material Details</p>
+              <button
+                onClick={() => setShowDetails(false)}
+                className="p-1 hover:bg-cms-card-hover rounded-md transition-colors"
+              >
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <div className="mb-6">
+                <h2 className="text-xl font-bold text-foreground">{selectedMaterial.materialName}</h2>
+                <div className="flex items-center gap-4 mt-2">
+                  <StatusBadge status={selectedMaterial.status} />
+                  <div className="text-sm text-muted-foreground">
+                    Receipt #: {selectedMaterial.receiptNo}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <h3 className="text-sm font-medium text-foreground mb-3">Material Information</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Quality</div>
+                      <div className="text-sm text-foreground">{selectedMaterial.quality}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Color</div>
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-4 h-4 rounded-full border border-border"
+                          style={{ backgroundColor: selectedMaterial.color }}
+                        />
+                        <span className="text-sm text-foreground">{selectedMaterial.color}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Vendor</div>
+                      <div className="text-sm text-foreground">{selectedMaterial.vendor}</div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div>
+                  <h3 className="text-sm font-medium text-foreground mb-3">Weight Information</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Original Weight</div>
+                      <div className="text-lg font-semibold text-foreground">
+                        {selectedMaterial.originalWeight} kg
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Available for Processing</div>
+                      <div className="text-lg font-semibold text-primary">
+                        {selectedMaterial.availableWeight} kg
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Purchase Date</div>
+                      <div className="text-sm text-foreground">
+                        {new Date(selectedMaterial.purchaseDate).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-8 pt-6 border-t border-border">
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setShowDetails(false)}
+                    className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-sm font-medium transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Start Processing Modal
+const StartProcessingModal = ({
+  open,
+  onClose,
+  material,
+  onStartBatch
+}: {
+  open: boolean;
+  onClose: () => void;
+  material: ProcessingMaterial | null;
+  onStartBatch: (batchData: any) => void;
+}) => {
+  const [totalWeight, setTotalWeight] = useState<string>("");
+  const [totalBags, setTotalBags] = useState<string>("");
+  const [bagWeight, setBagWeight] = useState<string>("");
+  const [selectedColor, setSelectedColor] = useState<string>("");
+  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
+  const [selectedMachine, setSelectedMachine] = useState<string>("");
+  const [selectedShift, setSelectedShift] = useState<'morning' | 'evening' | 'night'>('morning');
+  const [productionDate, setProductionDate] = useState<string>(() => {
+    const today = new Date();
+    return today.toISOString().slice(0, 10);
+  });
+  const [notes, setNotes] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [customStages, setCustomStages] = useState<ProcessingStage[]>(defaultStages);
+  
+  useEffect(() => {
+    if (open && material) {
+      // User will enter custom total weight (don't prefill from POP)
+      setTotalWeight("");
+      setSelectedMachine(machines[0]?.id || "");
+      setSelectedColor(material.color || "#FFFFFF");
+      setProductionDate(new Date().toISOString().slice(0, 10));
+      fetchEmployees();
+      
+      // Reset bags when opening modal
+      setTotalBags("");
+      setBagWeight("");
+    }
+  }, [open, material]);
+  
+  useEffect(() => {
+    // Auto-calculate bag weight when total weight or bags change
+    if (totalWeight && totalBags) {
+      const weight = parseFloat(totalWeight);
+      const bags = parseInt(totalBags);
+      if (weight > 0 && bags > 0) {
+        setBagWeight((weight / bags).toFixed(1));
+      }
+    }
+  }, [totalWeight, totalBags]);
+  
+  const fetchEmployees = async () => {
+    try {
+      setLoadingEmployees(true);
+      const response = await api.get(`${EMPLOYEE_API_URL}/get-all`);
+      
+      if (response.data.success) {
+        const employeesData = response.data.data || [];
+        const activeEmployees = employeesData
+          .filter((emp: any) => emp.isActive !== false)
+          .map((emp: any) => ({
+            _id: emp._id,
+            employeeId: emp.employeeId,
+            name: emp.name,
+            title: emp.title,
+            department: emp.department,
+            phone: emp.phone,
+            email: emp.email
+          }));
+        setEmployees(activeEmployees);
+      }
+    } catch (error: any) {
+      console.error("Failed to fetch employees:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load employees list",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingEmployees(false);
+    }
+  };
+  
+  const handleSubmit = async () => {
+    if (!material) return;
+    
+    const weight = parseFloat(totalWeight);
+    const bags = parseInt(totalBags);
+    
+    if (isNaN(weight) || weight <= 0 || weight > material.availableWeight) {
+      toast({
+        title: "Error",
+        description: `Please enter valid weight (max: ${material.availableWeight} kg)`,
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (isNaN(bags) || bags <= 0) {
+      toast({
+        title: "Error",
+        description: "Please enter valid number of bags",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!selectedColor) {
+      toast({
+        title: "Error",
+        description: "Please select a color",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (selectedEmployees.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please select at least one employee",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!selectedMachine) {
+      toast({
+        title: "Error",
+        description: "Please select a machine",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsSubmitting(true);
+    try {
+      const batchNo = `BATCH-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+      
+      const selectedEmployeeObjects = employees.filter(emp => selectedEmployees.includes(emp._id));
+      
+      const batchData = {
+        batchNo,
+        materialId: material._id,
+        materialName: material.materialName,
+        quality: material.quality,
+        color: selectedColor,
+        inputWeight: weight,
+        totalBags: bags,
+        bagWeight: parseFloat(bagWeight),
+        expectedOutput: weight * 0.9, // 90% efficiency default
+        stages: customStages.map(stage => ({
+          stageId: stage._id,
+          stageName: stage.name,
+          status: 'pending',
+          sequence: stage.sequence
+        })),
+        employees: selectedEmployeeObjects,
+        status: 'pending',
+        machineId: selectedMachine,
+        shift: selectedShift,
+        productionDate,
+        notes,
+        startTime: new Date().toISOString()
+      };
+      
+      // Save to API
+      const response = await api.post(`${PROCESSING_API_URL}/batches`, batchData);
+      
+      if (response.data.success) {
+        toast({
+          title: "Success",
+          description: `Processing batch ${batchNo} started!`,
+        });
+        
+        // Update material status
+        await api.put(`${PROCESSING_API_URL}/materials/${material._id}`, {
+          status: 'in_progress',
+          availableWeight: material.availableWeight - weight
+        });
+        
+        onStartBatch(batchData);
+        onClose();
+        
+        // Reset form
+        setSelectedEmployees([]);
+        setNotes("");
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to start processing",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+  
+  const handleEmployeeToggle = (employeeId: string) => {
+    setSelectedEmployees(prev => {
+      if (prev.includes(employeeId)) {
+        return prev.filter(id => id !== employeeId);
+      } else {
+        return [...prev, employeeId];
+      }
+    });
+  };
+  
+  if (!open || !material) return null;
+  
+  const machine = machines.find(m => m.id === selectedMachine);
+  const selectedColorObj = colorOptions.find(c => c.value === selectedColor) || colorOptions[0];
+  
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="bg-cms-table-header px-6 py-3 border-b border-border flex justify-between items-center">
+          <p className="text-xs text-muted-foreground">Start Processing</p>
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-cms-card-hover rounded-md transition-colors"
+          >
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+        
+        <div className="p-6">
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-foreground">Start New Processing Batch</h2>
+            <p className="text-sm text-muted-foreground">
+              Material: {material.materialName} ({material.quality})
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-6 mb-6">
+            {/* Left Column - Material Info */}
+            <div>
+              <h3 className="text-base font-semibold text-foreground mb-4">Material Information</h3>
+              <div className="space-y-4">
+                <div className="bg-cms-card-hover rounded-lg p-4 border border-border">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Material</div>
+                      <div className="text-lg font-semibold text-foreground">{material.materialName}</div>
+                    </div>
+                    <div 
+                      className="w-8 h-8 rounded-full border border-border"
+                      style={{ backgroundColor: material.color }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 mt-3">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Quality</div>
+                      <div className="text-sm text-foreground">{material.quality}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Receipt No.</div>
+                      <div className="text-sm text-foreground">{material.receiptNo}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Vendor</div>
+                      <div className="text-sm text-foreground">{material.vendor}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Available Weight</div>
+                      <div className="text-sm font-semibold text-primary">{material.availableWeight} kg</div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Total Weight (kg) *</label>
+                  <input
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    max={material.availableWeight}
+                    value={totalWeight}
+                    onChange={(e) => setTotalWeight(e.target.value)}
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Maximum available: {material.availableWeight} kg
+                  </p>
+                </div>
+                
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Production Date *</label>
+                  <input
+                    type="date"
+                    value={productionDate}
+                    onChange={(e) => setProductionDate(e.target.value)}
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Total Bags *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={totalBags}
+                    onChange={(e) => setTotalBags(e.target.value)}
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Estimated weight per bag: {bagWeight} kg
+                  </p>
+                </div>
+                
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-2">Select Color *</label>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {colorOptions.map((color) => (
+                      <label key={color.value} className="flex items-center gap-1.5 cursor-pointer">
+                        <div className="relative flex items-center">
+                          <input
+                            type="radio"
+                            name="materialColor"
+                            value={color.value}
+                            checked={selectedColor === color.value}
+                            onChange={() => setSelectedColor(color.value)}
+                            className="sr-only"
+                          />
+                          <div 
+                            className={`w-5 h-5 rounded-full ${color.color} border-2 ${
+                              selectedColor === color.value 
+                                ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' 
+                                : 'border-border'
+                            }`} 
+                          />
+                        </div>
+                        <span className="text-xs text-foreground">{color.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Right Column - Processing Settings */}
+            <div>
+              <h3 className="text-base font-semibold text-foreground mb-4">Processing Settings</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Machine *</label>
+                  <select
+                    value={selectedMachine}
+                    onChange={(e) => setSelectedMachine(e.target.value)}
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">Select Machine</option>
+                    {machines.filter(m => m.status === 'available').map(machine => (
+                      <option key={machine.id} value={machine.id}>
+                        {machine.name} ({machine.capacity} kg capacity)
+                      </option>
+                    ))}
+                  </select>
+                  {machine && (
+                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-blue-700">Selected:</span>
+                        <span className="text-sm font-semibold text-blue-800">{machine.name}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-blue-600">
+                        Capacity: {machine.capacity} kg • Status: <StatusBadge status={machine.status} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Shift *</label>
+                  <select
+                    value={selectedShift}
+                    onChange={(e) => setSelectedShift(e.target.value as any)}
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="morning">Morning (6AM - 2PM)</option>
+                    <option value="evening">Evening (2PM - 10PM)</option>
+                    <option value="night">Night (10PM - 6AM)</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Select Employees *</label>
+                  {loadingEmployees ? (
+                    <div className="flex items-center justify-center py-4">
+                      <RotateCw className="w-4 h-4 animate-spin text-primary mr-2" />
+                      <span className="text-sm text-muted-foreground">Loading employees...</span>
+                    </div>
+                  ) : employees.length === 0 ? (
+                    <div className="text-center py-4 text-sm text-muted-foreground">
+                      No employees found. Please add employees first.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-60 overflow-y-auto p-2 bg-cms-card-hover rounded-md border border-border">
+                      {employees.map(employee => (
+                        <label key={employee._id} className="flex items-center gap-3 p-2 hover:bg-cms-card rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedEmployees.includes(employee._id)}
+                            onChange={() => handleEmployeeToggle(employee._id)}
+                            className="w-4 h-4 text-primary border-border rounded focus:ring-primary"
+                          />
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
+                              <User className="w-3 h-3 text-primary" />
+                            </div>
+                            <div className="flex-1">
+                              <div className="text-sm font-medium text-foreground">{employee.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {employee.department} • {employee.employeeId}
+                              </div>
+                            </div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {selectedEmployees.length > 0 && (
+                    <div className="mt-2 text-xs text-green-600">
+                      {selectedEmployees.length} employee(s) selected
+                    </div>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Notes (Optional)</label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Add any special instructions or notes..."
+                    rows={3}
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Processing Stages */}
+          <div className="mb-6">
+            <h3 className="text-base font-semibold text-foreground mb-4">Processing Stages</h3>
+            <div className="bg-cms-card-hover rounded-lg border border-border p-4">
+              <div className="grid grid-cols-8 gap-2 mb-4">
+                {customStages.map((stage) => (
+                  <div key={stage._id} className="text-center">
+                    <div className="h-12 rounded-lg bg-cms-card border border-border flex items-center justify-center">
+                      <div className="text-xs text-foreground font-medium">{stage.sequence}</div>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 truncate">{stage.name}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-xs text-muted-foreground text-center">
+                Total Estimated Time: {customStages.reduce((sum, stage) => sum + stage.duration, 0)} minutes
+              </div>
+            </div>
+          </div>
+          
+          {/* Summary Card */}
+          <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 className="text-sm font-semibold text-blue-800 mb-3">Batch Summary</h4>
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <div className="text-xs text-blue-700">Material</div>
+                <div className="text-sm font-medium text-foreground">{material.materialName}</div>
+              </div>
+              <div>
+                <div className="text-xs text-blue-700">Total Weight</div>
+                <div className="text-sm font-semibold text-blue-800">{totalWeight} kg</div>
+              </div>
+              <div>
+                <div className="text-xs text-blue-700">Total Bags</div>
+                <div className="text-sm font-semibold text-blue-800">{totalBags} bags</div>
+              </div>
+              <div>
+                <div className="text-xs text-blue-700">Per Bag Weight</div>
+                <div className="text-sm font-semibold text-blue-800">{bagWeight} kg/bag</div>
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <div 
+                className="w-4 h-4 rounded-full border border-border"
+                style={{ backgroundColor: selectedColor }}
+              />
+              <span className="text-xs text-blue-700">Color: {selectedColorObj.name}</span>
+              <span className="mx-2">•</span>
+              <span className="text-xs text-blue-700">Employees: {selectedEmployees.length}</span>
+            </div>
+          </div>
+          
+          <div className="flex justify-end gap-3 pt-6 border-t border-border">
+            <button
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="px-5 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting || !totalWeight || !totalBags || !selectedColor || selectedEmployees.length === 0}
+              className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? (
+                <>
+                  <RotateCw className="w-4 h-4 animate-spin" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <ArrowRight className="w-4 h-4" />
+                  Start Processing
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Start Process Form Modal (same GUI as old production form; optional initialMaterial pre-fills material name from queue row)
+const StartProcessFormModal = ({
+  open,
+  onClose,
+  onSaved,
+  initialMaterial,
+  purchaseId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+  initialMaterial?: { materialName: string; quality?: string } | null;
+  purchaseId?: string | null;
+}) => {
+  const [materialName, setMaterialName] = useState("");
+  const [quality, setQuality] = useState("Standard");
+  const [selectedMachine, setSelectedMachine] = useState(machines[0]?.id || "");
+  const [totalBags, setTotalBags] = useState("");
+  const [totalWeight, setTotalWeight] = useState("");
+  const [productionDate, setProductionDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [selectedColor, setSelectedColor] = useState("#FFFFFF");
+  const [selectedShift, setSelectedShift] = useState<"morning" | "evening" | "night">("morning");
+  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fetchEmployees = async () => {
+    try {
+      setLoadingEmployees(true);
+      const response = await api.get(`${EMPLOYEE_API_URL}/get-all`);
+      if (response.data.success) {
+        const employeesData = response.data.data || [];
+        const activeEmployees = employeesData
+          .filter((emp: any) => emp.isActive !== false)
+          .map((emp: any) => ({
+            _id: emp._id,
+            employeeId: emp.employeeId,
+            name: emp.name,
+            title: emp.title,
+            department: emp.department,
+            phone: emp.phone,
+            email: emp.email,
+          }));
+        setEmployees(activeEmployees);
+      }
+    } catch (error: any) {
+      console.error("Failed to fetch employees:", error);
+      toast({ title: "Error", description: "Failed to load employees", variant: "destructive" });
+    } finally {
+      setLoadingEmployees(false);
+    }
+  };
+
+  useEffect(() => {
+    if (open) {
+      setMaterialName(initialMaterial?.materialName ?? "");
+      setQuality(initialMaterial?.quality ?? "Standard");
+      setSelectedMachine(machines[0]?.id || "");
+      setTotalBags("");
+      setTotalWeight("");
+      setProductionDate(new Date().toISOString().slice(0, 10));
+      setSelectedColor("#FFFFFF");
+      setSelectedShift("morning");
+      setSelectedEmployees([]);
+      fetchEmployees();
+    }
+  }, [open, initialMaterial?.materialName, initialMaterial?.quality]);
+
+  const handleEmployeeToggle = (employeeId: string) => {
+    setSelectedEmployees((prev) =>
+      prev.includes(employeeId) ? prev.filter((id) => id !== employeeId) : [...prev, employeeId]
+    );
+  };
+
+  const handleSubmit = async () => {
+    const bags = parseInt(totalBags, 10);
+    const weightStr = String(totalWeight).trim().replace(",", ".");
+    const weight = parseFloat(weightStr);
+    if (!materialName.trim()) {
+      toast({ title: "Error", description: "Please enter material name", variant: "destructive" });
+      return;
+    }
+    if (isNaN(bags) || bags <= 0) {
+      toast({ title: "Error", description: "Please enter number of bags", variant: "destructive" });
+      return;
+    }
+    if (totalWeight.trim() === "" || isNaN(weight) || weight <= 0) {
+      toast({
+        title: "Enter custom weight",
+        description: "Enter the weight you produced (any number > 0). Custom value, not from POP.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!selectedMachine) {
+      toast({ title: "Error", description: "Please select a machine", variant: "destructive" });
+      return;
+    }
+    if (selectedEmployees.length === 0) {
+      toast({ title: "Error", description: "Please select at least one employee", variant: "destructive" });
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const selectedEmployeeObjects = employees.filter((emp) => selectedEmployees.includes(emp._id));
+      const employeesPayload = selectedEmployeeObjects.map((e) => ({
+        employeeId: e._id,
+        name: e.name,
+        department: e.department || "",
+      }));
+      const payload: Record<string, unknown> = {
+        materialName: materialName.trim(),
+        machine: selectedMachine,
+        totalBags: bags,
+        totalWeight: weight,
+        productionDate: productionDate || new Date().toISOString().slice(0, 10),
+        quality: quality.trim() || "Standard",
+        color: selectedColor,
+        shift: selectedShift,
+        employees: employeesPayload,
+        status: "completed",
+      };
+      if (purchaseId) payload.purchaseId = purchaseId;
+      const response = await api.post(`${PROCESSING_API_URL}/production`, payload);
+      if (response.data.success) {
+        toast({ title: "Success", description: "Production saved. It appears in Production List and can be sold from POS." });
+        onSaved();
+        onClose();
+      } else {
+        throw new Error(response.data.message || "Failed to save");
+      }
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err.response?.data?.message || err.message || "Failed to save production",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!open) return null;
+
+  const machine = machines.find((m) => m.id === selectedMachine);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="bg-cms-table-header px-6 py-3 border-b border-border flex justify-between items-center">
+          <p className="text-xs text-muted-foreground">Start Process</p>
+          <button onClick={onClose} className="p-1 hover:bg-cms-card-hover rounded-md transition-colors">
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+        <div className="p-6">
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-foreground">Start New Process</h2>
+            <p className="text-sm text-muted-foreground">Add production with custom weight. Material and details same as before.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-6 mb-6">
+            {/* Left Column - Material Information (same as POP / old form) */}
+            <div>
+              <h3 className="text-base font-semibold text-foreground mb-4">Material Information</h3>
+              <div className="space-y-4">
+                <div className="bg-cms-card-hover rounded-lg p-4 border border-border">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Material</div>
+                      <div className="text-lg font-semibold text-foreground">
+                        <input
+                          type="text"
+                          value={materialName}
+                          onChange={(e) => setMaterialName(e.target.value)}
+                          placeholder="e.g. HDPE, LDPE"
+                          className="w-full bg-transparent border-b border-border pb-1 text-foreground focus:outline-none focus:ring-0"
+                        />
+                      </div>
+                    </div>
+                    <div
+                      className="w-8 h-8 rounded-full border border-border"
+                      style={{ backgroundColor: selectedColor }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Total Bags *</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={totalBags}
+                    onChange={(e) => setTotalBags(e.target.value)}
+                    placeholder="e.g. 15 or 20"
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Total Weight Produced (kg) *</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={totalWeight}
+                    onChange={(e) => setTotalWeight(e.target.value)}
+                    placeholder="e.g. 8000, 5000 — custom weight (no limit)"
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Custom weight only — not from POP. Any value (e.g. 8000) is saved to Production List.</p>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Production Date *</label>
+                  <input
+                    type="date"
+                    value={productionDate}
+                    onChange={(e) => setProductionDate(e.target.value)}
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-2">Color</label>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {colorOptions.map((color) => (
+                      <label key={color.value} className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="startProcessColor"
+                          value={color.value}
+                          checked={selectedColor === color.value}
+                          onChange={() => setSelectedColor(color.value)}
+                          className="sr-only"
+                        />
+                        <div
+                          className={`w-5 h-5 rounded-full ${color.color} border-2 ${
+                            selectedColor === color.value ? "ring-2 ring-foreground ring-offset-1 ring-offset-background" : "border-border"
+                          }`}
+                        />
+                        <span className="text-xs text-foreground">{color.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* Right Column - Processing Settings (machine, shift, employees - same as old form) */}
+            <div>
+              <h3 className="text-base font-semibold text-foreground mb-4">Processing Settings</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Machine *</label>
+                  <select
+                    value={selectedMachine}
+                    onChange={(e) => setSelectedMachine(e.target.value)}
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">Select Machine</option>
+                    {machines.filter((m) => m.status === "available").map((m) => (
+                      <option key={m.id} value={m.id}>{m.name} ({m.capacity} kg capacity)</option>
+                    ))}
+                    {machines.filter((m) => m.status !== "available").length > 0 &&
+                      machines.filter((m) => m.status !== "available").map((m) => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                  </select>
+                  {machine && (
+                    <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-blue-700 dark:text-blue-300">Selected:</span>
+                        <span className="text-sm font-semibold text-blue-800 dark:text-blue-200">{machine.name}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-blue-600 dark:text-blue-400">
+                        Capacity: {machine.capacity} kg • <StatusBadge status={machine.status} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Shift *</label>
+                  <select
+                    value={selectedShift}
+                    onChange={(e) => setSelectedShift(e.target.value as "morning" | "evening" | "night")}
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="morning">Morning (6AM - 2PM)</option>
+                    <option value="evening">Evening (2PM - 10PM)</option>
+                    <option value="night">Night (10PM - 6AM)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Select Employees *</label>
+                  {loadingEmployees ? (
+                    <div className="flex items-center justify-center py-4">
+                      <RotateCw className="w-4 h-4 animate-spin text-primary mr-2" />
+                      <span className="text-sm text-muted-foreground">Loading employees...</span>
+                    </div>
+                  ) : employees.length === 0 ? (
+                    <div className="text-center py-4 text-sm text-muted-foreground">No employees found. Add employees first.</div>
+                  ) : (
+                    <div className="space-y-2 max-h-60 overflow-y-auto p-2 bg-cms-card-hover rounded-md border border-border">
+                      {employees.map((employee) => (
+                        <label
+                          key={employee._id}
+                          className="flex items-center gap-3 p-2 hover:bg-cms-card rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedEmployees.includes(employee._id)}
+                            onChange={() => handleEmployeeToggle(employee._id)}
+                            className="w-4 h-4 text-primary border-border rounded focus:ring-primary"
+                          />
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center">
+                              <User className="w-3 h-3 text-primary" />
+                            </div>
+                            <div className="flex-1">
+                              <div className="text-sm font-medium text-foreground">{employee.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {employee.department} • {employee.employeeId}
+                              </div>
+                            </div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {selectedEmployees.length > 0 && (
+                    <div className="mt-2 text-xs text-green-600">{selectedEmployees.length} employee(s) selected</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-6 border-t border-border">
+            <button
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="px-5 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-sm font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={
+                isSubmitting ||
+                !materialName.trim() ||
+                !totalBags ||
+                !totalWeight ||
+                selectedEmployees.length === 0
+              }
+              className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+            >
+              {isSubmitting ? <RotateCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Edit Production Modal
+const EditProductionModal = ({
+  production,
+  open,
+  onClose,
+  onSaved,
+}: {
+  production: ProductionData | null;
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) => {
+  const [materialName, setMaterialName] = useState("");
+  const [quality, setQuality] = useState("Standard");
+  const [selectedMachine, setSelectedMachine] = useState(machines[0]?.id || "");
+  const [totalBags, setTotalBags] = useState("");
+  const [totalWeight, setTotalWeight] = useState("");
+  const [availableWeight, setAvailableWeight] = useState("");
+  const [productionDate, setProductionDate] = useState("");
+  const [selectedShift, setSelectedShift] = useState<"morning" | "evening" | "night">("morning");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (open && production) {
+      setMaterialName(production.materialName || "");
+      setQuality(production.quality || "Standard");
+      setSelectedMachine(production.machineUsed || machines[0]?.id || "");
+      setTotalBags(String(production.totalBags || ""));
+      setTotalWeight(String(production.outputWeight || ""));
+      setAvailableWeight(String(production.availableWeight ?? production.outputWeight ?? ""));
+      setProductionDate(production.productionDate ? new Date(production.productionDate).toISOString().slice(0, 10) : "");
+      setSelectedShift((production.shift as "morning" | "evening" | "night") || "morning");
+    }
+  }, [open, production]);
+
+  const handleSubmit = async () => {
+    if (!production) return;
+    const bags = parseInt(totalBags, 10);
+    const weight = parseFloat(totalWeight.replace(",", "."));
+    const avail = parseFloat(availableWeight.replace(",", "."));
+    if (!materialName.trim()) {
+      toast({ title: "Error", description: "Material name is required", variant: "destructive" });
+      return;
+    }
+    if (isNaN(bags) || bags <= 0) {
+      toast({ title: "Error", description: "Valid number of bags required", variant: "destructive" });
+      return;
+    }
+    if (isNaN(weight) || weight <= 0) {
+      toast({ title: "Error", description: "Valid total weight required", variant: "destructive" });
+      return;
+    }
+    if (isNaN(avail) || avail < 0) {
+      toast({ title: "Error", description: "Valid available weight required", variant: "destructive" });
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        materialName: materialName.trim(),
+        quality: quality.trim() || "Standard",
+        machine: selectedMachine,
+        totalBags: bags,
+        totalWeight: weight,
+        availableWeight: avail,
+        productionDate: productionDate || new Date().toISOString().slice(0, 10),
+        shift: selectedShift,
+      };
+      await api.put(`${PROCESSING_API_URL}/production/${production._id}`, payload);
+      toast({ title: "Success", description: "Production record updated." });
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err.response?.data?.message || err.message || "Failed to update",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!open || !production) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-md">
+        <div className="bg-cms-table-header px-6 py-3 border-b border-border flex justify-between items-center">
+          <p className="text-sm font-medium text-foreground">Edit Production</p>
+          <button onClick={onClose} className="p-1 hover:bg-cms-card-hover rounded-md transition-colors">
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Material Name *</label>
+            <input type="text" value={materialName} onChange={(e) => setMaterialName(e.target.value)} className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Quality</label>
+            <input type="text" value={quality} onChange={(e) => setQuality(e.target.value)} className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Machine</label>
+            <select value={selectedMachine} onChange={(e) => setSelectedMachine(e.target.value)} className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
+              {machines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Total Bags *</label>
+              <input type="number" min={1} value={totalBags} onChange={(e) => setTotalBags(e.target.value)} className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Total Weight (kg) *</label>
+              <input type="text" value={totalWeight} onChange={(e) => setTotalWeight(e.target.value)} className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Available Weight (kg) *</label>
+            <input type="text" value={availableWeight} onChange={(e) => setAvailableWeight(e.target.value)} className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Production Date</label>
+            <input type="date" value={productionDate} onChange={(e) => setProductionDate(e.target.value)} className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Shift</label>
+            <select value={selectedShift} onChange={(e) => setSelectedShift(e.target.value as any)} className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
+              <option value="morning">Morning</option>
+              <option value="evening">Evening</option>
+              <option value="night">Night</option>
+            </select>
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-border flex justify-end gap-2">
+          <button onClick={onClose} disabled={isSubmitting} className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border rounded-md text-sm font-medium">Cancel</button>
+          <button onClick={handleSubmit} disabled={isSubmitting || !materialName.trim() || !totalBags || !totalWeight} className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 disabled:opacity-50">
+            {isSubmitting ? <RotateCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Production History Component
+const ProductionHistory = ({ productionData, onRefresh }: { productionData: ProductionData[]; onRefresh: () => void }) => {
+  const [filterDate, setFilterDate] = useState<string>("");
+  const [filterShift, setFilterShift] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [selectedProduction, setSelectedProduction] = useState<ProductionData | null>(null);
+  const [editingProduction, setEditingProduction] = useState<ProductionData | null>(null);
+
+  const handleDelete = async (prod: ProductionData) => {
+    if (!window.confirm(`Delete production ${prod.batchNo}? This cannot be undone.`)) return;
+    try {
+      await api.delete(`${PROCESSING_API_URL}/production/${prod._id}`);
+      toast({ title: "Success", description: "Production record deleted." });
+      onRefresh();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.response?.data?.message || "Failed to delete", variant: "destructive" });
+    }
+  };
+  
+  const filteredData = productionData.filter(prod => {
+    if (filterDate && new Date(prod.productionDate).toDateString() !== new Date(filterDate).toDateString()) {
+      return false;
+    }
+    if (filterShift !== 'all' && prod.shift !== filterShift) {
+      return false;
+    }
+    if (filterStatus !== 'all' && prod.status !== filterStatus) {
+      return false;
+    }
+    return true;
+  });
+  
+  return (
+    <div className="bg-cms-card rounded-lg p-6 border border-border">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <History className="w-5 h-5 text-primary" />
+            Production History
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            {productionData.length} production records
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            type="date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            className="bg-cms-card-hover border border-border rounded-md px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <select
+            value={filterShift}
+            onChange={(e) => setFilterShift(e.target.value)}
+            className="bg-cms-card-hover border border-border rounded-md px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="all">All Shifts</option>
+            <option value="morning">Morning</option>
+            <option value="evening">Evening</option>
+            <option value="night">Night</option>
+          </select>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="bg-cms-card-hover border border-border rounded-md px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="all">All Status</option>
+            <option value="completed">Completed</option>
+            <option value="partial">Partial</option>
+            <option value="failed">Failed</option>
+          </select>
+          <button
+            onClick={() => {
+              // Export functionality
+              toast({
+                title: "Export",
+                description: "Exporting production data...",
+              });
+            }}
+            className="px-3 py-1.5 bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-1 transition-colors hover:bg-secondary"
+          >
+            <Download className="w-3 h-3" />
+            Export
+          </button>
+        </div>
+      </div>
+      
+      {filteredData.length === 0 ? (
+        <div className="text-center py-12">
+          <History className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+          <p className="text-muted-foreground">No production records found</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-cms-table-header">
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Batch No.</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Available</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Bags</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Efficiency</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Shift</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Status</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredData.map((prod) => (
+                <tr key={prod._id} className="border-t border-border hover:bg-cms-card-hover transition-colors">
+                  <td className="px-4 py-3 text-sm text-foreground font-medium">
+                    {prod.batchNo}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-foreground">
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: prod.color }}
+                      />
+                      <div>
+                        <div>{prod.materialName}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {prod.quality}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-sm font-semibold text-foreground">
+                    {prod.outputWeight} kg
+                    <div className="text-xs text-red-600">
+                      Waste: {prod.wasteWeight || 0} kg
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-sm font-semibold text-primary">
+                    {(prod.availableWeight ?? prod.outputWeight ?? 0)} kg
+                  </td>
+                  <td className="px-4 py-3 text-sm text-foreground">
+                    {prod.totalBags || 0} bags
+                    <div className="text-xs text-muted-foreground">
+                      {prod.bagWeight || 0} kg/bag
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-semibold text-foreground">
+                        {prod.efficiency}%
+                      </div>
+                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full ${
+                            prod.efficiency >= 90 ? 'bg-green-500' :
+                            prod.efficiency >= 75 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${Math.min(100, prod.efficiency)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-foreground capitalize">
+                    {prod.shift}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-muted-foreground">
+                    {new Date(prod.productionDate).toLocaleDateString()}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusBadge status={prod.status} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setSelectedProduction(prod)}
+                        className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                        title="View Details"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setEditingProduction(prod)}
+                        className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                        title="Edit"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(prod)}
+                        className="p-1.5 hover:bg-destructive/20 rounded transition-colors text-muted-foreground hover:text-destructive"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      
+      {/* Production Details Modal */}
+      {selectedProduction && (
+        <ProductionDetailsModal
+          production={selectedProduction}
+          onClose={() => setSelectedProduction(null)}
+        />
+      )}
+      {/* Edit Production Modal */}
+      <EditProductionModal
+        production={editingProduction}
+        open={!!editingProduction}
+        onClose={() => setEditingProduction(null)}
+        onSaved={() => { onRefresh(); setEditingProduction(null); }}
+      />
+    </div>
+  );
+};
+
+// Production Details Modal Component
+const ProductionDetailsModal = ({ 
+  production,
+  onClose
+}: {
+  production: ProductionData,
+  onClose: () => void
+}) => {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-2xl">
+        <div className="bg-cms-table-header px-6 py-3 border-b border-border flex justify-between items-center">
+          <div>
+            <p className="text-xs text-muted-foreground">Production Details</p>
+            <h2 className="text-lg font-bold text-foreground">{production.batchNo}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-cms-card-hover rounded-md transition-colors"
+          >
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+        
+        <div className="p-6">
+          <div className="grid grid-cols-2 gap-6 mb-6">
+            <div>
+              <h4 className="text-sm font-medium text-foreground mb-3">Production Info</h4>
+              <div className="space-y-3">
+                <div>
+                  <div className="text-xs text-muted-foreground">Material</div>
+                  <div className="text-sm text-foreground">{production.materialName}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Quality & Color</div>
+                  <div className="text-sm text-foreground flex items-center gap-2">
+                    <div 
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: production.color }}
+                    />
+                    <span>{production.quality} • {production.color}</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Machine Used</div>
+                  <div className="text-sm text-foreground">{production.machineUsed}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Operator</div>
+                  <div className="text-sm text-foreground">{production.operator}</div>
+                </div>
+              </div>
+            </div>
+            
+            <div>
+              <h4 className="text-sm font-medium text-foreground mb-3">Output Metrics</h4>
+              <div className="space-y-3">
+                <div>
+                  <div className="text-xs text-muted-foreground">Output Weight</div>
+                  <div className="text-lg font-semibold text-green-600">
+                    {production.outputWeight} kg
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Total Bags</div>
+                  <div className="text-sm font-semibold text-primary">
+                    {production.totalBags || 0} bags
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Per Bag Weight</div>
+                  <div className="text-sm text-foreground">
+                    {production.bagWeight || 0} kg/bag
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Waste</div>
+                  <div className="text-sm font-semibold text-red-600">
+                    {production.wasteWeight} kg
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Efficiency</div>
+                  <div className="text-lg font-semibold text-primary">
+                    {production.efficiency}%
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Status</div>
+                  <StatusBadge status={production.status} />
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="mb-6">
+            <h4 className="text-sm font-medium text-foreground mb-3">Resource Usage</h4>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-cms-card-hover rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Zap className="w-4 h-4 text-yellow-500" />
+                  <span className="text-xs text-muted-foreground">Energy</span>
+                </div>
+                <div className="text-sm font-semibold text-foreground">
+                  {production.energyConsumed} kWh
+                </div>
+              </div>
+              <div className="bg-cms-card-hover rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Droplets className="w-4 h-4 text-blue-500" />
+                  <span className="text-xs text-muted-foreground">Water</span>
+                </div>
+                <div className="text-sm font-semibold text-foreground">
+                  {production.waterUsed} L
+                </div>
+              </div>
+              <div className="bg-cms-card-hover rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Timer className="w-4 h-4 text-purple-500" />
+                  <span className="text-xs text-muted-foreground">Shift</span>
+                </div>
+                <div className="text-sm font-semibold text-foreground capitalize">
+                  {production.shift}
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {production.notes && (
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-foreground mb-2">Notes</h4>
+              <div className="bg-cms-card-hover rounded-lg p-3 text-sm text-muted-foreground">
+                {production.notes}
+              </div>
+            </div>
+          )}
+          
+          <div className="flex justify-end pt-4 border-t border-border">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-sm font-medium transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Main Processing Module Component
+export function ProcessingModule() {
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'queue' | 'history'>('dashboard');
+  const [materials, setMaterials] = useState<ProcessingMaterial[]>([]);
+  const [batches, setBatches] = useState<ProcessingBatch[]>([]);
+  const [productionData, setProductionData] = useState<ProductionData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedMaterial, setSelectedMaterial] = useState<ProcessingMaterial | null>(null);
+  const [showStartProcessingModal, setShowStartProcessingModal] = useState(false);
+  const [showStartProcessFormModal, setShowStartProcessFormModal] = useState(false);
+  const [materialForStartProcess, setMaterialForStartProcess] = useState<ProcessingMaterial | null>(null);
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+  
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // Fetch production history first (to get purchaseIds already used - those will be removed from queue)
+      const productionResponse = await axios.get(`${PROCESSING_API_URL}/production`);
+      let usedPurchaseIds = new Set<string>();
+      if (productionResponse.data.success) {
+        const prodData = productionResponse.data.data || [];
+        setProductionData(prodData);
+        prodData.forEach((p: { purchaseId?: string | null }) => {
+          if (p.purchaseId) usedPurchaseIds.add(String(p.purchaseId));
+        });
+      }
+
+      // Fetch materials from purchases that are available for processing; exclude purchases already used in production
+      const purchasesResponse = await axios.get(`${API_BASE_URL}/api/purchases/get-all`);
+      if (purchasesResponse.data.success) {
+        const purchases = purchasesResponse.data.data || [];
+        const processingMaterials: ProcessingMaterial[] = purchases
+          .filter((p: any) => p.status === 'available' && p.remainingWeight > 0 && !usedPurchaseIds.has(String(p._id)))
+          .map((purchase: any) => ({
+            _id: purchase._id,
+            purchaseId: purchase._id,
+            receiptNo: purchase.receiptNo || 'N/A',
+            materialName: purchase.materialName || 'Unknown',
+            quality: purchase.quality || 'Unknown',
+            color: purchase.materialColor || '#FFFFFF',
+            originalWeight: parseFloat(purchase.weight) || 0,
+            availableWeight: purchase.remainingWeight || parseFloat(purchase.weight) || 0,
+            vendor: purchase.vendor || 'Unknown',
+            purchaseDate: purchase.purchaseDate || purchase.createdAt,
+            status: 'pending',
+          }));
+        setMaterials(processingMaterials);
+      }
+      
+      // Fetch active batches for dashboard
+      const batchesResponse = await axios.get(`${PROCESSING_API_URL}/batches`);
+      if (batchesResponse.data.success) {
+        setBatches(batchesResponse.data.data || []);
+      }
+      
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load processing data",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleStartProcessing = (material: ProcessingMaterial) => {
+    setSelectedMaterial(material);
+    setShowStartProcessingModal(true);
+  };
+  
+  const handleStartBatch = async (batchData: any) => {
+    try {
+      // Add batch to active batches
+      const newBatch: ProcessingBatch = {
+        _id: `batch_${Date.now()}`,
+        batchNo: batchData.batchNo,
+        materialId: batchData.materialId,
+        materialName: batchData.materialName,
+        quality: batchData.quality,
+        color: batchData.color,
+        inputWeight: batchData.inputWeight,
+        totalBags: batchData.totalBags,
+        bagWeight: batchData.bagWeight,
+        expectedOutput: batchData.expectedOutput,
+        stages: batchData.stages,
+        employees: batchData.employees,
+        status: 'processing',
+        startTime: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      
+      setBatches(prev => [...prev, newBatch]);
+      
+      // Update material in queue
+      setMaterials(prev => prev.map(m => 
+        m._id === batchData.materialId 
+          ? { ...m, status: 'in_progress', availableWeight: m.availableWeight - batchData.inputWeight }
+          : m
+      ));
+      
+      toast({
+        title: "Success",
+        description: `Batch ${batchData.batchNo} started successfully!`,
+      });
+      
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to start batch",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  return (
+    <div className="flex-1 p-6 overflow-auto animate-fade-in">
+      {/* Header */}
+      <div className="bg-cms-table-header rounded-lg px-4 py-3 mb-6 flex items-center justify-between border-l-4 border-primary">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-6 bg-primary rounded-sm flex items-center justify-center">
+            <Factory className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <div className="w-8 h-6 border-2 border-primary rounded-sm flex items-center justify-center">
+            <div className="w-4 h-0.5 bg-primary" />
+          </div>
+          <h1 className="text-lg font-semibold text-foreground">Factory Processing Module</h1>
+        </div>
+        <button
+          onClick={() => setShowStartProcessFormModal(true)}
+          className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2"
+        >
+          <Plus className="w-4 h-4" />
+          Start Process
+        </button>
+      </div>
+      
+      {/* Tabs */}
+      <div className="mb-6">
+        <div className="flex border-b border-border">
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`px-6 py-3 text-sm font-medium flex items-center gap-2 transition-colors ${
+              activeTab === 'dashboard'
+                ? 'border-b-2 border-primary text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            Dashboard
+          </button>
+          <button
+            onClick={() => setActiveTab('queue')}
+            className={`px-6 py-3 text-sm font-medium flex items-center gap-2 transition-colors ${
+              activeTab === 'queue'
+                ? 'border-b-2 border-primary text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Package className="w-4 h-4" />
+            Processing Queue
+            {materials.filter(m => m.status === 'pending').length > 0 && (
+              <span className="bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full">
+                {materials.filter(m => m.status === 'pending').length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`px-6 py-3 text-sm font-medium flex items-center gap-2 transition-colors ${
+              activeTab === 'history'
+                ? 'border-b-2 border-primary text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            Production History
+          </button>
+        </div>
+      </div>
+      
+      {/* Loading State */}
+      {loading ? (
+        <div className="flex justify-center items-center py-12">
+          <RotateCw className="w-8 h-8 animate-spin text-primary" />
+          <span className="ml-2 text-muted-foreground">Loading processing data...</span>
+        </div>
+      ) : (
+        <>
+          {/* Dashboard Tab */}
+          {activeTab === 'dashboard' && (
+            <ProcessingDashboard 
+              materials={materials} 
+              batches={batches} 
+              productionData={productionData} 
+            />
+          )}
+          
+          {/* Processing Queue Tab */}
+          {activeTab === 'queue' && (
+            <ProcessingQueue
+              materials={materials}
+              onStartProcessing={handleStartProcessing}
+              onStartProcess={(material) => {
+                setMaterialForStartProcess(material);
+                setShowStartProcessFormModal(true);
+              }}
+            />
+          )}
+          
+          {/* Production History Tab */}
+          {activeTab === 'history' && (
+            <ProductionHistory
+              productionData={productionData}
+              onRefresh={fetchData}
+            />
+          )}
+        </>
+      )}
+      
+      {/* Start Process Form Modal: from header (no prefill) or from queue row (material name + quality pre-filled). Saved records show only in Production List. */}
+      <StartProcessFormModal
+        open={showStartProcessFormModal}
+        onClose={() => {
+          setShowStartProcessFormModal(false);
+          setMaterialForStartProcess(null);
+        }}
+        onSaved={() => {
+          fetchData();
+          setMaterialForStartProcess(null);
+        }}
+        initialMaterial={
+          materialForStartProcess
+            ? { materialName: materialForStartProcess.materialName, quality: materialForStartProcess.quality }
+            : null
+        }
+        purchaseId={materialForStartProcess?.purchaseId ?? null}
+      />
+      {/* Start Processing Modal (legacy: from queue material) */}
+      <StartProcessingModal
+        open={showStartProcessingModal}
+        onClose={() => {
+          setShowStartProcessingModal(false);
+          setSelectedMaterial(null);
+        }}
+        material={selectedMaterial}
+        onStartBatch={handleStartBatch}
+      />
+    </div>
+  );
+}
+
+export default ProcessingModule;

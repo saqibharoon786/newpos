@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package, ChevronDown, CheckCircle, DollarSign, History } from "lucide-react";
+import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package, ChevronDown, CheckCircle, DollarSign, History, Wallet, Smartphone, Building } from "lucide-react";
 import { PurchaseDetailsView } from "./PurchaseDetailsView";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
@@ -15,6 +15,92 @@ const api = axios.create({
 
 // API endpoints
 const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
+const FINANCE_API_URL = `${API_BASE_URL}/api/finance`;
+
+// Finance API functions with all payment methods
+const financeApi = {
+  // Get all balances
+  getAllBalances: async () => {
+    try {
+      const response = await api.get(`${FINANCE_API_URL}/balances`);
+      if (response.data.success) {
+        return response.data.balances || {
+          drawer: 0,
+          easypaisa: 0,
+          jazzcash: 0,
+          bank: 0,
+        };
+      }
+      return {
+        drawer: 0,
+        easypaisa: 0,
+        jazzcash: 0,
+        bank: 0,
+      };
+    } catch (error) {
+      console.error("Error fetching balances:", error);
+      return {
+        drawer: 0,
+        easypaisa: 0,
+        jazzcash: 0,
+        bank: 0,
+      };
+    }
+  },
+
+  // Update balance for specific payment method
+  updateBalance: async (method: string, amount: number, description: string, type: 'withdraw' | 'deposit' = 'withdraw') => {
+    try {
+      const endpoint = type === 'withdraw' ? 'withdraw' : 'deposit';
+      const response = await api.post(`${FINANCE_API_URL}/${endpoint}`, {
+        method: method,
+        amount: amount,
+        description: description
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Error updating ${method} balance:`, error);
+      throw error;
+    }
+  },
+
+  // Get method label
+  getMethodLabel: (method: string) => {
+    const labels: Record<string, string> = {
+      drawer: 'Cash Drawer',
+      easypaisa: 'Easypaisa',
+      jazzcash: 'JazzCash',
+      bank: 'Bank Account',
+      cash: 'Cash',
+      bank_transfer: 'Bank Transfer',
+      cheque: 'Cheque',
+      online: 'Online Payment',
+      other: 'Other'
+    };
+    return labels[method] || method;
+  },
+
+  // Get method icon
+  getMethodIcon: (method: string, className = "w-4 h-4") => {
+    const m = method.toLowerCase().replace(' ', '');
+    switch (m) {
+      case 'drawer':
+      case 'cashdrawer':
+      case 'cash':
+        return <Wallet className={className} />;
+      case 'easypaisa':
+        return <Smartphone className={className} />;
+      case 'jazzcash':
+        return <Smartphone className={className} />;
+      case 'bank':
+      case 'bankaccount':
+      case 'bank_transfer':
+        return <Building className={className} />;
+      default:
+        return <Wallet className={className} />;
+    }
+  }
+};
 
 interface Purchase {
   _id: string;
@@ -50,6 +136,8 @@ interface PurchaseWithRemaining extends Purchase {
   totalWeight: number; // Original weight (same as weight field)
   soldWeight: number; // Already exists in Purchase
   remainingWeight: number; // Already exists in Purchase
+  materialColorName: string;
+  materialColorSearchNames: string[];
 }
 
 interface PaymentHistory {
@@ -61,19 +149,55 @@ interface PaymentHistory {
   notes?: string;
   receiptNo?: string;
   materialName?: string;
+  financeUpdated?: boolean;
+  financeMethod?: string;
 }
 
 const colorOptions = [
-  { name: "White", color: "bg-white", value: "#FFFFFF" },
-  { name: "Yellow", color: "bg-yellow-400", value: "#FACC15" },
-  { name: "Red", color: "bg-red-500", value: "#EF4444" },
-  { name: "Blue", color: "bg-blue-600", value: "#2563EB" },
-  { name: "Orange", color: "bg-orange-500", value: "#F97316" },
-  { name: "Green", color: "bg-green-500", value: "#22C55E" },
-  { name: "Black", color: "bg-black", value: "#000000" },
+  { name: "White", color: "bg-white", value: "#FFFFFF", searchNames: ["white", "safed"] },
+  { name: "Yellow", color: "bg-yellow-400", value: "#FACC15", searchNames: ["yellow", "peela", "pila"] },
+  { name: "Red", color: "bg-red-500", value: "#EF4444", searchNames: ["red", "lal"] },
+  { name: "Blue", color: "bg-blue-600", value: "#2563EB", searchNames: ["blue", "neela", "nila"] },
+  { name: "Orange", color: "bg-orange-500", value: "#F97316", searchNames: ["orange", "narangi"] },
+  { name: "Green", color: "bg-green-500", value: "#22C55E", searchNames: ["green", "hara", "green"] },
+  { name: "Black", color: "bg-black", value: "#000000", searchNames: ["black", "kala"] },
+  { name: "Pink", color: "bg-pink-500", value: "#EC4899", searchNames: ["pink", "gulabi"] },
+  { name: "Purple", color: "bg-purple-500", value: "#A855F7", searchNames: ["purple", "jamuni"] },
+  { name: "Gray", color: "bg-gray-500", value: "#6B7280", searchNames: ["gray", "grey", "surahi"] },
+  { name: "Brown", color: "bg-amber-900", value: "#92400E", searchNames: ["brown", "bhoora"] },
 ];
 
-const qualityOptions = [
+// Function to get color name from hex value
+const getColorName = (hexColor: string): string => {
+  if (!hexColor) return "";
+  
+  // Convert to lowercase for comparison
+  const hex = hexColor.toLowerCase();
+  
+  // Find matching color
+  const color = colorOptions.find(c => 
+    c.value.toLowerCase() === hex || 
+    hex.includes(c.value.toLowerCase().replace('#', ''))
+  );
+  
+  return color ? color.name.toLowerCase() : "";
+};
+
+// Function to get all searchable color names for a hex color
+const getColorSearchNames = (hexColor: string): string[] => {
+  if (!hexColor) return [];
+  
+  const hex = hexColor.toLowerCase();
+  const color = colorOptions.find(c => 
+    c.value.toLowerCase() === hex || 
+    hex.includes(c.value.toLowerCase().replace('#', ''))
+  );
+  
+  return color ? color.searchNames : [];
+};
+
+// Quality options with ability to add custom ones
+const initialQualityOptions = [
   { value: "PP750", label: "PP750" },
   { value: "PP1000", label: "PP1000" },
   { value: "HD", label: "HD" },
@@ -126,6 +250,686 @@ const StockStatusBadge = ({ status }: { status: 'available' | 'partially_sold' |
   );
 };
 
+// Vendor Summary Component
+const VendorSummary = ({ 
+  purchases, 
+  searchTerm 
+}: { 
+  purchases: PurchaseWithRemaining[], 
+  searchTerm: string 
+}) => {
+  const [expandedVendor, setExpandedVendor] = useState<string | null>(null);
+  
+  // Calculate vendor-wise summary
+  const calculateVendorSummary = () => {
+    const vendorSummary: Record<string, {
+      totalPurchases: number;
+      totalPrice: number;
+      totalAmountPaid: number;
+      totalRemainingAmount: number;
+      totalWeight: number;
+      totalSoldWeight: number;
+      totalRemainingWeight: number;
+      materials: {name: string, weight: number, remainingAmount: number}[];
+      paymentStatus: {
+        paid: number;
+        partial: number;
+        none: number;
+      };
+      stockStatus: {
+        available: number;
+        partially_sold: number;
+        sold_out: number;
+      };
+    }> = {};
+    
+    purchases.forEach(purchase => {
+      const vendor = purchase.vendor || 'Unknown';
+      const price = purchase.price || 0;
+      const amountPaid = purchase.amountPaid || 0;
+      const remainingAmount = purchase.remainingAmount || 0;
+      const weight = parseFloat(purchase.weight) || 0;
+      const soldWeight = purchase.soldWeight || 0;
+      const remainingWeight = purchase.remainingWeight || 0;
+      
+      if (!vendorSummary[vendor]) {
+        vendorSummary[vendor] = {
+          totalPurchases: 0,
+          totalPrice: 0,
+          totalAmountPaid: 0,
+          totalRemainingAmount: 0,
+          totalWeight: 0,
+          totalSoldWeight: 0,
+          totalRemainingWeight: 0,
+          materials: [],
+          paymentStatus: {
+            paid: 0,
+            partial: 0,
+            none: 0
+          },
+          stockStatus: {
+            available: 0,
+            partially_sold: 0,
+            sold_out: 0
+          }
+        };
+      }
+      
+      // Update totals
+      vendorSummary[vendor].totalPurchases += 1;
+      vendorSummary[vendor].totalPrice += price;
+      vendorSummary[vendor].totalAmountPaid += amountPaid;
+      vendorSummary[vendor].totalRemainingAmount += remainingAmount;
+      vendorSummary[vendor].totalWeight += weight;
+      vendorSummary[vendor].totalSoldWeight += soldWeight;
+      vendorSummary[vendor].totalRemainingWeight += remainingWeight;
+      
+      // Add material if not already in list
+      const materialExists = vendorSummary[vendor].materials.find(
+        m => m.name === purchase.materialName
+      );
+      if (!materialExists) {
+        vendorSummary[vendor].materials.push({
+          name: purchase.materialName || 'Unknown',
+          weight: weight,
+          remainingAmount: remainingAmount
+        });
+      }
+      
+      // Update payment status count
+      switch(purchase.paidAmount) {
+        case 'paid':
+          vendorSummary[vendor].paymentStatus.paid += 1;
+          break;
+        case 'partial':
+          vendorSummary[vendor].paymentStatus.partial += 1;
+          break;
+        case 'none':
+          vendorSummary[vendor].paymentStatus.none += 1;
+          break;
+      }
+      
+      // Update stock status count
+      switch(purchase.status) {
+        case 'available':
+          vendorSummary[vendor].stockStatus.available += 1;
+          break;
+        case 'partially_sold':
+          vendorSummary[vendor].stockStatus.partially_sold += 1;
+          break;
+        case 'sold_out':
+          vendorSummary[vendor].stockStatus.sold_out += 1;
+          break;
+      }
+    });
+    
+    return vendorSummary;
+  };
+  
+  const vendorSummary = calculateVendorSummary();
+  
+  if (purchases.length === 0) return null;
+  
+  return (
+    <div className="bg-cms-card rounded-lg p-4 mb-6 border border-border">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+            <Building className="w-5 h-5 text-primary" />
+            Vendor Summary
+            {searchTerm && (
+              <span className="text-sm font-normal text-muted-foreground">
+                (Filtered by: "{searchTerm}")
+              </span>
+            )}
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Total: {Object.keys(vendorSummary).length} vendor{Object.keys(vendorSummary).length !== 1 ? 's' : ''}
+          </p>
+        </div>
+      </div>
+      
+      {/* Vendor-wise Summary */}
+      <div className="space-y-3">
+        {Object.entries(vendorSummary)
+          .sort((a, b) => b[1].totalRemainingAmount - a[1].totalRemainingAmount) // Sort by highest remaining amount
+          .map(([vendorName, data]) => {
+            const isExpanded = expandedVendor === vendorName;
+            
+            return (
+              <div key={vendorName} className="bg-cms-table-header rounded-lg p-3 border border-border">
+                <div 
+                  className="flex items-center justify-between cursor-pointer"
+                  onClick={() => setExpandedVendor(isExpanded ? null : vendorName)}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Building className="w-3 h-3 text-primary" />
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-foreground capitalize">
+                        {vendorName}
+                      </span>
+                      <div className="text-xs text-muted-foreground">
+                        {data.totalPurchases} purchase{data.totalPurchases !== 1 ? 's' : ''} • 
+                        {data.materials.length} material{data.materials.length !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <div className="text-xs text-muted-foreground">Remaining Amount</div>
+                      <div className={`text-sm font-bold ${
+                        data.totalRemainingAmount > 0 
+                          ? 'text-red-600' 
+                          : 'text-green-600'
+                      }`}>
+                        Rs. {data.totalRemainingAmount.toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-muted-foreground">Total Weight</div>
+                      <div className="text-sm font-semibold text-foreground">
+                        {data.totalWeight.toLocaleString()} kg
+                      </div>
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  </div>
+                </div>
+                
+                {/* Expanded details */}
+                {isExpanded && (
+                  <div className="mt-3 pt-3 border-t border-border space-y-3">
+                    {/* Payment Summary */}
+                    <div>
+                      <h4 className="text-xs font-medium text-muted-foreground mb-2">Payment Summary</h4>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-background rounded p-2">
+                          <div className="text-xs text-muted-foreground">Total Price</div>
+                          <div className="text-sm font-semibold text-foreground">
+                            Rs. {data.totalPrice.toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="bg-background rounded p-2">
+                          <div className="text-xs text-muted-foreground">Amount Paid</div>
+                          <div className="text-sm font-semibold text-green-600">
+                            Rs. {data.totalAmountPaid.toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="bg-background rounded p-2">
+                          <div className="text-xs text-muted-foreground">Remaining Amount</div>
+                          <div className={`text-sm font-bold ${
+                            data.totalRemainingAmount > 0 
+                              ? 'text-red-600' 
+                              : 'text-green-600'
+                          }`}>
+                            Rs. {data.totalRemainingAmount.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Payment Status Breakdown */}
+                      <div className="mt-2 flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                          <span className="text-xs text-muted-foreground">Paid: {data.paymentStatus.paid}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                          <span className="text-xs text-muted-foreground">Partial: {data.paymentStatus.partial}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                          <span className="text-xs text-muted-foreground">Unpaid: {data.paymentStatus.none}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Weight Summary */}
+                    <div>
+                      <h4 className="text-xs font-medium text-muted-foreground mb-2">Weight Summary</h4>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-background rounded p-2">
+                          <div className="text-xs text-muted-foreground">Total Weight</div>
+                          <div className="text-sm font-semibold text-foreground">
+                            {data.totalWeight.toLocaleString()} kg
+                          </div>
+                        </div>
+                        <div className="bg-background rounded p-2">
+                          <div className="text-xs text-muted-foreground">Sold Weight</div>
+                          <div className="text-sm font-semibold text-red-600">
+                            {data.totalSoldWeight.toLocaleString()} kg
+                          </div>
+                        </div>
+                        <div className="bg-background rounded p-2">
+                          <div className="text-xs text-muted-foreground">Remaining Weight</div>
+                          <div className="text-sm font-semibold text-green-600">
+                            {data.totalRemainingWeight.toLocaleString()} kg
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Stock Status Breakdown */}
+                      <div className="mt-2 flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                          <span className="text-xs text-muted-foreground">Available: {data.stockStatus.available}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                          <span className="text-xs text-muted-foreground">Partially Sold: {data.stockStatus.partially_sold}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                          <span className="text-xs text-muted-foreground">Sold Out: {data.stockStatus.sold_out}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Materials List */}
+                    {data.materials.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-medium text-muted-foreground mb-2">Materials Purchased</h4>
+                        <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                          {data.materials.map((material, index) => (
+                            <div key={index} className="flex justify-between items-center text-xs py-1.5 px-2 bg-background rounded">
+                              <span className="text-foreground">{material.name}</span>
+                              <div className="flex items-center gap-3">
+                                <span className="text-muted-foreground">{material.weight.toLocaleString()} kg</span>
+                                <span className={`font-medium ${
+                                  material.remainingAmount > 0 
+                                    ? 'text-red-600' 
+                                    : 'text-green-600'
+                                }`}>
+                                  Rs. {material.remainingAmount.toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+      </div>
+      
+      {/* Combined Summary Stats */}
+      <div className="mt-4 pt-4 border-t border-border">
+        <div className="grid grid-cols-5 gap-4">
+          <div className="text-center">
+            <div className="text-lg font-bold text-foreground">
+              {Object.keys(vendorSummary).length}
+            </div>
+            <div className="text-xs text-muted-foreground">Total Vendors</div>
+          </div>
+          <div className="text-center">
+            <div className="text-lg font-bold text-foreground">
+              Rs. {Object.values(vendorSummary).reduce((sum, v) => sum + v.totalPrice, 0).toLocaleString()}
+            </div>
+            <div className="text-xs text-muted-foreground">Total Price</div>
+          </div>
+          <div className="text-center">
+            <div className="text-lg font-bold text-green-600">
+              Rs. {Object.values(vendorSummary).reduce((sum, v) => sum + v.totalAmountPaid, 0).toLocaleString()}
+            </div>
+            <div className="text-xs text-muted-foreground">Total Paid</div>
+          </div>
+          <div className="text-center">
+            <div className="text-lg font-bold text-red-600">
+              Rs. {Object.values(vendorSummary).reduce((sum, v) => sum + v.totalRemainingAmount, 0).toLocaleString()}
+            </div>
+            <div className="text-xs text-muted-foreground">Total Remaining</div>
+          </div>
+          <div className="text-center">
+            <div className="text-lg font-bold text-purple-600">
+              {Object.values(vendorSummary).reduce((sum, v) => sum + v.totalWeight, 0).toLocaleString()} kg
+            </div>
+            <div className="text-xs text-muted-foreground">Total Weight</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// New Weight Summary Component
+const WeightSummary = ({ 
+  purchases, 
+  searchTerm 
+}: { 
+  purchases: PurchaseWithRemaining[], 
+  searchTerm: string 
+}) => {
+  const [summaryMode, setSummaryMode] = useState<'color' | 'quality' | 'both'>('both');
+  
+  // Calculate weight summary by color and quality
+  const calculateWeightSummary = () => {
+    const colorSummary: Record<string, {
+      totalWeight: number;
+      soldWeight: number;
+      remainingWeight: number;
+      qualities: Record<string, {
+        totalWeight: number;
+        soldWeight: number;
+        remainingWeight: number;
+      }>;
+    }> = {};
+    
+    const qualitySummary: Record<string, {
+      totalWeight: number;
+      soldWeight: number;
+      remainingWeight: number;
+      colors: Record<string, {
+        totalWeight: number;
+        soldWeight: number;
+        remainingWeight: number;
+      }>;
+    }> = {};
+    
+    purchases.forEach(purchase => {
+      const colorName = purchase.materialColorName || 'Unknown';
+      const quality = purchase.quality || 'Unknown';
+      const weight = parseFloat(purchase.weight) || 0;
+      const soldWeight = purchase.soldWeight || 0;
+      const remainingWeight = purchase.remainingWeight || 0;
+      
+      // Color summary
+      if (!colorSummary[colorName]) {
+        colorSummary[colorName] = {
+          totalWeight: 0,
+          soldWeight: 0,
+          remainingWeight: 0,
+          qualities: {}
+        };
+      }
+      
+      colorSummary[colorName].totalWeight += weight;
+      colorSummary[colorName].soldWeight += soldWeight;
+      colorSummary[colorName].remainingWeight += remainingWeight;
+      
+      // Quality within color
+      if (!colorSummary[colorName].qualities[quality]) {
+        colorSummary[colorName].qualities[quality] = {
+          totalWeight: 0,
+          soldWeight: 0,
+          remainingWeight: 0
+        };
+      }
+      
+      colorSummary[colorName].qualities[quality].totalWeight += weight;
+      colorSummary[colorName].qualities[quality].soldWeight += soldWeight;
+      colorSummary[colorName].qualities[quality].remainingWeight += remainingWeight;
+      
+      // Quality summary
+      if (!qualitySummary[quality]) {
+        qualitySummary[quality] = {
+          totalWeight: 0,
+          soldWeight: 0,
+          remainingWeight: 0,
+          colors: {}
+        };
+      }
+      
+      qualitySummary[quality].totalWeight += weight;
+      qualitySummary[quality].soldWeight += soldWeight;
+      qualitySummary[quality].remainingWeight += remainingWeight;
+      
+      // Color within quality
+      if (!qualitySummary[quality].colors[colorName]) {
+        qualitySummary[quality].colors[colorName] = {
+          totalWeight: 0,
+          soldWeight: 0,
+          remainingWeight: 0
+        };
+      }
+      
+      qualitySummary[quality].colors[colorName].totalWeight += weight;
+      qualitySummary[quality].colors[colorName].soldWeight += soldWeight;
+      qualitySummary[quality].colors[colorName].remainingWeight += remainingWeight;
+    });
+    
+    return { colorSummary, qualitySummary };
+  };
+  
+  const { colorSummary, qualitySummary } = calculateWeightSummary();
+  
+  // Get color object from name
+  const getColorObject = (colorName: string) => {
+    return colorOptions.find(c => c.name.toLowerCase() === colorName.toLowerCase()) || 
+           { name: colorName, color: "bg-gray-300", value: "#CCCCCC" };
+  };
+  
+  if (purchases.length === 0) return null;
+  
+  return (
+    <div className="bg-cms-card rounded-lg p-4 mb-6 border border-border">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+            <Package className="w-5 h-5 text-primary" />
+            Weight Summary
+            {searchTerm && (
+              <span className="text-sm font-normal text-muted-foreground">
+                (Filtered by: "{searchTerm}")
+              </span>
+            )}
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Total: {purchases.length} purchase{purchases.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">View:</span>
+          <div className="flex bg-cms-table-header rounded-lg p-1">
+            <button
+              onClick={() => setSummaryMode('color')}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${summaryMode === 'color' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              By Color
+            </button>
+            <button
+              onClick={() => setSummaryMode('quality')}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${summaryMode === 'quality' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              By Quality
+            </button>
+            <button
+              onClick={() => setSummaryMode('both')}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${summaryMode === 'both' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Both
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      {/* Color-wise Summary */}
+      {(summaryMode === 'color' || summaryMode === 'both') && (
+        <div className={`${summaryMode === 'both' ? 'mb-6' : ''}`}>
+          <h4 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-gradient-to-r from-red-500 to-blue-500" />
+            Color-wise Weight Distribution
+          </h4>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {Object.entries(colorSummary)
+              .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
+              .map(([colorName, data]) => {
+                const colorObj = getColorObject(colorName);
+                const color = colorObj.value;
+                
+                return (
+                  <div key={colorName} className="bg-cms-table-header rounded-lg p-3 border border-border">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-4 h-4 rounded-full border border-border"
+                          style={{ backgroundColor: color }}
+                        />
+                        <span className="text-sm font-medium text-foreground capitalize">
+                          {colorName}
+                        </span>
+                      </div>
+                      <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded">
+                        {data.totalWeight.toLocaleString()} kg
+                      </span>
+                    </div>
+                    
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Total Weight:</span>
+                        <span className="font-medium text-foreground">{data.totalWeight.toLocaleString()} kg</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Sold Weight:</span>
+                        <span className="font-medium text-red-600">{data.soldWeight.toLocaleString()} kg</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Remaining Weight:</span>
+                        <span className="font-medium text-green-600">{data.remainingWeight.toLocaleString()} kg</span>
+                      </div>
+                    </div>
+                    
+                    {/* Quality breakdown within this color */}
+                    {Object.keys(data.qualities).length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <div className="text-xs text-muted-foreground mb-2">Breakdown by Quality:</div>
+                        <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                          {Object.entries(data.qualities)
+                            .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
+                            .map(([quality, qData]) => (
+                              <div key={quality} className="flex justify-between items-center text-xs">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full bg-primary/50" />
+                                  <span className="text-foreground">{quality}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-green-600">{qData.remainingWeight.toLocaleString()} kg</span>
+                                  <span className="text-xs text-muted-foreground">/</span>
+                                  <span className="text-foreground">{qData.totalWeight.toLocaleString()} kg</span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+      
+      {/* Quality-wise Summary */}
+      {(summaryMode === 'quality' || summaryMode === 'both') && (
+        <div>
+          <h4 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+            <Package className="w-4 h-4 text-primary" />
+            Quality-wise Weight Distribution
+          </h4>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {Object.entries(qualitySummary)
+              .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
+              .map(([quality, data]) => (
+                <div key={quality} className="bg-cms-table-header rounded-lg p-3 border border-border">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded bg-primary/10 flex items-center justify-center">
+                        <Package className="w-3 h-3 text-primary" />
+                      </div>
+                      <span className="text-sm font-medium text-foreground">
+                        {quality}
+                      </span>
+                    </div>
+                    <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded">
+                      {data.totalWeight.toLocaleString()} kg
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Total Weight:</span>
+                      <span className="font-medium text-foreground">{data.totalWeight.toLocaleString()} kg</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Sold Weight:</span>
+                      <span className="font-medium text-red-600">{data.soldWeight.toLocaleString()} kg</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Remaining Weight:</span>
+                      <span className="font-medium text-green-600">{data.remainingWeight.toLocaleString()} kg</span>
+                    </div>
+                  </div>
+                  
+                  {/* Color breakdown within this quality */}
+                  {Object.keys(data.colors).length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-border">
+                      <div className="text-xs text-muted-foreground mb-2">Breakdown by Color:</div>
+                      <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                        {Object.entries(data.colors)
+                          .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
+                          .map(([colorName, cData]) => {
+                            const colorObj = getColorObject(colorName);
+                            return (
+                              <div key={colorName} className="flex justify-between items-center text-xs">
+                                <div className="flex items-center gap-2">
+                                  <div 
+                                    className="w-2 h-2 rounded-full"
+                                    style={{ backgroundColor: colorObj.value }}
+                                  />
+                                  <span className="text-foreground capitalize">{colorName}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-green-600">{cData.remainingWeight.toLocaleString()} kg</span>
+                                  <span className="text-xs text-muted-foreground">/</span>
+                                  <span className="text-foreground">{cData.totalWeight.toLocaleString()} kg</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+      
+      {/* Combined Summary Stats */}
+      <div className="mt-4 pt-4 border-t border-border">
+        <div className="grid grid-cols-3 gap-4">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-foreground">
+              {purchases.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0).toLocaleString()} kg
+            </div>
+            <div className="text-xs text-muted-foreground">Total Weight</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-red-600">
+              {purchases.reduce((sum, p) => sum + (p.soldWeight || 0), 0).toLocaleString()} kg
+            </div>
+            <div className="text-xs text-muted-foreground">Total Sold</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-green-600">
+              {purchases.reduce((sum, p) => sum + (p.remainingWeight || 0), 0).toLocaleString()} kg
+            </div>
+            <div className="text-xs text-muted-foreground">Total Remaining</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Payment Modal Component
 const PaymentModal = ({ 
   open, 
   onClose, 
@@ -147,10 +951,31 @@ const PaymentModal = ({
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [showYearDropdown, setShowYearDropdown] = useState(false);
+  const [balances, setBalances] = useState({
+    drawer: 0,
+    easypaisa: 0,
+    jazzcash: 0,
+    bank: 0,
+  });
+  const [checkingBalance, setCheckingBalance] = useState<boolean>(false);
   const calendarRef = useRef<HTMLDivElement>(null);
   const years = Array.from({ length: 21 }, (_, i) => new Date().getFullYear() - 10 + i);
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  // Map payment methods to finance methods
+  const getFinanceMethod = (paymentMethod: string): string => {
+    const methodMap: Record<string, string> = {
+      'cash': 'drawer',
+      'bank_transfer': 'bank',
+      'cheque': 'bank',
+      'easypaisa': 'easypaisa',
+      'jazzcash': 'jazzcash',
+      'online': 'bank',
+      'other': 'drawer'
+    };
+    return methodMap[paymentMethod] || 'drawer';
+  };
 
   // Format date to YYYY-MM-DD
   const formatDateToYMD = (date: Date): string => {
@@ -163,7 +988,6 @@ const PaymentModal = ({
   // Parse date from YYYY-MM-DD string to Date object (local time)
   const parseDateFromYMD = (dateStr: string): Date => {
     const [year, month, day] = dateStr.split('-').map(Number);
-    // Create date in local timezone (month is 0-indexed)
     return new Date(year, month - 1, day);
   };
 
@@ -189,6 +1013,7 @@ const PaymentModal = ({
       setCurrentYear(today.getFullYear());
       setPaymentMethod("cash");
       setNotes("");
+      fetchBalances();
     }
   }, [open, purchase]);
 
@@ -202,6 +1027,23 @@ const PaymentModal = ({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const fetchBalances = async () => {
+    setCheckingBalance(true);
+    try {
+      const balancesData = await financeApi.getAllBalances();
+      setBalances(balancesData);
+    } catch (error) {
+      console.error("Failed to fetch balances:", error);
+      toast({
+        title: "Warning",
+        description: "Could not fetch current balances",
+        variant: "destructive",
+      });
+    } finally {
+      setCheckingBalance(false);
+    }
+  };
 
   const getDaysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
   const getFirstDayOfMonth = (y: number, m: number) => new Date(y, m, 1).getDay();
@@ -333,13 +1175,11 @@ const PaymentModal = ({
             {Array.from({ length: getDaysInMonth(currentYear, currentMonth) }).map((_, index) => {
               const day = index + 1;
               
-              // Check if this day is selected
               const selectedDateObj = parseDateFromYMD(paymentDate);
               const isSelected = selectedDateObj.getDate() === day &&
                                 selectedDateObj.getMonth() === currentMonth &&
                                 selectedDateObj.getFullYear() === currentYear;
               
-              // Check if this day is today
               const today = new Date();
               const isToday = today.getDate() === day && 
                               today.getMonth() === currentMonth &&
@@ -369,6 +1209,11 @@ const PaymentModal = ({
     )
   );
 
+  const getCurrentBalance = () => {
+    const financeMethod = getFinanceMethod(paymentMethod);
+    return balances[financeMethod as keyof typeof balances] || 0;
+  };
+
   const handleSubmit = async () => {
     if (!purchase) return;
 
@@ -392,6 +1237,20 @@ const PaymentModal = ({
       return;
     }
 
+    const financeMethod = getFinanceMethod(paymentMethod);
+    const currentBalance = getCurrentBalance();
+    
+    const shouldCheckBalance = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
+    
+    if (shouldCheckBalance && amount > currentBalance) {
+      toast({
+        title: "Insufficient Balance",
+        description: `${financeApi.getMethodLabel(financeMethod)} has Rs. ${currentBalance.toLocaleString()}. Required: Rs. ${amount.toLocaleString()}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const newAmountPaid = purchase.amountPaid + amount;
@@ -403,11 +1262,13 @@ const PaymentModal = ({
         _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         purchaseId: purchase._id,
         amount: amount,
-        paymentDate: paymentDate, // This is already in YYYY-MM-DD format
+        paymentDate: paymentDate,
         paymentMethod: paymentMethod,
         notes: notes || `Payment of Rs. ${amount.toLocaleString()}`,
         receiptNo: purchase.receiptNo,
-        materialName: purchase.materialName
+        materialName: purchase.materialName,
+        financeUpdated: false,
+        financeMethod: financeMethod
       };
 
       const updateData = {
@@ -415,6 +1276,28 @@ const PaymentModal = ({
         paidAmount: newPaidStatus,
         remainingAmount: newRemainingAmount
       };
+
+      if (shouldCheckBalance) {
+        try {
+          await financeApi.updateBalance(
+            financeMethod,
+            amount,
+            `Payment for Purchase #${purchase.receiptNo} - ${purchase.materialName}`
+          );
+          paymentRecord.financeUpdated = true;
+          toast({
+            title: "Finance Updated",
+            description: `Rs. ${amount.toLocaleString()} deducted from ${financeApi.getMethodLabel(financeMethod)}`,
+          });
+        } catch (financeError: any) {
+          console.error("Failed to update finance:", financeError);
+          toast({
+            title: "Warning",
+            description: `Payment recorded but failed to update ${financeApi.getMethodLabel(financeMethod)} balance`,
+            variant: "destructive",
+          });
+        }
+      }
 
       const response = await api.put(
         `${PURCHASES_API_URL}/${purchase._id}`,
@@ -443,6 +1326,9 @@ const PaymentModal = ({
   if (!open || !purchase) return null;
 
   const remainingAmount = purchase.price - purchase.amountPaid;
+  const financeMethod = getFinanceMethod(paymentMethod);
+  const currentBalance = getCurrentBalance();
+  const showBalanceCheck = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -534,18 +1420,42 @@ const PaymentModal = ({
             </div>
 
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Payment Method</label>
+              <label className="block text-xs text-muted-foreground mb-1.5">Payment Method *</label>
               <select
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
                 className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               >
-                <option value="cash">Cash</option>
+                <option value="cash">Cash (From Drawer)</option>
+                <option value="easypaisa">Easypaisa</option>
+                <option value="jazzcash">JazzCash</option>
                 <option value="bank_transfer">Bank Transfer</option>
                 <option value="cheque">Cheque</option>
                 <option value="online">Online Payment</option>
                 <option value="other">Other</option>
               </select>
+              {showBalanceCheck && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {financeApi.getMethodIcon(financeMethod, "w-3 h-3")}
+                      <span className="text-xs text-blue-700">Current {financeApi.getMethodLabel(financeMethod)} Balance:</span>
+                    </div>
+                    <span className="text-sm font-semibold text-blue-800">
+                      {checkingBalance ? (
+                        <Loader2 className="w-3 h-3 animate-spin inline" />
+                      ) : (
+                        `Rs. ${currentBalance.toLocaleString()}`
+                      )}
+                    </span>
+                  </div>
+                  {paymentAmount && parseFloat(paymentAmount) > 0 && (
+                    <div className="mt-1 text-xs text-blue-600">
+                      After payment: Rs. {(currentBalance - parseFloat(paymentAmount)).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>
@@ -570,7 +1480,7 @@ const PaymentModal = ({
             </button>
             <button
               onClick={handleSubmit}
-              disabled={isSubmitting || !paymentAmount}
+              disabled={isSubmitting || !paymentAmount || (showBalanceCheck && parseFloat(paymentAmount) > currentBalance)}
               className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
@@ -592,6 +1502,7 @@ const PaymentModal = ({
   );
 };
 
+// MarkAsPaidModal Component
 const MarkAsPaidModal = ({ 
   open, 
   onClose, 
@@ -604,23 +1515,82 @@ const MarkAsPaidModal = ({
   onPaymentSuccess: (paymentRecord: PaymentHistory) => void;
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [balances, setBalances] = useState({
+    drawer: 0,
+    easypaisa: 0,
+    jazzcash: 0,
+    bank: 0,
+  });
+  const [paymentMethod, setPaymentMethod] = useState<string>("cash");
+  const [checkingBalance, setCheckingBalance] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (open && purchase) {
+      fetchBalances();
+    }
+  }, [open, purchase]);
+
+  const fetchBalances = async () => {
+    setCheckingBalance(true);
+    try {
+      const balancesData = await financeApi.getAllBalances();
+      setBalances(balancesData);
+    } catch (error) {
+      console.error("Failed to fetch balances:", error);
+    } finally {
+      setCheckingBalance(false);
+    }
+  };
+
+  const getFinanceMethod = (paymentMethod: string): string => {
+    const methodMap: Record<string, string> = {
+      'cash': 'drawer',
+      'bank_transfer': 'bank',
+      'cheque': 'bank',
+      'easypaisa': 'easypaisa',
+      'jazzcash': 'jazzcash',
+      'online': 'bank',
+      'other': 'drawer'
+    };
+    return methodMap[paymentMethod] || 'drawer';
+  };
+
+  const getCurrentBalance = () => {
+    const financeMethod = getFinanceMethod(paymentMethod);
+    return balances[financeMethod as keyof typeof balances] || 0;
+  };
 
   const handleMarkPaid = async () => {
     if (!purchase) return;
 
+    const remainingAmount = purchase.price - purchase.amountPaid;
+    const financeMethod = getFinanceMethod(paymentMethod);
+    const currentBalance = getCurrentBalance();
+    
+    const shouldCheckBalance = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
+    
+    if (shouldCheckBalance && remainingAmount > currentBalance) {
+      toast({
+        title: "Insufficient Balance",
+        description: `${financeApi.getMethodLabel(financeMethod)} has Rs. ${currentBalance.toLocaleString()}. Required: Rs. ${remainingAmount.toLocaleString()}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const remainingAmount = purchase.price - purchase.amountPaid;
-      
       const paymentRecord: PaymentHistory = {
         _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         purchaseId: purchase._id,
         amount: remainingAmount,
         paymentDate: new Date().toISOString().split('T')[0],
-        paymentMethod: 'cash',
+        paymentMethod: paymentMethod,
         notes: 'Marked as fully paid',
         receiptNo: purchase.receiptNo,
-        materialName: purchase.materialName
+        materialName: purchase.materialName,
+        financeUpdated: false,
+        financeMethod: financeMethod
       };
 
       const updateData = {
@@ -628,6 +1598,28 @@ const MarkAsPaidModal = ({
         paidAmount: 'paid',
         remainingAmount: 0
       };
+
+      if (shouldCheckBalance) {
+        try {
+          await financeApi.updateBalance(
+            financeMethod,
+            remainingAmount,
+            `Full payment for Purchase #${purchase.receiptNo} - ${purchase.materialName}`
+          );
+          paymentRecord.financeUpdated = true;
+          toast({
+            title: "Finance Updated",
+            description: `Rs. ${remainingAmount.toLocaleString()} deducted from ${financeApi.getMethodLabel(financeMethod)}`,
+          });
+        } catch (financeError: any) {
+          console.error("Failed to update finance:", financeError);
+          toast({
+            title: "Warning",
+            description: `Payment recorded but failed to update ${financeApi.getMethodLabel(financeMethod)} balance`,
+            variant: "destructive",
+          });
+        }
+      }
 
       const response = await api.put(
         `${PURCHASES_API_URL}/${purchase._id}`,
@@ -656,6 +1648,9 @@ const MarkAsPaidModal = ({
   if (!open || !purchase) return null;
 
   const remainingAmount = purchase.price - purchase.amountPaid;
+  const financeMethod = getFinanceMethod(paymentMethod);
+  const currentBalance = getCurrentBalance();
+  const showBalanceCheck = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -708,6 +1703,43 @@ const MarkAsPaidModal = ({
             </div>
           </div>
 
+          <div className="mb-4">
+            <label className="block text-xs text-muted-foreground mb-1.5">Payment Method *</label>
+            <select
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+              className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="cash">Cash (From Drawer)</option>
+              <option value="easypaisa">Easypaisa</option>
+              <option value="jazzcash">JazzCash</option>
+              <option value="bank_transfer">Bank Transfer</option>
+              <option value="cheque">Cheque</option>
+              <option value="online">Online Payment</option>
+              <option value="other">Other</option>
+            </select>
+            {showBalanceCheck && (
+              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {financeApi.getMethodIcon(financeMethod, "w-3 h-3")}
+                    <span className="text-xs text-blue-700">Current {financeApi.getMethodLabel(financeMethod)} Balance:</span>
+                  </div>
+                  <span className="text-sm font-semibold text-blue-800">
+                    {checkingBalance ? (
+                      <Loader2 className="w-3 h-3 animate-spin inline" />
+                    ) : (
+                      `Rs. ${currentBalance.toLocaleString()}`
+                    )}
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-blue-600">
+                  After payment: Rs. {(currentBalance - remainingAmount).toLocaleString()}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="mb-6">
             <div className="flex items-center gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
               <div className="w-6 h-6 bg-yellow-100 rounded-full flex items-center justify-center">
@@ -717,6 +1749,7 @@ const MarkAsPaidModal = ({
                 <p className="text-sm font-medium text-yellow-800">Note</p>
                 <p className="text-xs text-yellow-700">
                   This will update the payment status to "Paid" and set amount paid equal to total price.
+                  {showBalanceCheck && ` Amount will be deducted from ${financeApi.getMethodLabel(financeMethod)} balance.`}
                 </p>
               </div>
             </div>
@@ -732,7 +1765,7 @@ const MarkAsPaidModal = ({
             </button>
             <button
               onClick={handleMarkPaid}
-              disabled={isSubmitting}
+              disabled={isSubmitting || (showBalanceCheck && remainingAmount > currentBalance)}
               className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
@@ -754,6 +1787,7 @@ const MarkAsPaidModal = ({
   );
 };
 
+// PaymentHistoryModal Component
 const PaymentHistoryModal = ({
   open,
   onClose,
@@ -838,7 +1872,7 @@ const PaymentHistoryModal = ({
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Remaining Amount</p>
-                <p className="text-lg font-bold text-red-600">
+                <p className="text-xl font-bold text-red-600">
                   Rs. {remainingAmount.toLocaleString()}
                 </p>
               </div>
@@ -885,6 +1919,7 @@ const PaymentHistoryModal = ({
                       <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Payment Method</th>
                       <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Amount</th>
                       <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Notes</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Finance Updated</th>
                       <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Running Total</th>
                     </tr>
                   </thead>
@@ -910,14 +1945,36 @@ const PaymentHistoryModal = ({
                               year: 'numeric'
                             })}
                           </td>
-                          <td className="px-4 py-3 text-sm text-foreground capitalize">
-                            {payment.paymentMethod.replace('_', ' ')}
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              {financeApi.getMethodIcon(payment.paymentMethod, "w-4 h-4")}
+                              <span className="text-sm text-foreground capitalize">
+                                {payment.paymentMethod.replace('_', ' ')}
+                              </span>
+                            </div>
                           </td>
                           <td className="px-4 py-3 text-sm font-semibold text-green-600">
                             Rs. {payment.amount.toLocaleString()}
                           </td>
                           <td className="px-4 py-3 text-sm text-muted-foreground">
                             {payment.notes || '-'}
+                          </td>
+                          <td className="px-4 py-3">
+                            {payment.financeUpdated ? (
+                              <div className="flex flex-col gap-1">
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Updated
+                                </span>
+                                <span className="text-xs text-gray-500">
+                                  {financeApi.getMethodLabel(payment.financeMethod || payment.paymentMethod)}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800">
+                                Not Updated
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-sm font-medium text-blue-600">
                             Rs. {runningTotal.toLocaleString()}
@@ -933,7 +1990,7 @@ const PaymentHistoryModal = ({
                       <td className="px-4 py-3 text-lg font-bold text-green-600">
                         Rs. {purchase.amountPaid.toLocaleString()}
                       </td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={2}>
+                      <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={3}>
                         {paymentHistory.length} payment{paymentHistory.length !== 1 ? 's' : ''}
                       </td>
                     </tr>
@@ -946,7 +2003,7 @@ const PaymentHistoryModal = ({
                         <td className="px-4 py-3 text-lg font-bold text-red-600">
                           Rs. {remainingAmount.toLocaleString()}
                         </td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={2}>
+                        <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={3}>
                           To be paid
                         </td>
                       </tr>
@@ -959,7 +2016,7 @@ const PaymentHistoryModal = ({
                       <td className="px-4 py-3 text-xl font-bold text-primary">
                         Rs. {purchase.price.toLocaleString()}
                       </td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={2}>
+                      <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={3}>
                         Purchase Price
                       </td>
                     </tr>
@@ -970,15 +2027,27 @@ const PaymentHistoryModal = ({
           </div>
 
           <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h4 className="text-sm font-semibold text-blue-800 mb-2">Example: Multiple Payments</h4>
+            <h4 className="text-sm font-semibold text-blue-800 mb-2">Payment Methods Integration</h4>
             <p className="text-xs text-blue-700">
-              For a purchase of Rs. 7,500, you can record payments like:
+              When selecting payment methods like Easypaisa or JazzCash, the amount will be automatically deducted from the respective finance module balance.
             </p>
             <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
-              <div className="p-2 bg-blue-100 rounded">1st: Rs. 2,500</div>
-              <div className="p-2 bg-blue-100 rounded">2nd: Rs. 2,500</div>
-              <div className="p-2 bg-blue-100 rounded">3rd: Rs. 2,000</div>
-              <div className="p-2 bg-blue-100 rounded">4th: Rs. 500</div>
+              <div className="p-2 bg-blue-100 rounded flex items-center gap-2">
+                <Wallet className="w-3 h-3" />
+                <span>Drawer</span>
+              </div>
+              <div className="p-2 bg-blue-100 rounded flex items-center gap-2">
+                <Smartphone className="w-3 h-3" />
+                <span>Easypaisa</span>
+              </div>
+              <div className="p-2 bg-blue-100 rounded flex items-center gap-2">
+                <Smartphone className="w-3 h-3" />
+                <span>JazzCash</span>
+              </div>
+              <div className="p-2 bg-blue-100 rounded flex items-center gap-2">
+                <Building className="w-3 h-3" />
+                <span>Bank</span>
+              </div>
             </div>
           </div>
 
@@ -1004,6 +2073,7 @@ interface DialogProps {
   editData?: Purchase | null;
 }
 
+// PurchaseDialog Component
 function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData = null }: DialogProps) {
   const [showPurchaseCalendar, setShowPurchaseCalendar] = useState(false);
   const [showPurchaseTimePicker, setShowPurchaseTimePicker] = useState(false);
@@ -1053,6 +2123,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     receiptNo: "",
     advancePayment: "",
     amountPaid: "",
+    paymentMethod: "cash",
     vehicleImage: null as File | null,
   });
 
@@ -1061,6 +2132,18 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(null);
+  
+  const [qualityOptions, setQualityOptions] = useState(initialQualityOptions);
+  const [showCustomQualityInput, setShowCustomQualityInput] = useState(false);
+  const [customQuality, setCustomQuality] = useState("");
+
+  const [balances, setBalances] = useState({
+    drawer: 0,
+    easypaisa: 0,
+    jazzcash: 0,
+    bank: 0,
+  });
+  const [checkingBalance, setCheckingBalance] = useState<boolean>(false);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1120,6 +2203,19 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     return `${API_BASE_URL}/${cleanPath}`;
   };
 
+  const getFinanceMethod = (paymentMethod: string): string => {
+    const methodMap: Record<string, string> = {
+      'cash': 'drawer',
+      'bank_transfer': 'bank',
+      'cheque': 'bank',
+      'easypaisa': 'easypaisa',
+      'jazzcash': 'jazzcash',
+      'online': 'bank',
+      'other': 'drawer'
+    };
+    return methodMap[paymentMethod] || 'drawer';
+  };
+
   useEffect(() => {
     if (open) {
       const now = new Date();
@@ -1139,6 +2235,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
               purchaseDateStr = `${dd}/${mm}/${yyyy}`;
             }
           } catch (error) {
+            console.error("Error parsing purchase date:", error);
           }
         }
 
@@ -1154,6 +2251,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
               deliveryDateStr = `${dd}/${mm}/${yyyy}`;
             }
           } catch (error) {
+            console.error("Error parsing delivery date:", error);
           }
         }
 
@@ -1192,6 +2290,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           receiptNo: editData.receiptNo || "",
           advancePayment: editData.advancePayment?.toString() || "",
           amountPaid: editData.amountPaid?.toString() || "",
+          paymentMethod: "cash",
           vehicleImage: null,
         });
         
@@ -1240,6 +2339,8 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       } else {
         resetForm();
       }
+      
+      fetchBalances();
     }
   }, [open, isEdit, editData]);
 
@@ -1395,7 +2496,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     if (errors[name]) {
@@ -1407,6 +2508,16 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     setFormData(prev => ({ ...prev, quality }));
     if (errors.quality) {
       setErrors(prev => ({ ...prev, quality: "" }));
+    }
+  };
+
+  const handleAddCustomQuality = () => {
+    if (customQuality.trim() && !qualityOptions.some(option => option.value.toLowerCase() === customQuality.toLowerCase())) {
+      const newOption = { value: customQuality, label: customQuality };
+      setQualityOptions(prev => [...prev, newOption]);
+      setFormData(prev => ({ ...prev, quality: customQuality }));
+      setCustomQuality("");
+      setShowCustomQualityInput(false);
     }
   };
 
@@ -1427,6 +2538,23 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       const previewUrl = URL.createObjectURL(file);
       setImagePreview(previewUrl);
     }
+  };
+
+  const fetchBalances = async () => {
+    setCheckingBalance(true);
+    try {
+      const balancesData = await financeApi.getAllBalances();
+      setBalances(balancesData);
+    } catch (error) {
+      console.error("Failed to fetch balances:", error);
+    } finally {
+      setCheckingBalance(false);
+    }
+  };
+
+  const getCurrentBalance = () => {
+    const financeMethod = getFinanceMethod(formData.paymentMethod);
+    return balances[financeMethod as keyof typeof balances] || 0;
   };
 
   const handleSubmit = async () => {
@@ -1491,8 +2619,8 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         amountPaid: totalAmountPaid,
         paidAmount: paidAmount,
         remainingAmount: remainingAmount > 0 ? remainingAmount : 0,
-        soldWeight: 0, // Initialize soldWeight as 0 for new purchases
-        status: 'available' // Initialize status
+        soldWeight: 0,
+        status: 'available'
       };
 
       Object.entries(fields).forEach(([key, value]) => {
@@ -1529,20 +2657,53 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       }
       
       if (response.data.success) {
-        // Add initial payment to history if amount was paid during form submission
+        if (totalAmountPaid > 0) {
+          const financeMethod = getFinanceMethod(formData.paymentMethod);
+          const currentBalance = getCurrentBalance();
+          
+          const shouldUpdateFinance = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
+          
+          if (shouldUpdateFinance && totalAmountPaid <= currentBalance) {
+            try {
+              await financeApi.updateBalance(
+                financeMethod,
+                totalAmountPaid,
+                `Initial payment for Purchase #${formData.receiptNo} - ${formData.materialName}`
+              );
+              toast({
+                title: "Finance Updated",
+                description: `Rs. ${totalAmountPaid.toLocaleString()} deducted from ${financeApi.getMethodLabel(financeMethod)}`,
+              });
+            } catch (financeError: any) {
+              console.error("Failed to update finance:", financeError);
+              toast({
+                title: "Warning",
+                description: `Purchase saved but failed to update ${financeApi.getMethodLabel(financeMethod)} balance`,
+                variant: "destructive",
+              });
+            }
+          } else if (shouldUpdateFinance && totalAmountPaid > currentBalance) {
+            toast({
+              title: "Warning",
+              description: `Purchase saved but ${financeApi.getMethodLabel(financeMethod)} has insufficient balance (Rs. ${currentBalance.toLocaleString()})`,
+              variant: "destructive",
+            });
+          }
+        }
+        
         if (totalAmountPaid > 0) {
           const initialPayment: PaymentHistory = {
             _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             purchaseId: response.data.data._id,
             amount: totalAmountPaid,
             paymentDate: purchaseDateTime.split('T')[0],
-            paymentMethod: 'cash',
+            paymentMethod: formData.paymentMethod,
             notes: `Initial payment of Rs. ${totalAmountPaid.toLocaleString()}`,
             receiptNo: formData.receiptNo,
-            materialName: formData.materialName
+            materialName: formData.materialName,
+            financeUpdated: false
           };
           
-          // Store in localStorage for payment history
           const savedPayments = localStorage.getItem('purchase_payments');
           const allPayments = savedPayments ? JSON.parse(savedPayments) : [];
           allPayments.push(initialPayment);
@@ -1627,6 +2788,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       receiptNo: "",
       advancePayment: "",
       amountPaid: "",
+      paymentMethod: "cash",
       vehicleImage: null,
     });
     
@@ -1654,6 +2816,15 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     setImagePreview(null);
     setOriginalImageUrl(null);
     setErrors({});
+    setShowCustomQualityInput(false);
+    setCustomQuality("");
+    setBalances({
+      drawer: 0,
+      easypaisa: 0,
+      jazzcash: 0,
+      bank: 0,
+    });
+    setCheckingBalance(false);
     
     if (imagePreview && imagePreview.startsWith('blob:')) {
       URL.revokeObjectURL(imagePreview);
@@ -1857,6 +3028,11 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
 
   if (!open) return null;
 
+  const financeMethod = getFinanceMethod(formData.paymentMethod);
+  const currentBalance = getCurrentBalance();
+  const showBalanceCheck = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
+  const totalAmount = (parseFloat(formData.advancePayment || '0') + parseFloat(formData.amountPaid || '0'));
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -1950,28 +3126,70 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Quality *</label>
-                <div className="grid grid-cols-3 gap-2 pt-2">
-                  {qualityOptions.map((option) => (
-                    <label 
-                      key={option.value} 
-                      className="flex items-center gap-2 text-sm text-foreground cursor-pointer hover:bg-cms-card-hover px-2 py-1 rounded transition-colors"
-                    >
-                      <input
-                        type="radio"
-                        name="quality"
-                        value={option.value}
-                        checked={formData.quality === option.value}
-                        onChange={() => handleQualityChange(option.value)}
-                        className="sr-only"
-                      />
-                      <div className="w-4 h-4 border border-border bg-cms-card rounded flex items-center justify-center">
-                        {formData.quality === option.value && (
-                          <div className="w-2 h-2 bg-primary rounded-sm" />
-                        )}
+                <div className="space-y-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    {qualityOptions.map((option) => (
+                      <label 
+                        key={option.value} 
+                        className="flex items-center gap-2 text-sm text-foreground cursor-pointer hover:bg-cms-card-hover px-2 py-1 rounded transition-colors"
+                      >
+                        <input
+                          type="radio"
+                          name="quality"
+                          value={option.value}
+                          checked={formData.quality === option.value}
+                          onChange={() => handleQualityChange(option.value)}
+                          className="sr-only"
+                        />
+                        <div className="w-4 h-4 border border-border bg-cms-card rounded flex items-center justify-center">
+                          {formData.quality === option.value && (
+                            <div className="w-2 h-2 bg-primary rounded-sm" />
+                          )}
+                        </div>
+                        {option.label}
+                      </label>
+                    ))}
+                  </div>
+                  
+                  <div className="mt-2">
+                    {!showCustomQualityInput ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomQualityInput(true)}
+                        className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Add Custom Quality
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={customQuality}
+                          onChange={(e) => setCustomQuality(e.target.value)}
+                          placeholder="Enter custom quality"
+                          className="flex-1 bg-cms-card border border-border rounded-md px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddCustomQuality}
+                          className="px-2 py-1 bg-primary text-primary-foreground rounded-md text-xs"
+                        >
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowCustomQualityInput(false);
+                            setCustomQuality("");
+                          }}
+                          className="px-2 py-1 bg-cms-card border border-border text-foreground rounded-md text-xs"
+                        >
+                          Cancel
+                        </button>
                       </div>
-                      {option.label}
-                    </label>
-                  ))}
+                    )}
+                  </div>
                 </div>
                 {errors.quality && (
                   <p className="text-xs text-red-500 mt-1">{errors.quality}</p>
@@ -2062,6 +3280,26 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                 </div>
               </div>
               <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Payment Method</label>
+                <select
+                  name="paymentMethod"
+                  value={formData.paymentMethod}
+                  onChange={handleInputChange}
+                  className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="cash">Cash (From Drawer)</option>
+                  <option value="easypaisa">Easypaisa</option>
+                  <option value="jazzcash">JazzCash</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="online">Online Payment</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Advance Payment</label>
                 <input
                   type="number"
@@ -2076,11 +3314,10 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                 {errors.advancePayment && (
                   <p className="text-xs text-red-500 mt-1">{errors.advancePayment}</p>
                 )}
-                <p className="text-xs text-muted-foreground mt-1">Optional</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Will deduct from {financeApi.getMethodLabel(financeMethod)}
+                </p>
               </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4 mb-4">
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Amount Paid</label>
                 <input
@@ -2096,7 +3333,9 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                 {errors.amountPaid && (
                   <p className="text-xs text-red-500 mt-1">{errors.amountPaid}</p>
                 )}
-                <p className="text-xs text-muted-foreground mt-1">Enter additional payment (if any)</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Enter additional payment (if any)
+                </p>
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Payment Status</label>
@@ -2104,8 +3343,8 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                   {formData.price && (formData.advancePayment || formData.amountPaid) ? (
                     <PaymentStatusBadge 
                       status={
-                        (parseFloat(formData.advancePayment || '0') + parseFloat(formData.amountPaid || '0')) >= parseFloat(formData.price) ? 'paid' :
-                        (parseFloat(formData.advancePayment || '0') + parseFloat(formData.amountPaid || '0')) > 0 ? 'partial' : 'none'
+                        totalAmount >= parseFloat(formData.price) ? 'paid' :
+                        totalAmount > 0 ? 'partial' : 'none'
                       } 
                     />
                   ) : (
@@ -2113,9 +3352,26 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                   )}
                 </div>
                 {formData.price && (formData.advancePayment || formData.amountPaid) && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Remaining: Rs. {Math.max(0, parseFloat(formData.price) - (parseFloat(formData.advancePayment || '0') + parseFloat(formData.amountPaid || '0'))).toLocaleString()}
-                  </p>
+                  <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {financeApi.getMethodIcon(financeMethod, "w-3 h-3")}
+                        <span className="text-xs text-blue-700">{financeApi.getMethodLabel(financeMethod)} Balance:</span>
+                      </div>
+                      <span className="text-sm font-semibold text-blue-800">
+                        {checkingBalance ? (
+                          <Loader2 className="w-3 h-3 animate-spin inline" />
+                        ) : (
+                          `Rs. ${currentBalance.toLocaleString()}`
+                        )}
+                      </span>
+                    </div>
+                    {totalAmount > 0 && (
+                      <div className="mt-1 text-xs text-blue-600">
+                        Remaining after payment: Rs. {(currentBalance - totalAmount).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -2335,6 +3591,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   );
 }
 
+// Main POPView Component
 export function POPView() {
   const [purchases, setPurchases] = useState<PurchaseWithRemaining[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2432,7 +3689,6 @@ export function POPView() {
       return sum + (Number(p.remainingAmount) || 0);
     }, 0);
     
-    // IMPORTANT: Use the original weight from the purchase, not soldWeight
     const totalWeight = purchases.reduce((sum, p) => {
       const weight = parseFloat(p.weight) || 0;
       return sum + weight;
@@ -2466,9 +3722,6 @@ export function POPView() {
       if (response.data.success) {
         const purchasesData = response.data.data || [];
         
-        console.log('Raw purchases data:', purchasesData);
-        
-        // Now the backend already provides soldWeight, remainingWeight, and status
         const purchasesWithRemaining = purchasesData.map((purchase: any) => {
           const originalWeight = parseFloat(purchase.weight) || 0;
           const soldWeight = purchase.soldWeight || 0;
@@ -2476,13 +3729,17 @@ export function POPView() {
           
           const parsedPrice = parseConcatenatedPrices(purchase.price);
           
+          const colorNames = getColorSearchNames(purchase.materialColor);
+          
           return {
             ...purchase,
             price: parsedPrice,
-            totalWeight: originalWeight, // Original purchase weight
-            soldWeight: soldWeight, // Already sold weight from backend
-            remainingWeight: remainingWeight, // Calculated remaining from backend
-            status: purchase.status || 'available'
+            totalWeight: originalWeight,
+            soldWeight: soldWeight,
+            remainingWeight: remainingWeight,
+            status: purchase.status || 'available',
+            materialColorName: getColorName(purchase.materialColor),
+            materialColorSearchNames: colorNames
           };
         });
         
@@ -2577,12 +3834,26 @@ export function POPView() {
     setSelectedPurchaseForPayment(null);
   };
 
-  const filteredPurchases = purchases.filter(purchase =>
-    purchase.materialName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    purchase.vendor.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    purchase.vehicleNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    purchase.receiptNo.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredPurchases = purchases.filter(purchase => {
+    const searchLower = searchTerm.toLowerCase().trim();
+    
+    if (!searchLower) return true;
+    
+    if (purchase.materialName?.toLowerCase().includes(searchLower)) return true;
+    if (purchase.vendor?.toLowerCase().includes(searchLower)) return true;
+    if (purchase.quality?.toLowerCase().includes(searchLower)) return true;
+    if (purchase.receiptNo?.toLowerCase().includes(searchLower)) return true;
+    if (purchase.materialColor?.toLowerCase().includes(searchLower)) return true;
+    if (purchase.materialColorName?.toLowerCase().includes(searchLower)) return true;
+    if (purchase.materialColorSearchNames?.some(name => name.includes(searchLower))) return true;
+    if (purchase.vehicleColor?.toLowerCase().includes(searchLower)) return true;
+    if (purchase.vehicleNumber?.toLowerCase().includes(searchLower)) return true;
+    if (purchase.driverName?.toLowerCase().includes(searchLower)) return true;
+    if (purchase.vehicleType?.toLowerCase().includes(searchLower)) return true;
+    if (purchase.vehicleName?.toLowerCase().includes(searchLower)) return true;
+    
+    return false;
+  });
 
   const formatDateTime = (dateString: string) => {
     if (!dateString) return 'N/A';
@@ -2717,11 +3988,17 @@ export function POPView() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search for anything..."
+            placeholder="Search by Material, Quality (e.g., PP750), Color (e.g., red, lal), Receipt No., Vendor..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="bg-cms-card border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-72"
+            className="bg-cms-card border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-96"
           />
+          {searchTerm && (
+            <X
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground cursor-pointer hover:text-foreground"
+              onClick={() => setSearchTerm("")}
+            />
+          )}
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -2741,6 +4018,16 @@ export function POPView() {
         </div>
       </div>
 
+      {/* Vendor Summary Component */}
+      {filteredPurchases.length > 0 && (
+        <VendorSummary purchases={filteredPurchases} searchTerm={searchTerm} />
+      )}
+
+      {/* Weight Summary Component */}
+      {filteredPurchases.length > 0 && (
+        <WeightSummary purchases={filteredPurchases} searchTerm={searchTerm} />
+      )}
+
       <div className="bg-cms-card rounded-xl overflow-hidden">
         {loading ? (
           <div className="flex justify-center items-center py-12">
@@ -2752,7 +4039,7 @@ export function POPView() {
             <ShoppingCart className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium text-foreground mb-2">No purchases found</h3>
             <p className="text-muted-foreground mb-4">
-              {searchTerm ? 'No purchases match your search.' : 'Add your first purchase to get started.'}
+              {searchTerm ? `No purchases match "${searchTerm}"` : 'Add your first purchase to get started.'}
             </p>
             {!searchTerm && (
               <button
@@ -2771,6 +4058,7 @@ export function POPView() {
                 <tr className="bg-cms-table-header">
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Receipt No.</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material Name</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Quality</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Price</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Amount Paid</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining Amount</th>
@@ -2779,8 +4067,7 @@ export function POPView() {
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Sold Weight (kg)</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining Weight (kg)</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Stock Status</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Supplier</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vendor</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date & Time</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
                 </tr>
@@ -2803,7 +4090,16 @@ export function POPView() {
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground">
                         <div className="font-medium">{purchase.materialName || 'N/A'}</div>
-                        <div className="text-xs text-muted-foreground">{purchase.quality || 'N/A'}</div>
+                        <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                          <div 
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: purchase.materialColor || '#FFFFFF' }}
+                          />
+                          <span>{purchase.materialColorName || 'N/A'}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-foreground">
+                        <div className="font-medium">{purchase.quality || 'N/A'}</div>
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground font-semibold">
                         Rs. {formatCurrency(purchase.price || 0)}
@@ -2847,7 +4143,6 @@ export function POPView() {
                         <StockStatusBadge status={purchase.status || 'available'} />
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground">{purchase.vendor || 'N/A'}</td>
-                      <td className="px-4 py-3 text-sm text-foreground">{purchase.vehicleNumber || 'N/A'}</td>
                       <td className="px-4 py-3 text-sm text-primary">{formatDateTime(purchase.purchaseDate || purchase.createdAt)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">

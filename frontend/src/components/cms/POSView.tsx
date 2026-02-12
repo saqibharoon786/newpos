@@ -784,8 +784,11 @@ const PaymentHistoryModal = ({
           <div>
             <p className="text-xs text-muted-foreground">Payment History</p>
             <h2 className="text-lg font-bold text-foreground">
-              Sale #{sale.invoiceNo} - {sale.materialName}
+              Sale #{sale.invoiceNo} — {sale.materialName}
             </h2>
+            <p className="text-sm font-medium text-foreground mt-1">
+              Customer: {sale.buyerName || 'N/A'}
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -797,6 +800,10 @@ const PaymentHistoryModal = ({
 
         <div className="p-6">
           <div className="mb-6 p-4 bg-cms-card rounded-lg border border-border">
+            <div className="mb-4 pb-3 border-b border-border">
+              <p className="text-xs text-muted-foreground">Customer Name</p>
+              <p className="text-base font-semibold text-foreground">{sale.buyerName || 'N/A'}</p>
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
               <div>
                 <p className="text-xs text-muted-foreground">Total Price</p>
@@ -1137,13 +1144,13 @@ export function POSView() {
   const filteredSales = sales.filter(sale => {
     const searchLower = searchTerm.toLowerCase();
     return (
-      sale.materialName.toLowerCase().includes(searchLower) ||
-      sale.supplierName.toLowerCase().includes(searchLower) ||
-      sale.invoiceNo.toLowerCase().includes(searchLower) ||
-      sale.buyerName.toLowerCase().includes(searchLower) ||
-      (sale.vehicleNumber && sale.vehicleNumber.toLowerCase().includes(searchLower)) ||
-      (sale.buyerPhone && sale.buyerPhone.toLowerCase().includes(searchLower)) ||
-      (sale.buyerEmail && sale.buyerEmail.toLowerCase().includes(searchLower))
+      (sale.materialName?.toLowerCase() || '').includes(searchLower) ||
+      (sale.supplierName?.toLowerCase() || '').includes(searchLower) ||
+      (sale.invoiceNo?.toLowerCase() || '').includes(searchLower) ||
+      (sale.buyerName?.toLowerCase() || '').includes(searchLower) ||
+      (sale.vehicleNumber?.toLowerCase() || '').includes(searchLower) ||
+      (sale.buyerPhone?.toLowerCase() || '').includes(searchLower) ||
+      (sale.buyerEmail?.toLowerCase() || '').includes(searchLower)
     );
   });
 
@@ -1378,8 +1385,9 @@ export function POSView() {
                 <tr className="bg-cms-table-header">
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Invoice No.</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Buyer</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight & Units</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Customer Name</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight (kg)</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Units</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total Amount</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Amount Paid</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining Amount</th>
@@ -1422,11 +1430,11 @@ export function POSView() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-foreground">{sale.weight || '0'} kg</span>
-                          <span className="text-xs text-muted-foreground">{sale.unit || '0'} units</span>
-                        </div>
+                      <td className="px-4 py-3 text-sm font-medium text-foreground">
+                        {sale.weight || '0'}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-foreground">
+                        {sale.unit || '0'}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-col">

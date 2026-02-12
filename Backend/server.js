@@ -31,6 +31,7 @@ const customerRoutes = require("./routes/customer.route");
 const dashboardRoutes = require("./routes/dashboard.route");
 const employeeRoutes = require("./routes/employee.route");
 const financeRoutes = require("./routes/finance.route");
+const processRoutes = require("./routes/process.route");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -51,8 +52,24 @@ const receiptsDir = path.join(__dirname, "receipts");
 });
 
 // CORS
+// Allow both dev ports (8081, 8082) plus any FRONTEND_URL
+const allowedOrigins = [
+  "http://localhost:8081",
+  "http://localhost:8082",
+].filter(Boolean);
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+}
+
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || true,
+  origin: (origin, callback) => {
+    // Allow non-browser tools (no origin) and any whitelisted origin
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked for origin: ${origin}`));
+    }
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
@@ -143,6 +160,9 @@ app.use("/api/customers", customerRoutes);
 app.use("/api/dashboard", cacheMiddleware(30), dashboardRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/finance", financeRoutes);
+app.use("/api/process", processRoutes);
+// Alias for legacy frontend expecting /api/processing
+app.use("/api/processing", processRoutes);
 
 // Test endpoints
 app.get("/api/test-upload/:filename", (req, res) => {

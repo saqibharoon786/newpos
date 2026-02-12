@@ -1,0 +1,613 @@
+const mongoose = require("mongoose");
+const { ProcessingMaterial, ProductionData } = require("../models/process.model.js");
+const Purchase = require("../models/pop.model.js");
+const Employee = require("../models/employee.model.js");
+
+// Get all processing materials from purchases
+const getProcessingMaterials = async (req, res) => {
+  try {
+    const purchases = await Purchase.find({
+      status: "available",
+      remainingWeight: { $gt: 0 }
+    }).sort({ purchaseDate: -1 });
+
+    const processingMaterials = await Promise.all(purchases.map(async (purchase) => {
+      const existingMaterial = await ProcessingMaterial.findOne({ purchaseId: purchase._id });
+      
+      if (existingMaterial) {
+        return existingMaterial;
+      }
+
+      // Create new processing material from purchase
+      const newMaterial = new ProcessingMaterial({
+        purchaseId: purchase._id,
+        receiptNo: purchase.receiptNo || "N/A",
+        materialName: purchase.materialName || "Unknown",
+        quality: purchase.quality || "Unknown",
+        color: purchase.materialColor || "#FFFFFF",
+        originalWeight: parseFloat(purchase.weight) || 0,
+        availableWeight: purchase.remainingWeight || parseFloat(purchase.weight) || 0,
+        vendor: purchase.vendor || "Unknown",
+        purchaseDate: purchase.purchaseDate || purchase.createdAt,
+        status: "pending",
+      });
+
+      return await newMaterial.save();
+    }));
+
+    res.status(200).json({
+      success: true,
+      count: processingMaterials.length,
+      data: processingMaterials
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message
+    });
+  }
+};
+
+// Update material status
+const updateMaterialStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, availableWeight } = req.body;
+
+    // First try by ProcessingMaterial _id
+    let material = await ProcessingMaterial.findById(id);
+
+    // If not found, also support legacy calls that send POP purchase _id
+    if (!material) {
+      material = await ProcessingMaterial.findOne({ purchaseId: id });
+    }
+
+    // If still not found, auto-create a ProcessingMaterial from the Purchase
+    if (!material) {
+      const purchase = await Purchase.findById(id);
+      if (!purchase) {
+        return res.status(404).json({
+          success: false,
+          message: "Material not found",
+        });
+      }
+
+      material = await ProcessingMaterial.create({
+        purchaseId: purchase._id,
+        receiptNo: purchase.receiptNo || "N/A",
+        materialName: purchase.materialName || "Unknown",
+        quality: purchase.quality || "Unknown",
+        color: purchase.materialColor || "#FFFFFF",
+        originalWeight: parseFloat(purchase.weight) || 0,
+        availableWeight:
+          purchase.remainingWeight || parseFloat(purchase.weight) || 0,
+        vendor: purchase.vendor || "Unknown",
+        purchaseDate: purchase.purchaseDate || purchase.createdAt,
+        status: "pending",
+      });
+    }
+
+    // Update material
+    const updates = { status };
+    if (availableWeight !== undefined) {
+      updates.availableWeight = availableWeight;
+    }
+
+    const updatedMaterial = await ProcessingMaterial.findByIdAndUpdate(
+      material._id,
+      updates,
+      {
+        new: true,
+      }
+    );
+
+    // Update purchase remaining weight if status is in_progress
+    if (status === "in_progress" && availableWeight !== undefined) {
+      await Purchase.findByIdAndUpdate(material.purchaseId, {
+        remainingWeight: availableWeight
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: updatedMaterial,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message
+    });
+  }
+};
+
+// Create production record (used by /production)
+const createProductionRecord = async (req, res) => {
+  try {
+    const productionData = req.body;
+    
+    // Generate batch number
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+    const batchNo = `BATCH-${year}${month}${day}-${randomNum}`;
+    
+    const totalWeight = productionData.totalWeight ?? productionData.outputWeight ?? 0;
+    const record = new ProductionData({
+      ...productionData,
+      batchNo,
+      productionDate: productionData.productionDate || new Date(),
+      availableWeight: productionData.availableWeight ?? totalWeight,
+      purchaseId: productionData.purchaseId || undefined,
+    });
+
+    await record.save();
+
+    // Populate employee details
+    const populatedRecord = await ProductionData.findById(record._id).populate(
+      "employees.employeeId",
+      "name employeeId department"
+    );
+
+    res.status(201).json({
+      success: true,
+      data: populatedRecord,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to create production record",
+      error: error.message,
+    });
+  }
+};
+
+// Create production record from old frontend /batches payload
+// This keeps your existing process.tsx working without changes.
+const createProductionFromBatch = async (req, res) => {
+  try {
+    const batch = req.body;
+
+    // Generate batch number if frontend didn't send one
+    let batchNo = batch.batchNo;
+    if (!batchNo) {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, "0");
+      const day = String(today.getDate()).padStart(2, "0");
+      const randomNum = Math.floor(Math.random() * 1000)
+        .toString()
+        .padStart(3, "0");
+      batchNo = `BATCH-${year}${month}${day}-${randomNum}`;
+    }
+
+    const employees =
+      batch.employees?.map((e) => ({
+        employeeId: e.employeeId || e._id,
+        name: e.name,
+        department: e.department,
+      })) || [];
+
+    const totalWeight = batch.inputWeight ?? 0;
+    const record = new ProductionData({
+      batchNo,
+      materialName: batch.materialName,
+      quality: batch.quality,
+      color: batch.color,
+      totalWeight,
+      totalBags: batch.totalBags,
+      machine: batch.machineId || "machine_1",
+      shift: batch.shift,
+      productionDate: batch.productionDate
+        ? new Date(batch.productionDate)
+        : new Date(),
+      employees,
+      notes: batch.notes || "",
+      status: "completed",
+      availableWeight: totalWeight,
+    });
+
+    await record.save();
+
+    const populatedRecord = await ProductionData.findById(record._id).populate(
+      "employees.employeeId",
+      "name employeeId department"
+    );
+
+    res.status(201).json({
+      success: true,
+      data: populatedRecord,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to create production record from batch",
+      error: error.message,
+    });
+  }
+};
+
+// Get production data
+const getProductionData = async (req, res) => {
+  try {
+    const { 
+      startDate, 
+      endDate, 
+      machine, 
+      shift, 
+      status, 
+      page = 1, 
+      limit = 10 
+    } = req.query;
+    
+    const query = {};
+    
+    // Date filter
+    if (startDate || endDate) {
+      query.productionDate = {};
+      if (startDate) {
+        query.productionDate.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        query.productionDate.$lte = new Date(endDate);
+      }
+    }
+    
+    if (machine && machine !== "all") {
+      query.machine = machine;
+    }
+    
+    if (shift && shift !== "all") {
+      query.shift = shift;
+    }
+    
+    if (status && status !== "all") {
+      query.status = status;
+    }
+
+    const productionDocs = await ProductionData.find(query)
+      .populate("employees.employeeId", "name employeeId department")
+      .sort({ productionDate: -1 })
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit));
+
+    const total = await ProductionData.countDocuments(query);
+
+    // Calculate summary metrics
+    const summary = await ProductionData.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: null,
+          totalWeight: { $sum: "$totalWeight" },
+          totalBags: { $sum: "$totalBags" },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Map to shape expected by frontend ProductionHistory table
+    const data = productionDocs.map((doc) => {
+      const avail = doc.availableWeight ?? doc.totalWeight ?? 0;
+      return {
+        _id: doc._id,
+        batchId: doc._id,
+        batchNo: doc.batchNo,
+        materialName: doc.materialName,
+        quality: doc.quality,
+        color: doc.color,
+        outputWeight: doc.totalWeight,
+        availableWeight: avail,
+        wasteWeight: 0,
+        efficiency: 0,
+        productionDate: doc.productionDate,
+        purchaseId: doc.purchaseId || null,
+        operator:
+          doc.employees?.[0]?.employeeId?.name ||
+          doc.employees?.[0]?.name ||
+          "",
+        shift: doc.shift,
+        machineUsed: doc.machine,
+        energyConsumed: 0,
+        waterUsed: 0,
+        status: doc.status || "completed",
+        notes: doc.notes || "",
+        totalBags: doc.totalBags,
+        bagWeight:
+          doc.totalBags && doc.totalBags > 0
+            ? doc.totalWeight / doc.totalBags
+            : 0,
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      count: data.length,
+      total,
+      pages: Math.ceil(total / parseInt(limit)),
+      currentPage: parseInt(page),
+      summary: summary[0] || { totalWeight: 0, totalBags: 0, count: 0 },
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message
+    });
+  }
+};
+
+// Get processing dashboard data
+const getProcessingDashboard = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Get pending materials count
+    const pendingMaterials = await ProcessingMaterial.countDocuments({
+      status: "pending",
+      availableWeight: { $gt: 0 }
+    });
+
+    // Get materials in progress count
+    const inProgressMaterials = await ProcessingMaterial.countDocuments({
+      status: "in_progress",
+    });
+
+    // Get today's production count
+    const todaysProduction = await ProductionData.countDocuments({
+      productionDate: { $gte: today, $lt: tomorrow },
+    });
+
+    // Get total weight produced today
+    const todaysWeight = await ProductionData.aggregate([
+      {
+        $match: {
+          productionDate: { $gte: today, $lt: tomorrow },
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalWeight: { $sum: "$totalWeight" },
+          totalBags: { $sum: "$totalBags" },
+        }
+      }
+    ]);
+
+    // Get production by machine
+    const machineStats = await ProductionData.aggregate([
+      {
+        $group: {
+          _id: "$machine",
+          count: { $sum: 1 },
+          totalWeight: { $sum: "$totalWeight" },
+        },
+      }
+    ]);
+
+    // Get recent production
+    const recentProduction = await ProductionData.find()
+      .populate("employees.employeeId", "name")
+      .sort({ productionDate: -1 })
+      .limit(5)
+      .select("batchNo materialName totalWeight totalBags machine shift productionDate");
+
+    res.status(200).json({
+      success: true,
+      data: {
+        pendingMaterials,
+        inProgressMaterials,
+        todaysProduction,
+        todaysWeight: todaysWeight[0]?.totalWeight || 0,
+        todaysBags: todaysWeight[0]?.totalBags || 0,
+        machineStats,
+        recentProduction
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message
+    });
+  }
+};
+
+// Get production by ID
+const getProductionById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const production = await ProductionData.findById(id).populate(
+      "employees.employeeId",
+      "name employeeId department phone email"
+    );
+    
+    if (!production) {
+      return res.status(404).json({
+        success: false,
+        message: "Production record not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: production,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message,
+    });
+  }
+};
+
+// Update production record
+const updateProduction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    const production = await ProductionData.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    }).populate("employees.employeeId", "name employeeId department");
+
+    if (!production) {
+      return res.status(404).json({
+        success: false,
+        message: "Production record not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: production,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message,
+    });
+  }
+};
+
+// Delete production record
+const deleteProduction = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const production = await ProductionData.findByIdAndDelete(id);
+
+    if (!production) {
+      return res.status(404).json({
+        success: false,
+        message: "Production record not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Production record deleted successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message,
+    });
+  }
+};
+
+// Get production list for POS (items with available weight to sell)
+const getProductionForPOS = async (req, res) => {
+  try {
+    const docs = await ProductionData.find({
+      $or: [
+        { availableWeight: { $gt: 0 } },
+        { availableWeight: { $exists: false } },
+      ],
+    })
+      .sort({ productionDate: -1 })
+      .lean();
+
+    const data = docs
+      .filter((doc) => (doc.availableWeight ?? doc.totalWeight ?? 0) > 0)
+      .map((doc) => ({
+        _id: doc._id,
+        batchNo: doc.batchNo,
+        materialName: doc.materialName,
+        quality: doc.quality || "Standard",
+        color: doc.color || "#FFFFFF",
+        totalWeight: doc.totalWeight,
+        availableWeight: doc.availableWeight ?? doc.totalWeight ?? 0,
+        totalBags: doc.totalBags,
+        productionDate: doc.productionDate,
+        machine: doc.machine,
+        shift: doc.shift,
+      }));
+
+    res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message,
+    });
+  }
+};
+
+// Export production data
+const exportProductionData = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    
+    const query = {};
+    if (startDate || endDate) {
+      query.productionDate = {};
+      if (startDate) {
+        query.productionDate.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        query.productionDate.$lte = new Date(endDate);
+      }
+    }
+
+    const productionData = await ProductionData.find(query)
+      .populate("employees.employeeId", "name employeeId department")
+      .sort({ productionDate: -1 });
+
+    // Format data for CSV/Excel
+    const formattedData = productionData.map(record => ({
+      "Batch No": record.batchNo,
+      Material: record.materialName,
+      Quality: record.quality,
+      Color: record.color,
+      "Total Weight (kg)": record.totalWeight,
+      "Total Bags": record.totalBags,
+      Machine: record.machine,
+      Shift: record.shift,
+      "Production Date": record.productionDate.toLocaleDateString(),
+      Employees: record.employees.map((e) => e.name).join(", "),
+      Status: record.status,
+      Notes: record.notes || "",
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: formattedData,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = {
+  getProcessingMaterials,
+  updateMaterialStatus,
+  createProductionRecord,
+  createProductionFromBatch,
+  getProductionData,
+  getProductionForPOS,
+  getProcessingDashboard,
+  getProductionById,
+  updateProduction,
+  deleteProduction,
+  exportProductionData,
+};
