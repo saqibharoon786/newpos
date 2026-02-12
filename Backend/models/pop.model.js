@@ -8,6 +8,7 @@ const purchaseSchema = new mongoose.Schema(
     weight: { type: String, required: true }, // Original total weight
     soldWeight: { type: Number, default: 0 }, // Total weight sold so far
     remainingWeight: { type: Number }, // Calculated: weight - soldWeight
+    productionConsumedWeight: { type: Number, default: 0 }, // Weight used in Start Process (factory); remaining for processing = weight - productionConsumedWeight
     quality: { type: String, required: false },
     
     // Add status field
@@ -45,14 +46,15 @@ const purchaseSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Add pre-save middleware to calculate remainingWeight
+// Add pre-save middleware to calculate remainingWeight (after sales and after weight sent to processing)
 purchaseSchema.pre('save', function(next) {
   const originalWeight = parseFloat(this.weight) || 0;
   const soldWeight = this.soldWeight || 0;
-  this.remainingWeight = originalWeight - soldWeight;
+  const productionConsumed = this.productionConsumedWeight || 0;
+  this.remainingWeight = Math.max(0, originalWeight - soldWeight - productionConsumed);
   
   // Update status based on remaining weight
-  if (this.remainingWeight === 0) {
+  if (this.remainingWeight <= 0) {
     this.status = 'sold_out';
   } else if (this.remainingWeight < originalWeight) {
     this.status = 'partially_sold';

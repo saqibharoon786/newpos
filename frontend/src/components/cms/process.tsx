@@ -1287,7 +1287,7 @@ const StartProcessFormModal = ({
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
-  initialMaterial?: { materialName: string; quality?: string } | null;
+  initialMaterial?: { materialName: string; quality?: string; popAvailableWeight?: number } | null;
   purchaseId?: string | null;
 }) => {
   const [materialName, setMaterialName] = useState("");
@@ -1295,6 +1295,8 @@ const StartProcessFormModal = ({
   const [selectedMachine, setSelectedMachine] = useState(machines[0]?.id || "");
   const [totalBags, setTotalBags] = useState("");
   const [totalWeight, setTotalWeight] = useState("");
+  const [weightUsedFromPOP, setWeightUsedFromPOP] = useState("");
+  const [machineOutputWeight, setMachineOutputWeight] = useState("");
   const [productionDate, setProductionDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [selectedColor, setSelectedColor] = useState("#FFFFFF");
   const [selectedShift, setSelectedShift] = useState<"morning" | "evening" | "night">("morning");
@@ -1302,6 +1304,8 @@ const StartProcessFormModal = ({
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const popAvailableWeight = initialMaterial?.popAvailableWeight ?? 0;
+  const isFromQueue = !!(purchaseId && popAvailableWeight > 0);
 
   const fetchEmployees = async () => {
     try {
@@ -1337,13 +1341,15 @@ const StartProcessFormModal = ({
       setSelectedMachine(machines[0]?.id || "");
       setTotalBags("");
       setTotalWeight("");
+      setWeightUsedFromPOP("");
+      setMachineOutputWeight("");
       setProductionDate(new Date().toISOString().slice(0, 10));
       setSelectedColor("#FFFFFF");
       setSelectedShift("morning");
       setSelectedEmployees([]);
       fetchEmployees();
     }
-  }, [open, initialMaterial?.materialName, initialMaterial?.quality]);
+  }, [open, initialMaterial?.materialName, initialMaterial?.quality, initialMaterial?.popAvailableWeight]);
 
   const handleEmployeeToggle = (employeeId: string) => {
     setSelectedEmployees((prev) =>
@@ -1353,8 +1359,9 @@ const StartProcessFormModal = ({
 
   const handleSubmit = async () => {
     const bags = parseInt(totalBags, 10);
-    const weightStr = String(totalWeight).trim().replace(",", ".");
+    const weightStr = isFromQueue ? String(machineOutputWeight).trim().replace(",", ".") : String(totalWeight).trim().replace(",", ".");
     const weight = parseFloat(weightStr);
+    const usedFromPOP = isFromQueue ? parseFloat(String(weightUsedFromPOP).trim().replace(",", ".")) : 0;
     if (!materialName.trim()) {
       toast({ title: "Error", description: "Please enter material name", variant: "destructive" });
       return;
@@ -1363,12 +1370,28 @@ const StartProcessFormModal = ({
       toast({ title: "Error", description: "Please enter number of bags", variant: "destructive" });
       return;
     }
-    if (totalWeight.trim() === "" || isNaN(weight) || weight <= 0) {
-      toast({
-        title: "Enter custom weight",
-        description: "Enter the weight you produced (any number > 0). Custom value, not from POP.",
-        variant: "destructive",
-      });
+    if (isFromQueue) {
+      if (isNaN(usedFromPOP) || usedFromPOP <= 0 || usedFromPOP > popAvailableWeight) {
+        toast({
+          title: "Invalid weight used from POP",
+          description: `Enter a value between 0 and ${popAvailableWeight} kg (available from POP).`,
+          variant: "destructive",
+        });
+        return;
+      }
+      if (totalWeight.trim() === "" && machineOutputWeight.trim() === "") {
+        toast({ title: "Error", description: "Please enter machine output weight (e.g. 200 or 300 kg).", variant: "destructive" });
+        return;
+      }
+    } else {
+      if (totalWeight.trim() === "" || isNaN(weight) || weight <= 0) {
+        toast({ title: "Error", description: "Please enter machine output / total weight.", variant: "destructive" });
+        return;
+      }
+    }
+    const machineOutput = isFromQueue ? (machineOutputWeight.trim() ? parseFloat(String(machineOutputWeight).trim().replace(",", ".")) : weight) : weight;
+    if (isNaN(machineOutput) || machineOutput <= 0) {
+      toast({ title: "Error", description: "Machine output weight must be greater than 0.", variant: "destructive" });
       return;
     }
     if (!selectedMachine) {
@@ -1391,7 +1414,7 @@ const StartProcessFormModal = ({
         materialName: materialName.trim(),
         machine: selectedMachine,
         totalBags: bags,
-        totalWeight: weight,
+        totalWeight: machineOutput,
         productionDate: productionDate || new Date().toISOString().slice(0, 10),
         quality: quality.trim() || "Standard",
         color: selectedColor,
@@ -1400,6 +1423,7 @@ const StartProcessFormModal = ({
         status: "completed",
       };
       if (purchaseId) payload.purchaseId = purchaseId;
+      if (isFromQueue && !isNaN(usedFromPOP)) payload.weightUsedFromPOP = usedFromPOP;
       const response = await api.post(`${PROCESSING_API_URL}/production`, payload);
       if (response.data.success) {
         toast({ title: "Success", description: "Production saved. It appears in Production List and can be sold from POS." });
@@ -1473,18 +1497,57 @@ const StartProcessFormModal = ({
                     className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1.5">Total Weight Produced (kg) *</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={totalWeight}
-                    onChange={(e) => setTotalWeight(e.target.value)}
-                    placeholder="e.g. 8000, 5000 — custom weight (no limit)"
-                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Custom weight only — not from POP. Any value (e.g. 8000) is saved to Production List.</p>
-                </div>
+                {isFromQueue ? (
+                  <>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1.5">POP / Actual weight (kg)</label>
+                      <input
+                        type="text"
+                        readOnly
+                        value={popAvailableWeight}
+                        className="w-full bg-cms-card-hover border border-border rounded-md px-3 py-2.5 text-sm text-foreground cursor-not-allowed"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">Available from POP for this material. Remaining after use will stay in queue.</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1.5">Weight used from POP (kg) *</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={weightUsedFromPOP}
+                        onChange={(e) => setWeightUsedFromPOP(e.target.value)}
+                        placeholder={`e.g. 400 (max ${popAvailableWeight})`}
+                        className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">How much you put in the machine. Remaining = {popAvailableWeight} − used.</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1.5">Machine output weight (kg) *</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={machineOutputWeight}
+                        onChange={(e) => setMachineOutputWeight(e.target.value)}
+                        placeholder="e.g. 200 or 300 — output from machine"
+                        className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">Weight produced by machine. Saved to Production List.</p>
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1.5">Total Weight Produced (kg) *</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={totalWeight}
+                      onChange={(e) => setTotalWeight(e.target.value)}
+                      placeholder="e.g. 8000, 5000 — custom weight (no limit)"
+                      className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Custom weight only — not from POP. Any value (e.g. 8000) is saved to Production List.</p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1.5">Production Date *</label>
                   <input
@@ -1621,8 +1684,14 @@ const StartProcessFormModal = ({
                 isSubmitting ||
                 !materialName.trim() ||
                 !totalBags ||
-                !totalWeight ||
-                selectedEmployees.length === 0
+                selectedEmployees.length === 0 ||
+                (isFromQueue
+                  ? !weightUsedFromPOP.trim() ||
+                    parseFloat(String(weightUsedFromPOP).replace(",", ".")) <= 0 ||
+                    parseFloat(String(weightUsedFromPOP).replace(",", ".")) > popAvailableWeight ||
+                    !machineOutputWeight.trim() ||
+                    parseFloat(String(machineOutputWeight).replace(",", ".")) <= 0
+                  : !totalWeight.trim() || parseFloat(String(totalWeight).replace(",", ".")) <= 0)
               }
               className="px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 disabled:opacity-50"
             >
@@ -1815,7 +1884,28 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
     }
     return true;
   });
-  
+
+  // Material summary: total produced, sold, remaining per material
+  const materialSummary = React.useMemo(() => {
+    const byMaterial: Record<string, { total: number; remaining: number }> = {};
+    productionData.forEach((prod) => {
+      const name = prod.materialName || "Unknown";
+      const total = prod.outputWeight ?? 0;
+      const remaining = prod.availableWeight ?? total ?? 0;
+      if (!byMaterial[name]) {
+        byMaterial[name] = { total: 0, remaining: 0 };
+      }
+      byMaterial[name].total += total;
+      byMaterial[name].remaining += remaining;
+    });
+    return Object.entries(byMaterial).map(([materialName, { total, remaining }]) => ({
+      materialName,
+      total: Math.round(total * 10) / 10,
+      sold: Math.round((total - remaining) * 10) / 10,
+      remaining: Math.round(remaining * 10) / 10,
+    }));
+  }, [productionData]);
+
   return (
     <div className="bg-cms-card rounded-lg p-6 border border-border">
       <div className="flex items-center justify-between mb-6">
@@ -1870,6 +1960,37 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
           </button>
         </div>
       </div>
+
+      {/* Material Summary: total produced, sold, remaining per material */}
+      {materialSummary.length > 0 && (
+        <div className="mb-6">
+          <h4 className="text-sm font-medium text-foreground mb-3">Material Summary</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {materialSummary.map((row) => (
+              <div
+                key={row.materialName}
+                className="bg-cms-card-hover border border-border rounded-lg p-4"
+              >
+                <div className="font-medium text-foreground mb-3">{row.materialName}</div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total produced</span>
+                    <span className="font-semibold text-foreground">{row.total} kg</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Sold</span>
+                    <span className="font-semibold text-green-600">{row.sold} kg</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Remaining</span>
+                    <span className="font-semibold text-primary">{row.remaining} kg</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       
       {filteredData.length === 0 ? (
         <div className="text-center py-12">
@@ -2173,32 +2294,33 @@ export function ProcessingModule() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch production history first (to get purchaseIds already used - those will be removed from queue)
+      // Fetch production history
       const productionResponse = await axios.get(`${PROCESSING_API_URL}/production`);
-      let usedPurchaseIds = new Set<string>();
       if (productionResponse.data.success) {
-        const prodData = productionResponse.data.data || [];
-        setProductionData(prodData);
-        prodData.forEach((p: { purchaseId?: string | null }) => {
-          if (p.purchaseId) usedPurchaseIds.add(String(p.purchaseId));
-        });
+        setProductionData(productionResponse.data.data || []);
       }
 
-      // Fetch materials from purchases that are available for processing; exclude purchases already used in production
+      // Fetch materials from POP: remaining for processing = weight - productionConsumedWeight
       const purchasesResponse = await axios.get(`${API_BASE_URL}/api/purchases/get-all`);
       if (purchasesResponse.data.success) {
         const purchases = purchasesResponse.data.data || [];
         const processingMaterials: ProcessingMaterial[] = purchases
-          .filter((p: any) => p.status === 'available' && p.remainingWeight > 0 && !usedPurchaseIds.has(String(p._id)))
-          .map((purchase: any) => ({
+          .map((purchase: any) => {
+            const originalWeight = parseFloat(purchase.weight) || 0;
+            const productionConsumed = parseFloat(purchase.productionConsumedWeight) || 0;
+            const availableForProcessing = originalWeight - productionConsumed;
+            return { purchase, availableForProcessing, originalWeight };
+          })
+          .filter(({ availableForProcessing }: { availableForProcessing: number }) => availableForProcessing > 0)
+          .map(({ purchase, availableForProcessing, originalWeight }: { purchase: any; availableForProcessing: number; originalWeight: number }) => ({
             _id: purchase._id,
             purchaseId: purchase._id,
             receiptNo: purchase.receiptNo || 'N/A',
             materialName: purchase.materialName || 'Unknown',
             quality: purchase.quality || 'Unknown',
             color: purchase.materialColor || '#FFFFFF',
-            originalWeight: parseFloat(purchase.weight) || 0,
-            availableWeight: purchase.remainingWeight || parseFloat(purchase.weight) || 0,
+            originalWeight,
+            availableWeight: availableForProcessing,
             vendor: purchase.vendor || 'Unknown',
             purchaseDate: purchase.purchaseDate || purchase.createdAt,
             status: 'pending',
@@ -2391,7 +2513,11 @@ export function ProcessingModule() {
         }}
         initialMaterial={
           materialForStartProcess
-            ? { materialName: materialForStartProcess.materialName, quality: materialForStartProcess.quality }
+            ? {
+                materialName: materialForStartProcess.materialName,
+                quality: materialForStartProcess.quality,
+                popAvailableWeight: materialForStartProcess.availableWeight,
+              }
             : null
         }
         purchaseId={materialForStartProcess?.purchaseId ?? null}

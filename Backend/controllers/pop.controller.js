@@ -151,24 +151,34 @@ const addPurchase = async (req, res) => {
     console.log('=== END addPurchase ===');
   }
 };
-// Get All Purchases
+// Get All Purchases (remaining weight = original - sold - productionConsumed, so it shows everywhere in POP)
 const getPurchases = async (req, res) => {
   try {
-    const purchases = await Purchase.find().sort({ createdAt: -1 });
-    res.status(200).json({ success: true, data: purchases });
+    const purchases = await Purchase.find().sort({ createdAt: -1 }).lean();
+    const data = purchases.map((p) => {
+      const totalWeight = parseFloat(p.weight) || 0;
+      const sold = p.soldWeight || 0;
+      const productionConsumed = p.productionConsumedWeight || 0;
+      const remainingWeight = Math.max(0, totalWeight - sold - productionConsumed);
+      return { ...p, remainingWeight };
+    });
+    res.status(200).json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// Get Single Purchase
+// Get Single Purchase (include computed remaining weight for POP display)
 const getPurchaseById = async (req, res) => {
   try {
-    const purchase = await Purchase.findById(req.params.id);
+    const purchase = await Purchase.findById(req.params.id).lean();
     if (!purchase)
       return res.status(404).json({ success: false, message: "Not Found" });
-
-    res.status(200).json({ success: true, data: purchase });
+    const totalWeight = parseFloat(purchase.weight) || 0;
+    const sold = purchase.soldWeight || 0;
+    const productionConsumed = purchase.productionConsumedWeight || 0;
+    const remainingWeight = Math.max(0, totalWeight - sold - productionConsumed);
+    res.status(200).json({ success: true, data: { ...purchase, remainingWeight } });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -239,13 +249,14 @@ const getPurchaseWithRemainingWeight = async (req, res) => {
     });
     
     const totalWeight = parseFloat(purchase.weight) || 0;
-    const remainingWeight = totalWeight - soldWeight;
+    const productionConsumed = purchase.productionConsumedWeight || 0;
+    const remainingWeight = Math.max(0, totalWeight - soldWeight - productionConsumed);
     
     const purchaseWithRemaining = {
       ...purchase.toObject(),
       totalWeight,
       soldWeight,
-      remainingWeight: remainingWeight > 0 ? remainingWeight : 0,
+      remainingWeight,
       salesCount: sales.length
     };
     
@@ -286,23 +297,25 @@ const getAllPurchasesWithRemainingWeight = async (req, res) => {
           });
           
           const totalWeight = parseFloat(purchase.weight) || 0;
-          const remainingWeight = totalWeight - soldWeight;
+          const productionConsumed = purchase.productionConsumedWeight || 0;
+          const remainingWeight = Math.max(0, totalWeight - soldWeight - productionConsumed);
           
           return {
             ...purchase.toObject(),
             totalWeight,
             soldWeight,
-            remainingWeight: remainingWeight > 0 ? remainingWeight : 0,
+            remainingWeight,
             salesCount: sales.length
           };
         } catch (error) {
           console.error(`Error calculating for ${purchase.materialName}:`, error);
           const totalWeight = parseFloat(purchase.weight) || 0;
+          const productionConsumed = purchase.productionConsumedWeight || 0;
           return {
             ...purchase.toObject(),
             totalWeight,
             soldWeight: 0,
-            remainingWeight: totalWeight,
+            remainingWeight: Math.max(0, totalWeight - productionConsumed),
             salesCount: 0
           };
         }

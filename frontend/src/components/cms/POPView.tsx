@@ -3725,7 +3725,8 @@ export function POPView() {
         const purchasesWithRemaining = purchasesData.map((purchase: any) => {
           const originalWeight = parseFloat(purchase.weight) || 0;
           const soldWeight = purchase.soldWeight || 0;
-          const remainingWeight = purchase.remainingWeight || (originalWeight - soldWeight);
+          const productionConsumed = purchase.productionConsumedWeight || 0;
+          const remainingWeight = purchase.remainingWeight ?? Math.max(0, originalWeight - soldWeight - productionConsumed);
           
           const parsedPrice = parseConcatenatedPrices(purchase.price);
           

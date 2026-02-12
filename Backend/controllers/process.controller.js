@@ -126,22 +126,32 @@ const updateMaterialStatus = async (req, res) => {
 const createProductionRecord = async (req, res) => {
   try {
     const productionData = req.body;
-    
-    // Generate batch number
+    const purchaseId = productionData.purchaseId;
+    const weightUsedFromPOP = productionData.weightUsedFromPOP != null ? parseFloat(productionData.weightUsedFromPOP) : null;
+
+    if (purchaseId && weightUsedFromPOP != null && !isNaN(weightUsedFromPOP) && weightUsedFromPOP > 0) {
+      const purchase = await Purchase.findById(purchaseId);
+      if (purchase) {
+        const current = parseFloat(purchase.productionConsumedWeight) || 0;
+        purchase.productionConsumedWeight = current + weightUsedFromPOP;
+        await purchase.save();
+      }
+    }
+
+    const totalWeight = productionData.totalWeight ?? productionData.outputWeight ?? productionData.machineOutputWeight ?? 0;
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, "0");
     const day = String(today.getDate()).padStart(2, "0");
     const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
-    const batchNo = `BATCH-${year}${month}${day}-${randomNum}`;
-    
-    const totalWeight = productionData.totalWeight ?? productionData.outputWeight ?? 0;
+    const batchNo = productionData.batchNo || `BATCH-${year}${month}${day}-${randomNum}`;
+
     const record = new ProductionData({
       ...productionData,
       batchNo,
       productionDate: productionData.productionDate || new Date(),
       availableWeight: productionData.availableWeight ?? totalWeight,
-      purchaseId: productionData.purchaseId || undefined,
+      purchaseId: purchaseId || undefined,
     });
 
     await record.save();
