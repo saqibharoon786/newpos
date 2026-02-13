@@ -14,6 +14,7 @@ const saleSchema = new mongoose.Schema(
     purchaseTime: { type: String },
 
     branch: { type: String, required: false },
+    quality: { type: String, required: false },
     materialColor: { type: String, required: true },
 
     // Source: either purchase (POP) or production

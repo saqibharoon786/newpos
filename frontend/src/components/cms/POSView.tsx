@@ -27,6 +27,7 @@ interface Sale {
   unit: string;
   purchaseDate: string;
   branch: string;
+  quality?: string;
   materialColor: string;
   actualPrice: string;
   productionCost: string;
@@ -1219,9 +1220,38 @@ export function POSView() {
 
   const totals = calculateTotals();
 
-  // Customer-wise summary (from filtered sales)
+  // Color hex to name helper for customer summary
+  const colorOptions: { name: string; value: string }[] = [
+    { name: "White", value: "#FFFFFF" },
+    { name: "Yellow", value: "#FACC15" },
+    { name: "Red", value: "#EF4444" },
+    { name: "Blue", value: "#2563EB" },
+    { name: "Orange", value: "#F97316" },
+    { name: "Green", value: "#22C55E" },
+    { name: "Black", value: "#000000" },
+    { name: "Pink", value: "#EC4899" },
+    { name: "Purple", value: "#A855F7" },
+    { name: "Gray", value: "#6B7280" },
+    { name: "Brown", value: "#92400E" },
+  ];
+  const getColorName = (hex: string) => {
+    const c = colorOptions.find(o => (o.value || "").toLowerCase() === (hex || "").toLowerCase());
+    return c ? c.name : (hex || "—");
+  };
+
+  // Customer-wise summary (from filtered sales) with quality-wise weight and color
   const customerSummary = useMemo(() => {
-    const byCustomer: Record<string, { sales: number; totalAmount: number; amountPaid: number; remainingAmount: number; weight: number; units: number }> = {};
+    const byCustomer: Record<string, {
+      sales: number;
+      totalAmount: number;
+      amountPaid: number;
+      remainingAmount: number;
+      weight: number;
+      units: number;
+      qualities: Set<string>;
+      colors: Set<string>;
+      qualityWeight: Record<string, number>;
+    }> = {};
     filteredSales.forEach((sale) => {
       const name = (sale.buyerName || "Unknown").trim() || "Unknown";
       const totalAmount = parseFloat(sale.finalAmount || sale.sellingPrice) || 0;
@@ -1229,8 +1259,20 @@ export function POSView() {
       const remaining = sale.remainingAmount || 0;
       const weight = parseFloat(sale.weight) || 0;
       const units = parseInt(sale.unit, 10) || 0;
+      const quality = (sale as Sale & { quality?: string }).quality?.trim() || "Unknown";
+      const colorHex = sale.materialColor?.trim() || "";
       if (!byCustomer[name]) {
-        byCustomer[name] = { sales: 0, totalAmount: 0, amountPaid: 0, remainingAmount: 0, weight: 0, units: 0 };
+        byCustomer[name] = {
+          sales: 0,
+          totalAmount: 0,
+          amountPaid: 0,
+          remainingAmount: 0,
+          weight: 0,
+          units: 0,
+          qualities: new Set<string>(),
+          colors: new Set<string>(),
+          qualityWeight: {},
+        };
       }
       byCustomer[name].sales += 1;
       byCustomer[name].totalAmount += totalAmount;
@@ -1238,10 +1280,22 @@ export function POSView() {
       byCustomer[name].remainingAmount += remaining;
       byCustomer[name].weight += weight;
       byCustomer[name].units += units;
+      if (quality) byCustomer[name].qualities.add(quality);
+      if (colorHex) byCustomer[name].colors.add(colorHex);
+      const qKey = quality || "Unknown";
+      byCustomer[name].qualityWeight[qKey] = (byCustomer[name].qualityWeight[qKey] || 0) + weight;
     });
     return Object.entries(byCustomer).map(([customerName, data]) => ({
       customerName,
-      ...data,
+      sales: data.sales,
+      totalAmount: data.totalAmount,
+      amountPaid: data.amountPaid,
+      remainingAmount: data.remainingAmount,
+      weight: data.weight,
+      units: data.units,
+      qualities: Array.from(data.qualities).filter(Boolean).sort(),
+      colors: Array.from(data.colors).filter(Boolean),
+      qualityWeight: data.qualityWeight,
     })).sort((a, b) => b.totalAmount - a.totalAmount);
   }, [filteredSales]);
 
@@ -1377,6 +1431,42 @@ export function POSView() {
                     <span className={`font-semibold ${row.remainingAmount > 0 ? "text-red-600" : "text-muted-foreground"}`}>
                       Rs. {formatCurrency(row.remainingAmount)}
                     </span>
+                  </div>
+                  <div className="pt-1">
+                    <span className="text-xs text-muted-foreground block mb-1">Quality (weight):</span>
+                    {row.qualityWeight && Object.keys(row.qualityWeight).length > 0 ? (
+                      <div className="space-y-1">
+                        {Object.entries(row.qualityWeight)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([q, w]) => (
+                            <div key={q} className="flex justify-between items-center text-xs">
+                              <span className="font-medium text-foreground">{q}</span>
+                              <span className="font-semibold text-primary">{Number(w).toLocaleString()} kg</span>
+                            </div>
+                          ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-foreground">—</span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground shrink-0">Color:</span>
+                    {row.colors.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {row.colors.map((hex) => (
+                          <span key={hex} className="inline-flex items-center gap-1">
+                            <span
+                              className="w-3 h-3 rounded-full border border-border shrink-0"
+                              style={{ backgroundColor: hex }}
+                              title={getColorName(hex)}
+                            />
+                            <span className="text-xs text-foreground">{getColorName(hex)}</span>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-foreground">—</span>
+                    )}
                   </div>
                   <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t border-border">
                     <span>{row.weight} kg</span>

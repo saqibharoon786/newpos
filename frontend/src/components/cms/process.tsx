@@ -513,7 +513,13 @@ const ProcessingDashboard = ({
   );
 };
 
-// Processing Queue Component
+// Helper: get color name from hex for display
+const getColorName = (hex: string) => {
+  const c = colorOptions.find(o => o.value.toLowerCase() === (hex || "").toLowerCase());
+  return c ? c.name : (hex || "Unknown");
+};
+
+// Processing Queue Component - grouped by quality + color, with quality/color filters and section total weight
 const ProcessingQueue = ({
   materials,
   onStartProcessing,
@@ -521,30 +527,47 @@ const ProcessingQueue = ({
 }: {
   materials: ProcessingMaterial[];
   onStartProcessing: (material: ProcessingMaterial) => void;
-  onStartProcess?: (material: ProcessingMaterial) => void;
+  onStartProcess?: (material: ProcessingMaterial, groupTotalWeight?: number, groupMaterials?: ProcessingMaterial[]) => void;
 }) => {
   const [selectedMaterial, setSelectedMaterial] = useState<ProcessingMaterial | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterQuality, setFilterQuality] = useState<string>('all');
+  const [filterColor, setFilterColor] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date' | 'weight' | 'name'>('date');
   
-  const filteredMaterials = materials.filter(material => {
-    if (filterStatus === 'all') return true;
-    return material.status === filterStatus;
-  }).sort((a, b) => {
-    switch (sortBy) {
-      case 'date':
-        return new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime();
-      case 'weight':
-        return b.availableWeight - a.availableWeight;
-      case 'name':
-        return a.materialName.localeCompare(b.materialName);
-      default:
-        return 0;
-    }
-  });
+  const filteredMaterials = materials
+    .filter(material => {
+      if (filterStatus !== 'all' && material.status !== filterStatus) return false;
+      if (filterQuality !== 'all' && material.quality !== filterQuality) return false;
+      if (filterColor !== 'all' && (material.color || '#FFFFFF') !== filterColor) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case 'date':
+          return new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime();
+        case 'weight':
+          return b.availableWeight - a.availableWeight;
+        case 'name':
+          return a.materialName.localeCompare(b.materialName);
+        default:
+          return 0;
+      }
+    });
   
   const pendingMaterials = materials.filter(m => m.status === 'pending');
+  const uniqueQualities = Array.from(new Set(materials.map(m => m.quality).filter(Boolean))).sort();
+  const uniqueColors = Array.from(new Set(materials.map(m => m.color || '#FFFFFF')));
+
+  type GroupKey = string;
+  const groups = filteredMaterials.reduce<Record<GroupKey, ProcessingMaterial[]>>((acc, m) => {
+    const key = `${m.quality}|${m.color || '#FFFFFF'}`;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(m);
+    return acc;
+  }, {} as Record<GroupKey, ProcessingMaterial[]>);
+  const groupEntries = Object.entries(groups) as [string, ProcessingMaterial[]][];
   
   return (
     <div className="bg-cms-card rounded-lg p-6 border border-border">
@@ -558,9 +581,9 @@ const ProcessingQueue = ({
             {pendingMaterials.length} materials pending processing
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Filter:</span>
+            <span className="text-xs text-muted-foreground">Status:</span>
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
@@ -571,6 +594,32 @@ const ProcessingQueue = ({
               <option value="in_progress">In Progress</option>
               <option value="processed">Processed</option>
               <option value="on_hold">On Hold</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Quality:</span>
+            <select
+              value={filterQuality}
+              onChange={(e) => setFilterQuality(e.target.value)}
+              className="bg-cms-card-hover border border-border rounded-md px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="all">All</option>
+              {uniqueQualities.map(q => (
+                <option key={q} value={q}>{q}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Color:</span>
+            <select
+              value={filterColor}
+              onChange={(e) => setFilterColor(e.target.value)}
+              className="bg-cms-card-hover border border-border rounded-md px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="all">All</option>
+              {uniqueColors.map(hex => (
+                <option key={hex} value={hex}>{getColorName(hex)}</option>
+              ))}
             </select>
           </div>
           <div className="flex items-center gap-2">
@@ -588,70 +637,71 @@ const ProcessingQueue = ({
         </div>
       </div>
       
-      {filteredMaterials.length === 0 ? (
+      {groupEntries.length === 0 ? (
         <div className="text-center py-12">
           <Package className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <p className="text-muted-foreground">No materials found</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredMaterials.map((material) => (
-            <div key={material._id} className="flex items-center justify-between p-4 bg-cms-card-hover rounded-lg border border-border hover:border-primary transition-colors">
-              <div className="flex items-center gap-4">
-                <div 
-                  className="w-4 h-4 rounded-full border border-border"
-                  style={{ backgroundColor: material.color || '#FFFFFF' }}
-                />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">
-                      {material.materialName}
-                    </span>
-                    <StatusBadge status={material.status} />
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Quality: {material.quality} • Receipt: {material.receiptNo} • Vendor: {material.vendor}
-                  </div>
-                  <div className="flex items-center gap-4 mt-2 text-xs">
-                    <div className="flex items-center gap-1">
-                      <Scale className="w-3 h-3" />
-                      <span className="text-foreground">
-                        Available: <span className="font-semibold">{material.availableWeight} kg</span>
-                      </span>
+          {groupEntries.map(([groupKey, groupMaterials]) => {
+            const items = Array.isArray(groupMaterials) ? groupMaterials : [];
+            const first = items[0];
+            if (!first) return null;
+            const quality = first.quality;
+            const colorHex = first.color || '#FFFFFF';
+            const colorName = getColorName(colorHex);
+            const totalWeightKg = items.reduce((sum, m) => sum + m.availableWeight, 0);
+            return (
+              <div
+                key={groupKey}
+                className="flex items-center justify-between p-4 rounded-lg border border-border bg-cms-card-hover hover:border-primary transition-colors"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="w-6 h-6 rounded-full border border-border shrink-0"
+                    style={{ backgroundColor: colorHex }}
+                    title={colorName}
+                  />
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">
+                      Quality: {quality} • {colorName} color
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      <span className="text-muted-foreground">
-                        {new Date(material.purchaseDate).toLocaleDateString()}
+                    <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Scale className="w-3.5 h-3.5" />
+                        <span className="font-semibold text-primary">Total weight: {totalWeightKg} kg</span>
                       </span>
+                      {items.length > 1 && (
+                        <span>({items.length} receipts combined)</span>
+                      )}
                     </div>
                   </div>
                 </div>
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setSelectedMaterial(material);
-                    setShowDetails(true);
-                  }}
-                  className="p-2 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
-                  title="View Details"
-                >
-                  <Eye className="w-4 h-4" />
-                </button>
-                {onStartProcess && (
-                  <button
-                    onClick={() => onStartProcess(material)}
-                    className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 transition-colors"
-                  >
-                    <ArrowRight className="w-4 h-4" />
-                    Start Process
-                  </button>
+                {onStartProcess && items.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setSelectedMaterial(first);
+                        setShowDetails(true);
+                      }}
+                      className="p-2 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                      title="View details"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => onStartProcess(items[0], totalWeightKg, items)}
+                      className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 transition-colors"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      Start Process
+                    </button>
+                  </div>
                 )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       
@@ -1289,7 +1339,13 @@ const StartProcessFormModal = ({
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
-  initialMaterial?: { materialName: string; quality?: string; popAvailableWeight?: number } | null;
+  initialMaterial?: {
+    materialName: string;
+    quality?: string;
+    popAvailableWeight?: number;
+    color?: string;
+    materialOptions?: { materialName: string; purchaseId: string }[];
+  } | null;
   purchaseId?: string | null;
 }) => {
   const [materialName, setMaterialName] = useState("");
@@ -1346,12 +1402,12 @@ const StartProcessFormModal = ({
       setWeightUsedFromPOP("");
       setMachineOutputWeight("");
       setProductionDate(new Date().toISOString().slice(0, 10));
-      setSelectedColor("#FFFFFF");
+      setSelectedColor(initialMaterial?.color || "#FFFFFF");
       setSelectedShift("morning");
       setSelectedEmployees([]);
       fetchEmployees();
     }
-  }, [open, initialMaterial?.materialName, initialMaterial?.quality, initialMaterial?.popAvailableWeight]);
+  }, [open, initialMaterial?.materialName, initialMaterial?.quality, initialMaterial?.popAvailableWeight, initialMaterial?.color, initialMaterial?.materialOptions]);
 
   const handleEmployeeToggle = (employeeId: string) => {
     setSelectedEmployees((prev) =>
@@ -1424,7 +1480,10 @@ const StartProcessFormModal = ({
         employees: employeesPayload,
         status: "completed",
       };
-      if (purchaseId) payload.purchaseId = purchaseId;
+      const effectivePurchaseId = (initialMaterial?.materialOptions && materialName.trim())
+      ? initialMaterial.materialOptions.find(o => o.materialName.trim() === materialName.trim())?.purchaseId
+      : purchaseId;
+    if (effectivePurchaseId) payload.purchaseId = effectivePurchaseId;
       if (isFromQueue && !isNaN(usedFromPOP)) payload.weightUsedFromPOP = usedFromPOP;
       const response = await api.post(`${PROCESSING_API_URL}/production`, payload);
       if (response.data.success) {
@@ -1468,6 +1527,21 @@ const StartProcessFormModal = ({
             <div>
               <h3 className="text-base font-semibold text-foreground mb-4">Material Information</h3>
               <div className="space-y-4">
+                {initialMaterial?.materialOptions && initialMaterial.materialOptions.length > 1 && (
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1.5">Material (same quality & color)</label>
+                    <select
+                      value={materialName}
+                      onChange={(e) => setMaterialName(e.target.value)}
+                      className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      {initialMaterial.materialOptions.map((opt) => (
+                        <option key={opt.purchaseId} value={opt.materialName}>{opt.materialName}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground mt-1">Different materials in queue with same quality & color. Choose which one you are processing (e.g. steel).</p>
+                  </div>
+                )}
                 <div className="bg-cms-card-hover rounded-lg p-4 border border-border">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1477,7 +1551,7 @@ const StartProcessFormModal = ({
                           type="text"
                           value={materialName}
                           onChange={(e) => setMaterialName(e.target.value)}
-                          placeholder="e.g. HDPE, LDPE"
+                          placeholder="e.g. HDPE, LDPE, steel"
                           className="w-full bg-transparent border-b border-border pb-1 text-foreground focus:outline-none focus:ring-0"
                         />
                       </div>
@@ -1902,26 +1976,46 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
     if (currentPage > totalPages && totalPages >= 1) setCurrentPage(totalPages);
   }, [totalPages, currentPage]);
 
-  // Material summary: total produced, sold, remaining per material
-  const materialSummary = React.useMemo(() => {
-    const byMaterial: Record<string, { total: number; remaining: number }> = {};
+  // Color-wise weight summary (same style as POP): total produced, sold, remaining per color + quality breakdown
+  const colorSummary = React.useMemo(() => {
+    const byColor: Record<string, {
+      totalWeight: number;
+      soldWeight: number;
+      remainingWeight: number;
+      qualities: Record<string, { totalWeight: number; soldWeight: number; remainingWeight: number }>;
+    }> = {};
     productionData.forEach((prod) => {
-      const name = prod.materialName || "Unknown";
+      const colorHex = prod.color || "#FFFFFF";
+      const colorName = getColorName(colorHex);
+      const quality = prod.quality || "Unknown";
       const total = prod.outputWeight ?? 0;
       const remaining = prod.availableWeight ?? total ?? 0;
-      if (!byMaterial[name]) {
-        byMaterial[name] = { total: 0, remaining: 0 };
+      const sold = total - remaining;
+      if (!byColor[colorName]) {
+        byColor[colorName] = {
+          totalWeight: 0,
+          soldWeight: 0,
+          remainingWeight: 0,
+          qualities: {},
+        };
       }
-      byMaterial[name].total += total;
-      byMaterial[name].remaining += remaining;
+      byColor[colorName].totalWeight += total;
+      byColor[colorName].soldWeight += sold;
+      byColor[colorName].remainingWeight += remaining;
+      if (!byColor[colorName].qualities[quality]) {
+        byColor[colorName].qualities[quality] = { totalWeight: 0, soldWeight: 0, remainingWeight: 0 };
+      }
+      byColor[colorName].qualities[quality].totalWeight += total;
+      byColor[colorName].qualities[quality].soldWeight += sold;
+      byColor[colorName].qualities[quality].remainingWeight += remaining;
     });
-    return Object.entries(byMaterial).map(([materialName, { total, remaining }]) => ({
-      materialName,
-      total: Math.round(total * 10) / 10,
-      sold: Math.round((total - remaining) * 10) / 10,
-      remaining: Math.round(remaining * 10) / 10,
-    }));
+    return byColor;
   }, [productionData]);
+
+  const getColorHex = (colorName: string) => {
+    const c = colorOptions.find(o => o.name.toLowerCase() === colorName.toLowerCase());
+    return c ? c.value : "#CCCCCC";
+  };
 
   return (
     <div className="bg-cms-card rounded-lg p-6 border border-border">
@@ -1978,33 +2072,74 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
         </div>
       </div>
 
-      {/* Material Summary: total produced, sold, remaining per material */}
-      {materialSummary.length > 0 && (
+      {/* Color-wise Weight Summary (same as POP style) */}
+      {Object.keys(colorSummary).length > 0 && (
         <div className="mb-6">
-          <h4 className="text-sm font-medium text-foreground mb-3">Material Summary</h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {materialSummary.map((row) => (
-              <div
-                key={row.materialName}
-                className="bg-cms-card-hover border border-border rounded-lg p-4"
-              >
-                <div className="font-medium text-foreground mb-3">{row.materialName}</div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total produced</span>
-                    <span className="font-semibold text-foreground">{row.total} kg</span>
+          <h4 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-gradient-to-r from-red-500 to-blue-500" />
+            Color-wise Weight Summary
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {Object.entries(colorSummary)
+              .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
+              .map(([colorName, data]) => {
+                const colorHex = getColorHex(colorName);
+                const total = Math.round(data.totalWeight * 10) / 10;
+                const sold = Math.round(data.soldWeight * 10) / 10;
+                const remaining = Math.round(data.remainingWeight * 10) / 10;
+                return (
+                  <div key={colorName} className="bg-cms-table-header rounded-lg p-3 border border-border">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-4 h-4 rounded-full border border-border"
+                          style={{ backgroundColor: colorHex }}
+                        />
+                        <span className="text-sm font-medium text-foreground capitalize">{colorName}</span>
+                      </div>
+                      <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded">
+                        {total.toLocaleString()} kg
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Total Produced:</span>
+                        <span className="font-medium text-foreground">{total.toLocaleString()} kg</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Sold:</span>
+                        <span className="font-medium text-green-600">{sold.toLocaleString()} kg</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Remaining:</span>
+                        <span className="font-medium text-primary">{remaining.toLocaleString()} kg</span>
+                      </div>
+                    </div>
+                    {Object.keys(data.qualities).length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <div className="text-xs text-muted-foreground mb-2">Breakdown by Quality:</div>
+                        <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                          {Object.entries(data.qualities)
+                            .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
+                            .map(([quality, qData]) => (
+                              <div key={quality} className="flex justify-between items-center text-xs">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full bg-primary/50" />
+                                  <span className="text-foreground">{quality}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-primary">{Math.round(qData.remainingWeight * 10) / 10} kg</span>
+                                  <span className="text-muted-foreground">/</span>
+                                  <span className="text-foreground">{Math.round(qData.totalWeight * 10) / 10} kg</span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Sold</span>
-                    <span className="font-semibold text-green-600">{row.sold} kg</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Remaining</span>
-                    <span className="font-semibold text-primary">{row.remaining} kg</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+                );
+              })}
           </div>
         </div>
       )}
@@ -2367,6 +2502,8 @@ export function ProcessingModule() {
   const [showStartProcessingModal, setShowStartProcessingModal] = useState(false);
   const [showStartProcessFormModal, setShowStartProcessFormModal] = useState(false);
   const [materialForStartProcess, setMaterialForStartProcess] = useState<ProcessingMaterial | null>(null);
+  const [groupTotalWeight, setGroupTotalWeight] = useState<number | null>(null);
+  const [groupMaterials, setGroupMaterials] = useState<ProcessingMaterial[] | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -2566,8 +2703,10 @@ export function ProcessingModule() {
             <ProcessingQueue
               materials={materials}
               onStartProcessing={handleStartProcessing}
-              onStartProcess={(material) => {
+              onStartProcess={(material, groupTotalKg, groupItems) => {
                 setMaterialForStartProcess(material);
+                setGroupTotalWeight(groupTotalKg ?? null);
+                setGroupMaterials(groupItems ?? null);
                 setShowStartProcessFormModal(true);
               }}
             />
@@ -2589,17 +2728,30 @@ export function ProcessingModule() {
         onClose={() => {
           setShowStartProcessFormModal(false);
           setMaterialForStartProcess(null);
+          setGroupTotalWeight(null);
+          setGroupMaterials(null);
         }}
         onSaved={() => {
           fetchData();
           setMaterialForStartProcess(null);
+          setGroupTotalWeight(null);
+          setGroupMaterials(null);
         }}
         initialMaterial={
           materialForStartProcess
             ? {
                 materialName: materialForStartProcess.materialName,
                 quality: materialForStartProcess.quality,
-                popAvailableWeight: materialForStartProcess.availableWeight,
+                popAvailableWeight: groupTotalWeight ?? materialForStartProcess.availableWeight,
+                color: materialForStartProcess.color,
+                materialOptions: groupMaterials && groupMaterials.length > 0
+                  ? (() => {
+                      const seen = new Set<string>();
+                      return groupMaterials
+                        .filter(m => { const n = m.materialName || "Unknown"; if (seen.has(n)) return false; seen.add(n); return true; })
+                        .map(m => ({ materialName: m.materialName || "Unknown", purchaseId: m.purchaseId }));
+                    })()
+                  : undefined,
               }
             : null
         }

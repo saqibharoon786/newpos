@@ -26,6 +26,7 @@ const addSale = async (req, res) => {
       notes,
       materialName: bodyMaterialName,
       supplierName: bodySupplierName,
+      quality: bodyQuality,
       materialColor: bodyMaterialColor,
       actualPrice: bodyActualPrice,
       unit: requestUnit,
@@ -93,6 +94,7 @@ const addSale = async (req, res) => {
 
       materialName = bodyMaterialName || production.materialName;
       supplierName = bodySupplierName || "Production";
+      const quality = bodyQuality || production.quality || "";
       materialColor = bodyMaterialColor || production.color || "";
       actualPrice = bodyActualPrice || "0";
 
@@ -101,6 +103,7 @@ const addSale = async (req, res) => {
         purchaseId: undefined,
         materialName,
         supplierName,
+        quality,
         invoiceNo,
         weight: sellingWeight.toString(),
         unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : "0",
@@ -157,6 +160,7 @@ const addSale = async (req, res) => {
 
       materialName = purchase.materialName;
       supplierName = purchase.vendor || purchase.supplierName || "";
+      const quality = bodyQuality || purchase.quality || "";
       materialColor = purchase.materialColor || "";
       actualPrice = purchase.price || "0";
 
@@ -165,6 +169,7 @@ const addSale = async (req, res) => {
         productionId: undefined,
         materialName,
         supplierName,
+        quality,
         invoiceNo,
         weight: sellingWeight.toString(),
         unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : (purchase.unit || "0"),

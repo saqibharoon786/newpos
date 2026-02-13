@@ -66,6 +66,7 @@ interface Sale {
   unit: string;
   purchaseDate: string;
   branch: string;
+  quality?: string;
   materialColor: string;
   actualPrice: string;
   productionCost: string;
@@ -181,6 +182,7 @@ export function AddSaleDialog({
     productionId?: string;
     vendor: string;
     price: string;
+    quality: string;
     materialColor: string;
   } | null>(null);
   const [weightError, setWeightError] = useState<string>("");
@@ -316,13 +318,20 @@ export function AddSaleDialog({
     });
     
     setSelectedColor(editData.materialColor || "#FFFFFF");
-    
+    setSelectedMaterialInfo({
+      totalWeight: 0,
+      availableWeight: 0,
+      soldWeight: 0,
+      vendor: editData.supplierName || "",
+      price: editData.actualPrice || "0",
+      quality: editData.quality || "Standard",
+      materialColor: editData.materialColor || "#FFFFFF",
+    });
     if (saleDateParsed) {
       setSelectedDate(saleDateParsed);
       setCurrentMonth(saleDateParsed.getMonth());
       setCurrentYear(saleDateParsed.getFullYear());
     }
-    
     if (editData.receiptImage) {
       setReceiptPreview(`${API_BASE_URL}${editData.receiptImage}`);
     }
@@ -469,6 +478,7 @@ export function AddSaleDialog({
       productionId: selectedMaterial._id,
       vendor: selectedMaterial.vendor,
       price: selectedMaterial.price,
+      quality: (selectedMaterial as { quality?: string }).quality || "Standard",
       materialColor: selectedMaterial.materialColor,
     });
     setFormData(prev => ({ ...prev, weight: "" }));
@@ -651,6 +661,7 @@ export function AddSaleDialog({
       // Additional fields
       formDataToSend.append('materialName', formData.materialName);
       formDataToSend.append('supplierName', formData.supplierName);
+      formDataToSend.append('quality', selectedMaterialInfo?.quality ?? '');
       formDataToSend.append('unit', formData.unit);
       formDataToSend.append('branch', formData.branch);
       formDataToSend.append('materialColor', selectedColor);
@@ -1052,6 +1063,22 @@ export function AddSaleDialog({
                 <p className="text-xs text-red-500 mt-1">{errors.materialName}</p>
               )}
             </div>
+
+            {selectedMaterialInfo && (
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Quality (from selected material only)</label>
+                <select
+                  value={selectedMaterialInfo.quality || ""}
+                  onChange={(e) => setSelectedMaterialInfo(prev => prev ? { ...prev, quality: e.target.value } : null)}
+                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value={selectedMaterialInfo.quality || "Standard"}>
+                    {selectedMaterialInfo.quality || "Standard"}
+                  </option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">Only the quality of the selected production item is shown (e.g. 1 item = 1 quality).</p>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Supplier Name *</label>

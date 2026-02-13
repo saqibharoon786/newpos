@@ -498,13 +498,13 @@ const VendorSummary = ({
                           </div>
                         </div>
                         <div className="bg-background rounded p-2">
-                      <div className="text-xs text-muted-foreground">Process Weight</div>
+                      <div className="text-xs text-muted-foreground">Weight Used</div>
                       <div className="text-sm font-semibold text-primary">
                         {data.totalProcessWeight.toLocaleString()} kg
                       </div>
                         </div>
                         <div className="bg-background rounded p-2">
-                          <div className="text-xs text-muted-foreground">Remaining Weight</div>
+                          <div className="text-xs text-muted-foreground">Remaining</div>
                           <div className="text-sm font-semibold text-green-600">
                             {data.totalRemainingWeight.toLocaleString()} kg
                           </div>
@@ -756,7 +756,7 @@ const WeightSummary = ({
             <div className="w-3 h-3 rounded-full bg-gradient-to-r from-red-500 to-blue-500" />
             Color-wise Weight Distribution
           </h4>
-          
+          <p className="text-xs text-muted-foreground mb-3">Weight Used = amount put in machine. Remaining = Total − Weight Used.</p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {Object.entries(colorSummary)
               .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
@@ -787,11 +787,11 @@ const WeightSummary = ({
                         <span className="font-medium text-foreground">{data.totalWeight.toLocaleString()} kg</span>
                       </div>
                       <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">Process Weight:</span>
+                        <span className="text-muted-foreground">Weight Used:</span>
                         <span className="font-medium text-primary">{data.processWeight.toLocaleString()} kg</span>
                       </div>
                       <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">Remaining Weight:</span>
+                        <span className="text-muted-foreground">Remaining:</span>
                         <span className="font-medium text-green-600">{data.remainingWeight.toLocaleString()} kg</span>
                       </div>
                     </div>
@@ -833,7 +833,7 @@ const WeightSummary = ({
             <Package className="w-4 h-4 text-primary" />
             Quality-wise Weight Distribution
           </h4>
-          
+          <p className="text-xs text-muted-foreground mb-3">Weight Used = amount put in machine. Remaining = Total − Weight Used.</p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {Object.entries(qualitySummary)
               .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
@@ -859,11 +859,11 @@ const WeightSummary = ({
                       <span className="font-medium text-foreground">{data.totalWeight.toLocaleString()} kg</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">Process Weight:</span>
+                      <span className="text-muted-foreground">Weight Used:</span>
                       <span className="font-medium text-primary">{data.processWeight.toLocaleString()} kg</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">Remaining Weight:</span>
+                      <span className="text-muted-foreground">Remaining:</span>
                       <span className="font-medium text-green-600">{data.remainingWeight.toLocaleString()} kg</span>
                     </div>
                   </div>
@@ -916,7 +916,7 @@ const WeightSummary = ({
             <div className="text-2xl font-bold text-primary">
               {purchases.reduce((sum, p) => sum + (p.processWeight ?? p.productionConsumedWeight ?? 0), 0).toLocaleString()} kg
             </div>
-            <div className="text-xs text-muted-foreground">Total Process</div>
+            <div className="text-xs text-muted-foreground">Total Weight Used</div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-green-600">
@@ -3967,7 +3967,7 @@ export function POPView() {
               </p>
               <div className="flex items-center gap-2 mt-1">
                 <div className="flex items-center text-xs text-muted-foreground">
-                  <span className="text-primary">Process: {formatCurrency(totals.totalProcessWeight)} kg</span>
+                  <span className="text-primary">Weight Used: {formatCurrency(totals.totalProcessWeight)} kg</span>
                   <span className="mx-1">•</span>
                   <span className="text-green-600">Remaining: {formatCurrency(totals.totalRemainingWeight)} kg</span>
                 </div>
@@ -4067,7 +4067,7 @@ export function POPView() {
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining Amount</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Payment Status</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total Weight (kg)</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Process Weight (kg)</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight Used (kg)</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining Weight (kg)</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Stock Status</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vendor</th>
