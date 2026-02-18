@@ -121,7 +121,7 @@ export function CMSDashboard() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <span className="text-sm font-medium">Session Active</span>
+              <span className="text-sm font-medium">Session Actives</span>
             </div>
             <div className="text-lg font-semibold ml-4">
               {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
