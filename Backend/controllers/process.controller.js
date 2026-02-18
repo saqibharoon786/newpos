@@ -128,13 +128,35 @@ const createProductionRecord = async (req, res) => {
     const productionData = req.body;
     const purchaseId = productionData.purchaseId;
     const weightUsedFromPOP = productionData.weightUsedFromPOP != null ? parseFloat(productionData.weightUsedFromPOP) : null;
+    const groupPurchases = productionData.groupPurchases || null; // [{ purchaseId, availableWeight }, ...] for allocating across receipts
 
-    if (purchaseId && weightUsedFromPOP != null && !isNaN(weightUsedFromPOP) && weightUsedFromPOP > 0) {
-      const purchase = await Purchase.findById(purchaseId);
-      if (purchase) {
-        const current = parseFloat(purchase.productionConsumedWeight) || 0;
-        purchase.productionConsumedWeight = current + weightUsedFromPOP;
-        await purchase.save();
+    if (weightUsedFromPOP != null && !isNaN(weightUsedFromPOP) && weightUsedFromPOP > 0) {
+      if (Array.isArray(groupPurchases) && groupPurchases.length > 0) {
+        // Allocate weight used across multiple receipts (same quality+color) so remaining total is correct
+        let remainingToAllocate = weightUsedFromPOP;
+        for (const item of groupPurchases) {
+          if (remainingToAllocate <= 0) break;
+          const pid = item.purchaseId;
+          const purchase = await Purchase.findById(pid);
+          if (!purchase) continue;
+          const originalWeight = parseFloat(purchase.weight) || 0;
+          const sold = parseFloat(purchase.soldWeight) || 0;
+          const currentConsumed = parseFloat(purchase.productionConsumedWeight) || 0;
+          const available = Math.max(0, originalWeight - sold - currentConsumed);
+          const toDeduct = Math.min(remainingToAllocate, available);
+          if (toDeduct > 0) {
+            purchase.productionConsumedWeight = currentConsumed + toDeduct;
+            await purchase.save();
+            remainingToAllocate -= toDeduct;
+          }
+        }
+      } else if (purchaseId) {
+        const purchase = await Purchase.findById(purchaseId);
+        if (purchase) {
+          const current = parseFloat(purchase.productionConsumedWeight) || 0;
+          purchase.productionConsumedWeight = current + weightUsedFromPOP;
+          await purchase.save();
+        }
       }
     }
 
@@ -146,10 +168,17 @@ const createProductionRecord = async (req, res) => {
     const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
     const batchNo = productionData.batchNo || `BATCH-${year}${month}${day}-${randomNum}`;
 
+    // Parse production date as local calendar date so e.g. "2025-02-13" stays Feb 13 (no timezone shift)
+    let productionDateValue = productionData.productionDate || new Date();
+    if (typeof productionData.productionDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(productionData.productionDate)) {
+      const [y, m, d] = productionData.productionDate.split("-").map(Number);
+      productionDateValue = new Date(y, m - 1, d);
+    }
+
     const record = new ProductionData({
       ...productionData,
       batchNo,
-      productionDate: productionData.productionDate || new Date(),
+      productionDate: productionDateValue,
       availableWeight: productionData.availableWeight ?? totalWeight,
       purchaseId: purchaseId || undefined,
     });

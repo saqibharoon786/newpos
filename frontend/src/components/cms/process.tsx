@@ -51,6 +51,14 @@ const api = axios.create({
 const PROCESSING_API_URL = `${API_BASE_URL}/api/processing`;
 const EMPLOYEE_API_URL = `${API_BASE_URL}/api/employees`;
 
+// Local date as YYYY-MM-DD (avoids timezone shifting e.g. 13 Feb becoming 12 Feb)
+const getLocalDateString = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const formatDateLocal = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 // Color options (POP se match karein)
 const colorOptions = [
   { name: "White", color: "bg-white", value: "#FFFFFF" },
@@ -817,10 +825,7 @@ const StartProcessingModal = ({
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [selectedMachine, setSelectedMachine] = useState<string>("");
   const [selectedShift, setSelectedShift] = useState<'morning' | 'evening' | 'night'>('morning');
-  const [productionDate, setProductionDate] = useState<string>(() => {
-    const today = new Date();
-    return today.toISOString().slice(0, 10);
-  });
+  const [productionDate, setProductionDate] = useState<string>(() => getLocalDateString());
   const [notes, setNotes] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -833,7 +838,7 @@ const StartProcessingModal = ({
       setTotalWeight("");
       setSelectedMachine(machines[0]?.id || "");
       setSelectedColor(material.color || "#FFFFFF");
-      setProductionDate(new Date().toISOString().slice(0, 10));
+      setProductionDate(getLocalDateString());
       fetchEmployees();
       
       // Reset bags when opening modal
@@ -1335,6 +1340,7 @@ const StartProcessFormModal = ({
   onSaved,
   initialMaterial,
   purchaseId,
+  groupPurchases,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1347,6 +1353,7 @@ const StartProcessFormModal = ({
     materialOptions?: { materialName: string; purchaseId: string }[];
   } | null;
   purchaseId?: string | null;
+  groupPurchases?: { purchaseId: string; availableWeight: number }[];
 }) => {
   const [materialName, setMaterialName] = useState("");
   const [quality, setQuality] = useState("Standard");
@@ -1355,7 +1362,7 @@ const StartProcessFormModal = ({
   const [totalWeight, setTotalWeight] = useState("");
   const [weightUsedFromPOP, setWeightUsedFromPOP] = useState("");
   const [machineOutputWeight, setMachineOutputWeight] = useState("");
-  const [productionDate, setProductionDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [productionDate, setProductionDate] = useState(() => getLocalDateString());
   const [selectedColor, setSelectedColor] = useState("#FFFFFF");
   const [selectedShift, setSelectedShift] = useState<"morning" | "evening" | "night">("morning");
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
@@ -1401,7 +1408,7 @@ const StartProcessFormModal = ({
       setTotalWeight("");
       setWeightUsedFromPOP("");
       setMachineOutputWeight("");
-      setProductionDate(new Date().toISOString().slice(0, 10));
+      setProductionDate(getLocalDateString());
       setSelectedColor(initialMaterial?.color || "#FFFFFF");
       setSelectedShift("morning");
       setSelectedEmployees([]);
@@ -1473,7 +1480,7 @@ const StartProcessFormModal = ({
         machine: selectedMachine,
         totalBags: bags,
         totalWeight: machineOutput,
-        productionDate: productionDate || new Date().toISOString().slice(0, 10),
+        productionDate: productionDate || getLocalDateString(),
         quality: quality.trim() || "Standard",
         color: selectedColor,
         shift: selectedShift,
@@ -1484,7 +1491,12 @@ const StartProcessFormModal = ({
       ? initialMaterial.materialOptions.find(o => o.materialName.trim() === materialName.trim())?.purchaseId
       : purchaseId;
     if (effectivePurchaseId) payload.purchaseId = effectivePurchaseId;
-      if (isFromQueue && !isNaN(usedFromPOP)) payload.weightUsedFromPOP = usedFromPOP;
+      if (isFromQueue && !isNaN(usedFromPOP)) {
+        payload.weightUsedFromPOP = usedFromPOP;
+        if (groupPurchases && groupPurchases.length > 0) {
+          payload.groupPurchases = groupPurchases;
+        }
+      }
       const response = await api.post(`${PROCESSING_API_URL}/production`, payload);
       if (response.data.success) {
         toast({ title: "Success", description: "Production saved. It appears in Production List and can be sold from POS." });
@@ -1811,7 +1823,7 @@ const EditProductionModal = ({
       setTotalBags(String(production.totalBags || ""));
       setTotalWeight(String(production.outputWeight || ""));
       setAvailableWeight(String(production.availableWeight ?? production.outputWeight ?? ""));
-      setProductionDate(production.productionDate ? new Date(production.productionDate).toISOString().slice(0, 10) : "");
+      setProductionDate(production.productionDate ? formatDateLocal(new Date(production.productionDate)) : "");
       setSelectedShift((production.shift as "morning" | "evening" | "night") || "morning");
     }
   }, [open, production]);
@@ -1846,7 +1858,7 @@ const EditProductionModal = ({
         totalBags: bags,
         totalWeight: weight,
         availableWeight: avail,
-        productionDate: productionDate || new Date().toISOString().slice(0, 10),
+        productionDate: productionDate || getLocalDateString(),
         shift: selectedShift,
       };
       await api.put(`${PROCESSING_API_URL}/production/${production._id}`, payload);
@@ -2706,7 +2718,7 @@ export function ProcessingModule() {
               onStartProcess={(material, groupTotalKg, groupItems) => {
                 setMaterialForStartProcess(material);
                 setGroupTotalWeight(groupTotalKg ?? null);
-                setGroupMaterials(groupItems ?? null);
+                setGroupMaterials(groupItems ?? [material]);
                 setShowStartProcessFormModal(true);
               }}
             />
@@ -2731,8 +2743,8 @@ export function ProcessingModule() {
           setGroupTotalWeight(null);
           setGroupMaterials(null);
         }}
-        onSaved={() => {
-          fetchData();
+        onSaved={async () => {
+          await fetchData();
           setMaterialForStartProcess(null);
           setGroupTotalWeight(null);
           setGroupMaterials(null);
@@ -2756,6 +2768,11 @@ export function ProcessingModule() {
             : null
         }
         purchaseId={materialForStartProcess?.purchaseId ?? null}
+        groupPurchases={
+          groupMaterials && groupMaterials.length > 0
+            ? groupMaterials.map((m) => ({ purchaseId: m.purchaseId, availableWeight: m.availableWeight }))
+            : undefined
+        }
       />
       {/* Start Processing Modal (legacy: from queue material) */}
       <StartProcessingModal
