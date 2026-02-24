@@ -103,15 +103,22 @@ const getMonthName = (monthNumber: number): string => {
   return months[monthNumber - 1] || "";
 };
 
-// Professional Print Function
-const handleProfessionalPrint = (expenses: ExpenseItem[], currentPage: number, totalPages: number, totalItems: number, calculateTotalExpenses: () => number) => {
+// Professional Print Function - reportDateLabel = jo date/period user ne select kiya (wohi show)
+const handleProfessionalPrint = (
+  expenses: ExpenseItem[],
+  currentPage: number,
+  totalPages: number,
+  totalItems: number,
+  calculateTotalExpenses: () => number,
+  totalAllPages: number,
+  reportDateLabel: string
+) => {
   const printWindow = window.open('', '_blank');
   if (!printWindow) return;
 
-  // Calculate statistics
   const pageTotal = calculateTotalExpenses();
-  const averageExpense = pageTotal / Math.max(expenses.length, 1);
-  const currentDate = new Date().toLocaleDateString('en-GB', {
+  const averageExpense = totalItems > 0 ? totalAllPages / totalItems : 0;
+  const generatedOn = new Date().toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',
     year: 'numeric'
@@ -135,7 +142,7 @@ const handleProfessionalPrint = (expenses: ExpenseItem[], currentPage: number, t
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Expense Report - ${currentDate}</title>
+      <title>Expense Report - ${reportDateLabel}</title>
       <style>
         @media print {
           @page {
@@ -416,7 +423,7 @@ const handleProfessionalPrint = (expenses: ExpenseItem[], currentPage: number, t
           
           <div class="report-meta">
             <div class="meta-left">
-              <strong>Report Date:</strong> ${currentDate} | <strong>Time:</strong> ${currentTime}
+              <strong>Report Period:</strong> ${reportDateLabel} | <strong>Generated:</strong> ${generatedOn} ${currentTime}
             </div>
             <div class="meta-right">
               <strong>Page:</strong> ${currentPage} of ${totalPages} | <strong>Records:</strong> ${totalItems}
@@ -428,20 +435,20 @@ const handleProfessionalPrint = (expenses: ExpenseItem[], currentPage: number, t
         <div class="summary-section">
           <div class="summary-grid">
             <div class="summary-card">
-              <div class="summary-label">Total Page Amount</div>
+              <div class="summary-label">Total Expense (All Pages)</div>
+              <div class="summary-value">Rs. ${totalAllPages.toLocaleString()}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">This Page Amount</div>
               <div class="summary-value">Rs. ${pageTotal.toLocaleString()}</div>
             </div>
             <div class="summary-card">
-              <div class="summary-label">Records on Page</div>
-              <div class="summary-value">${expenses.length}</div>
+              <div class="summary-label">Records (Page / Total)</div>
+              <div class="summary-value">${expenses.length} / ${totalItems}</div>
             </div>
             <div class="summary-card">
-              <div class="summary-label">Average Expense</div>
-              <div class="summary-value small">Rs. ${averageExpense.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label">Report Generated</div>
-              <div class="summary-value small">${currentDate}</div>
+              <div class="summary-label">Report Period</div>
+              <div class="summary-value small">${reportDateLabel}</div>
             </div>
           </div>
           
@@ -538,7 +545,7 @@ const handleProfessionalPrint = (expenses: ExpenseItem[], currentPage: number, t
           YOUR COMPANY NAME • Expense Report
         </div>
         <div class="footer-right">
-          Generated on ${currentDate} ${currentTime} • Page <span class="page-number">${currentPage}</span> of ${totalPages}
+          Generated on ${generatedOn} ${currentTime} • Page <span class="page-number">${currentPage}</span> of ${totalPages}
         </div>
       </div>
     </body>
@@ -1243,11 +1250,23 @@ export function RoznamchaView() {
       // Add search term if it exists
       if (searchTerm) params.append('search', searchTerm);
       
-      // Handle active tab filters
+      // Handle active tab filters: Daily | Weekly | Monthly
       if (activeTab === "Daily") {
         const today = new Date().toISOString().split('T')[0];
         params.append('startDate', today);
         params.append('endDate', today);
+      } else if (activeTab === "Weekly") {
+        const now = new Date();
+        const day = now.getDay(); // 0 Sun, 1 Mon, ...
+        const mondayOffset = day === 0 ? -6 : 1 - day;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + mondayOffset);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        const firstDay = monday.toISOString().split('T')[0];
+        const lastDay = sunday.toISOString().split('T')[0];
+        params.append('startDate', firstDay);
+        params.append('endDate', lastDay);
       } else if (activeTab === "Monthly") {
         const now = new Date();
         const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
@@ -1284,10 +1303,37 @@ export function RoznamchaView() {
     }
   };
 
-  // Fetch statistics
+  // Fetch statistics with same filters as list so Total Expense = sab pages ki amount ka total
   const fetchStats = async () => {
     try {
-      const response = await api.get(`${EXPENSES_API_URL}/stats`);
+      const params = new URLSearchParams();
+      if (filters.purpose) params.append('purpose', filters.purpose);
+      if (filters.personResponsible) params.append('personResponsible', filters.personResponsible);
+      if (filters.usage) params.append('usage', filters.usage);
+      if (activeTab === "Daily") {
+        const today = new Date().toISOString().split('T')[0];
+        params.append('startDate', today);
+        params.append('endDate', today);
+      } else if (activeTab === "Weekly") {
+        const now = new Date();
+        const day = now.getDay();
+        const mondayOffset = day === 0 ? -6 : 1 - day;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + mondayOffset);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        params.append('startDate', monday.toISOString().split('T')[0]);
+        params.append('endDate', sunday.toISOString().split('T')[0]);
+      } else if (activeTab === "Monthly") {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+        params.append('startDate', firstDay);
+        params.append('endDate', lastDay);
+      }
+      const qs = params.toString();
+      const url = qs ? `${EXPENSES_API_URL}/stats?${qs}` : `${EXPENSES_API_URL}/stats`;
+      const response = await api.get(url);
       if (response.data.success) {
         setStats(response.data.data);
       }
@@ -1545,7 +1591,25 @@ export function RoznamchaView() {
     fetchExpenses(1);
   };
 
-  // Calculate total expenses from current page data only
+  // Total expense = sab pages ki amount (from stats API); fallback = current page sum
+  const totalExpenseAllPages = stats?.summary?.totalExpenses ?? 0;
+  // Report period label = jo date/period user ne select kiya (print aur display ke liye)
+  const reportDateLabel = activeTab === "Daily"
+    ? new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    : activeTab === "Weekly"
+      ? (() => {
+          const now = new Date();
+          const day = now.getDay();
+          const mondayOffset = day === 0 ? -6 : 1 - day;
+          const monday = new Date(now);
+          monday.setDate(now.getDate() + mondayOffset);
+          const sunday = new Date(monday);
+          sunday.setDate(monday.getDate() + 6);
+          return `${monday.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} – ${sunday.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+        })()
+    : activeTab === "Monthly"
+      ? new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+      : "All dates";
   const calculateTotalExpenses = () => {
     return expenses.reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
   };
@@ -1591,9 +1655,10 @@ export function RoznamchaView() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Handle filter changes
+  // Handle filter/tab changes - refresh list and total expense (stats)
   useEffect(() => {
     fetchExpenses(1);
+    fetchStats();
   }, [filters.purpose, filters.personResponsible, filters.usage, activeTab]);
 
   return (
@@ -1610,7 +1675,7 @@ export function RoznamchaView() {
         {/* Tabs and Actions Row */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-1 bg-cms-card rounded-lg p-1">
-            {["All", "Daily", "Monthly"].map((tab) => (
+            {["All", "Daily", "Weekly", "Monthly"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => handleActiveTabChange(tab)}
@@ -1692,12 +1757,12 @@ export function RoznamchaView() {
           </div>
         </div>
 
-        {/* Stats Cards */}
+        {/* Stats Cards - Total Expense = sab pages ki amount ka total (filter ke mutabiq) */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="bg-cms-card rounded-xl p-4">
             <p className="text-sm text-muted-foreground mb-1">Total Expense</p>
-            <p className="text-2xl font-bold text-foreground">Rs. {calculateTotalExpenses().toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground mt-1">Current Page</p>
+            <p className="text-2xl font-bold text-foreground">Rs. {totalExpenseAllPages.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground mt-1">All pages (filter applied)</p>
           </div>
           <div className="bg-cms-card rounded-xl p-4">
             <p className="text-sm text-muted-foreground mb-1">Total Expenses Count</p>
@@ -1707,18 +1772,18 @@ export function RoznamchaView() {
           <div className="bg-cms-card rounded-xl p-4">
             <p className="text-sm text-muted-foreground mb-1">Avg. Expense</p>
             <p className="text-2xl font-bold text-foreground">
-              Rs. {(calculateTotalExpenses() / Math.max(expenses.length, 1)).toLocaleString(undefined, { 
+              Rs. {(totalExpenseAllPages / Math.max(pagination.totalItems, 1)).toLocaleString(undefined, { 
                 maximumFractionDigits: 0 
               })}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">Current page</p>
+            <p className="text-xs text-muted-foreground mt-1">All records</p>
           </div>
         </div>
 
         {/* Professional Print Button */}
         <div className="flex justify-end mb-4">
           <button 
-            onClick={() => handleProfessionalPrint(expenses, pagination.currentPage, pagination.totalPages, pagination.totalItems, calculateTotalExpenses)}
+            onClick={() => handleProfessionalPrint(expenses, pagination.currentPage, pagination.totalPages, pagination.totalItems, calculateTotalExpenses, totalExpenseAllPages, reportDateLabel)}
             className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
           >
             <Printer className="w-4 h-4" />

@@ -62,16 +62,11 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Dialog open hone pe default date set (current date)
+  // Dialog open: date auto mat set nahi - user jo date select kare wohi show/save hogi
   useEffect(() => {
-    if (open && !formData.date) {
-      const now = new Date();
-      setSelectedDate(now);
-      setCurrentMonth(now.getMonth());
-      setCurrentYear(now.getFullYear());
-      // Format as DD/MM/YYYY
-      const ddmmyyyy = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-      setFormData(prev => ({ ...prev, date: ddmmyyyy }));
+    if (open) {
+      setCurrentMonth(new Date().getMonth());
+      setCurrentYear(new Date().getFullYear());
     }
   }, [open]);
 
@@ -254,10 +249,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
           setPreviewUrl(null);
         }
         
-        // Reset form but keep date for next entry (optional)
-        const now = new Date();
-        const ddmmyyyy = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-        
+        // Reset form - date empty taake next entry mein user apni date select kare
         setFormData({
           assetName: "",
           category: "",
@@ -270,10 +262,11 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
           purchasePrice: "",
           purchaseFrom: "",
           invoiceNo: "",
-          date: ddmmyyyy, // Reset to current date
-          time: "12:00", // Reset to default time
+          date: "",
+          time: "12:00",
           receiptImage: null,
         });
+        setSelectedDate(null);
         
         onOpenChange(false);
       }
@@ -320,10 +313,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
         setPreviewUrl(null);
       }
       
-      // Reset form
-      const now = new Date();
-      const ddmmyyyy = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-      
+      // Reset form - date empty (jo date user select kare wohi show)
       setFormData({
         assetName: "",
         category: "",
@@ -336,10 +326,11 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
         purchasePrice: "",
         purchaseFrom: "",
         invoiceNo: "",
-        date: ddmmyyyy, // Reset to current date
-        time: "12:00", // Reset to default time
+        date: "",
+        time: "12:00",
         receiptImage: null,
       });
+      setSelectedDate(null);
       setShowReceiptPreview(false);
     }
     onOpenChange(open);

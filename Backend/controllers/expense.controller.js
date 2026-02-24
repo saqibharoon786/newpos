@@ -1,6 +1,23 @@
 const Expense = require("../models/expense.model");
 const mongoose = require("mongoose");
 
+// Normalize date to YYYY-MM-DD so date range filters (Daily/Weekly/Monthly) work
+function toNormalizedDate(dateStr) {
+  if (!dateStr || typeof dateStr !== "string") return dateStr;
+  const trimmed = dateStr.trim();
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  // DD/MM/YYYY
+  const ddmmyyyy = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (ddmmyyyy) {
+    const [, d, m, y] = ddmmyyyy;
+    const day = d.padStart(2, "0");
+    const month = m.padStart(2, "0");
+    return `${y}-${month}-${day}`;
+  }
+  return dateStr;
+}
+
 // Get all expenses with filters
 // Backend: expenses.controller.js
 exports.getAllExpenses = async (req, res) => {
@@ -42,15 +59,13 @@ exports.getAllExpenses = async (req, res) => {
       query.usage = usage;
     }
 
-    // Filter by date range
+    // Filter by date range (startDate/endDate as YYYY-MM-DD; backend normalizes on create/update)
     if (startDate || endDate) {
+      const normStart = startDate ? toNormalizedDate(startDate) : null;
+      const normEnd = endDate ? toNormalizedDate(endDate) : null;
       query.date = {};
-      if (startDate) {
-        query.date.$gte = startDate;
-      }
-      if (endDate) {
-        query.date.$lte = endDate;
-      }
+      if (normStart) query.date.$gte = normStart;
+      if (normEnd) query.date.$lte = normEnd;
     }
 
     // Search functionality
@@ -161,7 +176,7 @@ exports.createExpense = async (req, res) => {
       });
     }
 
-    // Create expense object
+    // Create expense object (date normalized to YYYY-MM-DD so Daily/Weekly/Monthly filters work)
     const expenseData = {
       subject,
       description,
@@ -169,7 +184,7 @@ exports.createExpense = async (req, res) => {
       price,
       personResponsible: personResponsible || "HR",
       usage: usage || "Personal",
-      date,
+      date: toNormalizedDate(date),
       time,
     };
 
@@ -203,7 +218,10 @@ exports.createExpense = async (req, res) => {
 exports.updateExpense = async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    const updateData = { ...req.body };
+    if (updateData.date) {
+      updateData.date = toNormalizedDate(updateData.date);
+    }
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -283,17 +301,29 @@ exports.deleteExpense = async (req, res) => {
   }
 };
 
-// Get expense statistics
+// Get expense statistics (same filters as get-all so Total Expense matches filtered list)
 exports.getExpenseStats = async (req, res) => {
   try {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, purpose, personResponsible, usage } = req.query;
 
     const matchStage = {};
 
     if (startDate || endDate) {
+      const normStart = startDate ? toNormalizedDate(startDate) : null;
+      const normEnd = endDate ? toNormalizedDate(endDate) : null;
       matchStage.date = {};
-      if (startDate) matchStage.date.$gte = startDate;
-      if (endDate) matchStage.date.$lte = endDate;
+      if (normStart) matchStage.date.$gte = normStart;
+      if (normEnd) matchStage.date.$lte = normEnd;
+    }
+
+    if (purpose && ["Car", "Office", "Travel", "Equipment"].includes(purpose)) {
+      matchStage.purpose = purpose;
+    }
+    if (personResponsible && ["HR", "Admin", "CEO", "Finance Dept"].includes(personResponsible)) {
+      matchStage.personResponsible = personResponsible;
+    }
+    if (usage && ["Personal", "Company"].includes(usage)) {
+      matchStage.usage = usage;
     }
 
     const stats = await Expense.aggregate([

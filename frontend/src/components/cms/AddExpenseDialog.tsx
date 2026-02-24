@@ -111,16 +111,11 @@ export function AddExpenseDialog({
           }
         }
       } else {
-        const dd = String(now.getDate()).padStart(2, '0');
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const yyyy = now.getFullYear();
-        const dateStr = `${dd}/${mm}/${yyyy}`;
-
+        // Do NOT default to current date - user must select date; jo date enter kare wohi show hogi
         let hour = now.getHours();
         const minute = String(now.getMinutes()).padStart(2, '0');
         const ampm: "AM" | "PM" = hour >= 12 ? "PM" : "AM";
         const hour12 = hour % 12 || 12;
-
         const timeStr = `${hour12.toString().padStart(2, '0')}:${minute} ${ampm}`;
 
         setFormData({
@@ -130,11 +125,11 @@ export function AddExpenseDialog({
           price: "",
           personResponsible: "HR",
           usage: "Personal",
-          date: dateStr,
+          date: "",
           time: timeStr,
         });
 
-        setSelectedDate(now);
+        setSelectedDate(null);
         setCurrentMonth(now.getMonth());
         setCurrentYear(now.getFullYear());
         setSelectedHour(hour12.toString().padStart(2, '0'));
