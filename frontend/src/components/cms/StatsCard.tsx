@@ -6,10 +6,11 @@ interface StatsCardProps {
   iconColor?: string;
   label: string;
   value: string | number;
+  valueColor?: string;
   className?: string;
 }
 
-export function StatsCard({ icon: Icon, iconColor = "text-primary", label, value, className }: StatsCardProps) {
+export function StatsCard({ icon: Icon, iconColor = "text-primary", label, value, valueColor, className }: StatsCardProps) {
   return (
     <div className={cn(
       "bg-cms-card rounded-xl p-4 flex items-center gap-3 min-w-[140px]",
@@ -20,7 +21,7 @@ export function StatsCard({ icon: Icon, iconColor = "text-primary", label, value
       </div>
       <div>
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-lg font-bold text-foreground">{value}</p>
+        <p className={cn("text-lg font-bold", valueColor || "text-foreground")}>{value}</p>
       </div>
     </div>
   );

@@ -44,10 +44,11 @@ const addSale = async (req, res) => {
         message: "Provide either purchaseId or productionId, not both"
       });
     }
-    if (!productionId && !purchaseId) {
+    const fromAggregatedProduction = !productionId && !purchaseId && bodyMaterialName && bodyMaterialName.trim() !== "";
+    if (!productionId && !purchaseId && !fromAggregatedProduction) {
       return res.status(400).json({
         success: false,
-        message: "Required: purchaseId (POP) or productionId (Production List)"
+        message: "Required: purchaseId (POP), productionId (single batch), or materialName+quality+materialColor (aggregated Production)"
       });
     }
 
@@ -73,7 +74,7 @@ const addSale = async (req, res) => {
     let materialName, supplierName, materialColor, actualPrice, salePayload;
 
     if (productionId) {
-      // Sale from Production List
+      // Sale from single Production batch
       const production = await ProductionData.findById(productionId);
       if (!production) {
         return res.status(404).json({
@@ -100,6 +101,90 @@ const addSale = async (req, res) => {
 
       salePayload = {
         productionId: production._id,
+        purchaseId: undefined,
+        materialName,
+        supplierName,
+        quality,
+        invoiceNo,
+        weight: sellingWeight.toString(),
+        unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : "0",
+        purchaseDate: saleDate ? (typeof saleDate === 'string' && saleDate.includes('T') ? saleDate.split('T')[0] : saleDate) : new Date().toISOString().split('T')[0],
+        purchaseTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+        branch: "Main",
+        materialColor,
+        actualPrice,
+        productionCost: "0",
+        sellingPrice: sellingPrice.toString(),
+        discount: "0",
+        finalAmount: sellingPrice.toString(),
+        advancePayment: paidAmount,
+        amountPaid: paidAmount,
+        remainingAmount: remainingAmount,
+        paymentStatus: finalPaymentStatus,
+        buyerName: customerName,
+        buyerAddress: "",
+        buyerPhone: customerPhone || "",
+        buyerEmail: customerEmail || "",
+        buyerCnic: "",
+        buyerCompany: "",
+        receiptImage,
+        transportationCost: transportationCost || 0,
+        notes: notes || ""
+      };
+    } else if (fromAggregatedProduction) {
+      // Sale from aggregated Production (FIFO): deduct from batches by materialName + quality + color
+      const quality = (bodyQuality || "Standard").toString().trim();
+      const color = (bodyMaterialColor || "#FFFFFF").toString().trim();
+      const productions = await ProductionData.find({
+        materialName: bodyMaterialName.trim(),
+        $or: [
+          { availableWeight: { $gt: 0 } },
+          { availableWeight: { $exists: false } },
+        ],
+      })
+        .sort({ productionDate: 1 })
+        .lean();
+      const withAvail = productions.filter(
+        (p) => (p.availableWeight ?? p.totalWeight ?? 0) > 0
+      );
+      const norm = (v) => (v == null || v === "" ? "" : String(v).trim());
+      const matching = withAvail.filter(
+        (p) =>
+          norm(p.materialName) === norm(bodyMaterialName) &&
+          norm(p.quality || "Standard") === norm(quality) &&
+          norm(p.color || "#FFFFFF") === norm(color)
+      );
+      let totalAvailable = 0;
+      for (const p of matching) {
+        totalAvailable += p.availableWeight ?? p.totalWeight ?? 0;
+      }
+      if (weightToSell > totalAvailable) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot sell ${weightToSell}kg. Only ${totalAvailable}kg available for ${bodyMaterialName} (${quality}).`
+        });
+      }
+      let remaining = weightToSell;
+      let firstProductionId = null;
+      for (const p of matching) {
+        if (remaining <= 0) break;
+        const avail = p.availableWeight ?? p.totalWeight ?? 0;
+        const deduct = Math.min(remaining, avail);
+        if (deduct <= 0) continue;
+        const prod = await ProductionData.findById(p._id);
+        if (!prod) continue;
+        const newAvail = (prod.availableWeight ?? prod.totalWeight ?? 0) - deduct;
+        prod.availableWeight = Math.max(0, newAvail);
+        await prod.save();
+        if (firstProductionId == null) firstProductionId = prod._id;
+        remaining -= deduct;
+      }
+      materialName = bodyMaterialName.trim();
+      supplierName = bodySupplierName || "Production";
+      materialColor = color;
+      actualPrice = bodyActualPrice || "0";
+      salePayload = {
+        productionId: firstProductionId || undefined,
         purchaseId: undefined,
         materialName,
         supplierName,
