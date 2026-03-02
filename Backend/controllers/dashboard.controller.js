@@ -8,12 +8,56 @@ const Expense = require("../models/expense.model");
 const Asset = require('../models/assets.model');
 
 class DashboardController {
-  // Get dashboard stats - WITH PROPER PROFIT CALCULATION
+  // Get date range for period (daily, weekly, monthly, yearly). Optional year, month for custom month.
+  _getPeriodRange(period, opts = {}) {
+    if (!period || period === 'all') return { startDate: null, endDate: null };
+    const now = new Date();
+    const year = opts.year != null ? parseInt(opts.year, 10) : now.getFullYear();
+    const month = opts.month != null ? parseInt(opts.month, 10) : now.getMonth() + 1;
+    let startDate, endDate;
+    if (period === 'daily') {
+      startDate = endDate = now.toISOString().split('T')[0];
+    } else if (period === 'weekly') {
+      const day = now.getDay();
+      const mondayOffset = day === 0 ? -6 : 1 - day;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() + mondayOffset);
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      startDate = monday.toISOString().split('T')[0];
+      endDate = sunday.toISOString().split('T')[0];
+    } else if (period === 'monthly') {
+      const y = year;
+      const m = String(month).padStart(2, '0');
+      startDate = `${y}-${m}-01`;
+      const lastDay = new Date(y, month, 0).getDate();
+      endDate = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+    } else if (period === 'yearly') {
+      const y = opts.year != null ? parseInt(opts.year, 10) : now.getFullYear();
+      startDate = `${y}-01-01`;
+      endDate = `${y}-12-31`;
+    } else {
+      return { startDate: null, endDate: null };
+    }
+    return { startDate, endDate };
+  }
+
+  // Get dashboard stats. Optional ?period=all|daily|weekly|monthly|yearly&year=2025&month=2 (for specific month/year)
   async getDashboardStats(req, res) {
     try {
-      console.log('====== FETCHING DASHBOARD STATS ======');
+      const period = (req.query.period || 'all').toLowerCase();
+      const { startDate, endDate } = this._getPeriodRange(period, {
+        year: req.query.year,
+        month: req.query.month,
+      });
+      const dateFilter = startDate && endDate ? { $gte: startDate, $lte: endDate } : null;
+      const purchaseMatch = dateFilter ? { purchaseDate: dateFilter } : {};
+      const saleMatch = dateFilter ? { purchaseDate: dateFilter } : {};
+      const expenseMatch = dateFilter ? { date: dateFilter } : {};
 
-      // Run all database queries in parallel
+      console.log('====== FETCHING DASHBOARD STATS ====== period:', period, dateFilter ? { startDate, endDate } : 'all');
+
+      // Run all database queries in parallel (with optional date filter)
       const [
         totalProductsCount,
         totalSalesCount,
@@ -23,20 +67,21 @@ class DashboardController {
         totalPurchaseCost,
         totalExpensesAmount
       ] = await Promise.all([
-        // 1. Count ALL purchases
-        Purchase.countDocuments({}),
+        // 1. Count purchases (in period)
+        Purchase.countDocuments(purchaseMatch),
         
-        // 2. Count ALL sales
-        Sale.countDocuments({}),
+        // 2. Count sales (in period)
+        Sale.countDocuments(saleMatch),
         
-        // 3. Count Active Employees
+        // 3. Count Active Employees (no period)
         Employee.countDocuments({ isActive: true }),
         
-        // 4. Get ALL active assets for value calculation
+        // 4. Get ALL active assets for value calculation (no period)
         Asset.find({ status: 'active' }).select('currentValue value price'),
         
-        // 5. Calculate total SALES REVENUE (selling price)
+        // 5. Total SALES REVENUE in period
         Sale.aggregate([
+          ...(Object.keys(saleMatch).length ? [{ $match: saleMatch }] : []),
           {
             $group: {
               _id: null,
@@ -45,8 +90,9 @@ class DashboardController {
           }
         ]),
         
-        // 6. Calculate total PURCHASE COST (buying price)
+        // 6. Total PURCHASE COST in period
         Purchase.aggregate([
+          ...(Object.keys(purchaseMatch).length ? [{ $match: purchaseMatch }] : []),
           {
             $group: {
               _id: null,
@@ -55,8 +101,9 @@ class DashboardController {
           }
         ]),
         
-        // 7. Calculate total EXPENSES amount
+        // 7. Total EXPENSES in period (roznamcha)
         Expense.aggregate([
+          ...(Object.keys(expenseMatch).length ? [{ $match: expenseMatch }] : []),
           {
             $group: {
               _id: null,
@@ -189,9 +236,23 @@ class DashboardController {
         }
       };
 
+      const periodLabels = { all: 'All Time', daily: 'Today', weekly: 'This Week', monthly: 'This Month', yearly: 'This Year' };
+      let periodLabel = periodLabels[period] || periodLabels.all;
+      if (period === 'monthly' && req.query.year && req.query.month) {
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const m = parseInt(req.query.month, 10);
+        if (m >= 1 && m <= 12) {
+          periodLabel = `${monthNames[m - 1]} ${req.query.year}`;
+        }
+      } else if (period === 'yearly' && req.query.year) {
+        periodLabel = `Year ${req.query.year}`;
+      }
       res.status(200).json({
         success: true,
         data: dashboardStats,
+        period: period,
+        periodLabel: periodLabel,
+        dateRange: startDate && endDate ? { startDate, endDate } : null,
         calculation: {
           formula: "Net Profit = (Sales Revenue - Purchase Cost) - Expenses",
           example: `(${salesRevenue} - ${purchaseCost}) - ${expensesAmount} = ${netProfit}`

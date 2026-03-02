@@ -337,7 +337,7 @@ export function AddSaleDialog({
     }
   };
 
-  // Fetch materials from Production List (for POS selling)
+  // Fetch materials from Production List – aggregated by material+quality+color (total weight per option)
   const fetchMaterials = async () => {
     try {
       setLoadingMaterials(true);
@@ -347,29 +347,37 @@ export function AddSaleDialog({
       if (response.data && response.data.success && Array.isArray(response.data.data)) {
         materialsData = response.data.data;
       }
-      const processedMaterials = materialsData.map((item: any) => ({
-        _id: item._id,
-        materialName: item.materialName || "Unknown",
-        vendor: "Production",
-        price: "0",
-        weight: String(item.totalWeight ?? 0),
-        quality: item.quality || "Standard",
-        purchaseDate: item.productionDate || new Date().toISOString(),
-        materialColor: item.color || "#FFFFFF",
-        vehicleName: "",
-        vehicleType: "",
-        vehicleNumber: "",
-        driverName: "",
-        vehicleColor: "",
-        deliveryDate: "",
-        receiptNo: item.batchNo || "",
-        vehicleImage: "",
-        advancePayment: 0,
-        soldWeight: 0,
-        availableWeight: item.availableWeight ?? item.totalWeight ?? 0,
-        batchNo: item.batchNo,
-        createdAt: item.productionDate || new Date().toISOString(),
-      }));
+      const processedMaterials = materialsData.map((item: any) => {
+        const materialName = item.materialName || "Unknown";
+        const quality = item.quality || "Standard";
+        const color = (item.color || "#FFFFFF").toString().trim();
+        const compositeId = `${materialName}|${quality}|${color}`;
+        const totalAvailable = item.totalAvailableWeight ?? 0;
+        return {
+          _id: compositeId,
+          materialName,
+          vendor: "Production",
+          price: "0",
+          weight: String(totalAvailable),
+          quality,
+          purchaseDate: "",
+          materialColor: color,
+          vehicleName: "",
+          vehicleType: "",
+          vehicleNumber: "",
+          driverName: "",
+          vehicleColor: "",
+          deliveryDate: "",
+          receiptNo: "",
+          vehicleImage: "",
+          advancePayment: 0,
+          soldWeight: 0,
+          availableWeight: totalAvailable,
+          batchNo: "",
+          createdAt: "",
+          isAggregated: true,
+        };
+      });
       setMaterials(processedMaterials);
       if (processedMaterials.length === 0) {
         setApiError("No production stock. Add production via Start Process in Factory Processing.");
@@ -456,7 +464,7 @@ export function AddSaleDialog({
     }
   };
 
-  // Handle material selection (value is material _id from Production List)
+  // Handle material selection (value is composite id for aggregated or _id for single batch)
   const handleMaterialSelect = (selectedId: string) => {
     const selectedMaterial = materials.find(m => m._id === selectedId);
     if (!selectedMaterial) return;
@@ -471,11 +479,12 @@ export function AddSaleDialog({
     setSelectedColor(selectedMaterial.materialColor || "#FFFFFF");
     const totalWeight = parseFloat(selectedMaterial.weight) || 0;
     const availableWeight = selectedMaterial.availableWeight ?? totalWeight;
+    const isAggregated = (selectedMaterial as { isAggregated?: boolean }).isAggregated === true;
     setSelectedMaterialInfo({
       totalWeight,
       availableWeight,
       soldWeight: selectedMaterial.soldWeight || 0,
-      productionId: selectedMaterial._id,
+      productionId: isAggregated ? undefined : selectedMaterial._id,
       vendor: selectedMaterial.vendor,
       price: selectedMaterial.price,
       quality: (selectedMaterial as { quality?: string }).quality || "Standard",
@@ -639,13 +648,14 @@ export function AddSaleDialog({
       const discount = parseFloat(formData.discount.replace(/,/g, '')) || 0;
       const finalAmount = (selling - discount).toFixed(2);
 
-      // Prepare form data
+      // Prepare form data (aggregated = no productionId/purchaseId; backend uses materialName+quality+materialColor and FIFO)
       const formDataToSend = new FormData();
       if (selectedMaterialInfo?.productionId) {
         formDataToSend.append('productionId', selectedMaterialInfo.productionId);
-      } else {
-        formDataToSend.append('purchaseId', selectedMaterialInfo?.purchaseId || '');
+      } else if (selectedMaterialInfo?.purchaseId) {
+        formDataToSend.append('purchaseId', selectedMaterialInfo.purchaseId);
       }
+      // else: aggregated production – do not send productionId/purchaseId; materialName, quality, materialColor are enough
       formDataToSend.append('customerName', formData.buyerName);
       formDataToSend.append('customerPhone', formData.buyerPhone);
       formDataToSend.append('customerEmail', formData.buyerEmail || '');
@@ -1034,7 +1044,7 @@ export function AddSaleDialog({
               <div className="relative">
                 <select
                   name="materialName"
-                  value={selectedMaterialInfo?.productionId ?? ""}
+                  value={selectedMaterialInfo ? (selectedMaterialInfo.productionId ?? (formData.materialName && selectedMaterialInfo.quality != null && selectedColor ? `${formData.materialName}|${selectedMaterialInfo.quality}|${selectedColor}` : "")) : ""}
                   onChange={(e) => handleMaterialSelect(e.target.value)}
                   className={`w-full bg-cms-input-bg border ${errors.materialName ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary`}
                   disabled={loadingMaterials}
@@ -1047,7 +1057,7 @@ export function AddSaleDialog({
                   ) : (
                     materials.map((material) => (
                       <option key={material._id} value={material._id} style={{ color: "#000" }}>
-                        {material.materialName} ({material.receiptNo || material._id}) — {material.availableWeight} kg available
+                        {material.materialName} {material.quality ? `(${material.quality})` : ""} — {material.availableWeight} kg total
                       </option>
                     ))
                   )}

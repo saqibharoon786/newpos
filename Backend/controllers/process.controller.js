@@ -547,7 +547,7 @@ const deleteProduction = async (req, res) => {
   }
 };
 
-// Get production list for POS (items with available weight to sell)
+// Get production list for POS – aggregated by material+quality+color so dropdown shows total weight (e.g. PP1000 = 1500 kg) not per batch
 const getProductionForPOS = async (req, res) => {
   try {
     const docs = await ProductionData.find({
@@ -556,24 +556,41 @@ const getProductionForPOS = async (req, res) => {
         { availableWeight: { $exists: false } },
       ],
     })
-      .sort({ productionDate: -1 })
+      .sort({ productionDate: 1 }) // oldest first for FIFO
       .lean();
 
-    const data = docs
-      .filter((doc) => (doc.availableWeight ?? doc.totalWeight ?? 0) > 0)
-      .map((doc) => ({
-        _id: doc._id,
-        batchNo: doc.batchNo,
-        materialName: doc.materialName,
-        quality: doc.quality || "Standard",
-        color: doc.color || "#FFFFFF",
-        totalWeight: doc.totalWeight,
-        availableWeight: doc.availableWeight ?? doc.totalWeight ?? 0,
-        totalBags: doc.totalBags,
-        productionDate: doc.productionDate,
-        machine: doc.machine,
-        shift: doc.shift,
-      }));
+    const withAvailable = docs.filter(
+      (doc) => (doc.availableWeight ?? doc.totalWeight ?? 0) > 0
+    );
+
+    // Group by materialName + quality + color; sum availableWeight; keep productionIds in FIFO order
+    const groupKey = (d) =>
+      `${d.materialName || ""}|${d.quality || "Standard"}|${(d.color || "#FFFFFF").toString().trim()}`;
+    const groups = new Map();
+    for (const doc of withAvailable) {
+      const key = groupKey(doc);
+      const avail = doc.availableWeight ?? doc.totalWeight ?? 0;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          materialName: doc.materialName,
+          quality: doc.quality || "Standard",
+          color: doc.color || "#FFFFFF",
+          totalAvailableWeight: 0,
+          productionIds: [],
+        });
+      }
+      const g = groups.get(key);
+      g.totalAvailableWeight += avail;
+      g.productionIds.push(doc._id);
+    }
+
+    const data = Array.from(groups.values()).map((g) => ({
+      materialName: g.materialName,
+      quality: g.quality,
+      color: g.color,
+      totalAvailableWeight: g.totalAvailableWeight,
+      productionIds: g.productionIds,
+    }));
 
     res.status(200).json({
       success: true,
