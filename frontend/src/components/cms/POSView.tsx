@@ -993,6 +993,10 @@ export function POSView() {
   const [markAsPaidModalOpen, setMarkAsPaidModalOpen] = useState(false);
   const [paymentHistoryModalOpen, setPaymentHistoryModalOpen] = useState(false);
   const [selectedSaleForPayment, setSelectedSaleForPayment] = useState<Sale | null>(null);
+  const [customerPayModalOpen, setCustomerPayModalOpen] = useState(false);
+  const [customerViewPaymentsModalOpen, setCustomerViewPaymentsModalOpen] = useState(false);
+  const [selectedCustomerName, setSelectedCustomerName] = useState<string | null>(null);
+  const [customerViewDateFilter, setCustomerViewDateFilter] = useState<string>("");
   
   const [allPayments, setAllPayments] = useState<PaymentHistory[]>(() => {
     const savedPayments = localStorage.getItem('sale_payments');
@@ -1472,6 +1476,30 @@ export function POSView() {
                     <span>{row.weight} kg</span>
                     <span>{row.units} units</span>
                   </div>
+                  <div className="flex gap-2 mt-3 pt-3 border-t border-border">
+                    <button
+                      onClick={() => {
+                        setSelectedCustomerName(row.customerName);
+                        setCustomerPayModalOpen(true);
+                      }}
+                      disabled={row.remainingAmount <= 0}
+                      className="flex-1 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                    >
+                      <DollarSign className="w-3.5 h-3.5" />
+                      Pay
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedCustomerName(row.customerName);
+                        setCustomerViewDateFilter("");
+                        setCustomerViewPaymentsModalOpen(true);
+                      }}
+                      className="flex-1 px-3 py-1.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium transition-colors flex items-center justify-center gap-1"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      View
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1790,6 +1818,131 @@ export function POSView() {
         sale={selectedSaleForPayment}
         allPayments={allPayments}
       />
+
+      {/* Customer Pay Modal - date-wise payment from summary card */}
+      {customerPayModalOpen && selectedCustomerName && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="bg-cms-table-header px-4 py-3 border-b border-border flex justify-between items-center">
+              <h3 className="text-sm font-semibold text-foreground">Pay — {selectedCustomerName}</h3>
+              <button onClick={() => { setCustomerPayModalOpen(false); setSelectedCustomerName(null); }} className="p-1 hover:bg-cms-card-hover rounded">
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              <p className="text-xs text-muted-foreground mb-3">Select sale to record payment (date-wise amount):</p>
+              {filteredSales
+                .filter((s) => (s.buyerName || "").trim() === selectedCustomerName && (s.remainingAmount || 0) > 0)
+                .map((sale) => (
+                  <div
+                    key={sale._id}
+                    className="flex items-center justify-between py-2 px-3 rounded-lg border border-border bg-cms-card mb-2"
+                  >
+                    <div>
+                      <span className="text-sm font-medium text-foreground">{sale.invoiceNo}</span>
+                      <span className="text-xs text-muted-foreground ml-2">{sale.materialName}</span>
+                      <p className="text-xs text-red-600 mt-0.5">Remaining: Rs. {formatCurrency(sale.remainingAmount || 0)}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setCustomerPayModalOpen(false);
+                        setSelectedCustomerName(null);
+                        handleRecordPayment(sale);
+                      }}
+                      className="px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-xs font-medium"
+                    >
+                      Pay
+                    </button>
+                  </div>
+                ))}
+              {filteredSales.filter((s) => (s.buyerName || "").trim() === selectedCustomerName && (s.remainingAmount || 0) > 0).length === 0 && (
+                <p className="text-sm text-muted-foreground py-4 text-center">No remaining amount to pay for this customer.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Customer View Payments Modal - sara record is date ko, payment history */}
+      {customerViewPaymentsModalOpen && selectedCustomerName && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="bg-cms-table-header px-4 py-3 border-b border-border flex justify-between items-center flex-wrap gap-2">
+              <h3 className="text-sm font-semibold text-foreground">Payment records — {selectedCustomerName}</h3>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={customerViewDateFilter}
+                  onChange={(e) => setCustomerViewDateFilter(e.target.value)}
+                  className="bg-cms-card border border-border rounded-md px-2 py-1.5 text-xs text-foreground"
+                  placeholder="Filter by date"
+                />
+                <button onClick={() => { setCustomerViewPaymentsModalOpen(false); setSelectedCustomerName(null); setCustomerViewDateFilter(""); }} className="p-1.5 hover:bg-cms-card-hover rounded">
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              {(() => {
+                const customerSaleIds = filteredSales.filter((s) => (s.buyerName || "").trim() === selectedCustomerName).map((s) => s._id);
+                let payments = allPayments.filter((p) => customerSaleIds.includes(p.saleId));
+                if (customerViewDateFilter) {
+                  payments = payments.filter((p) => p.paymentDate === customerViewDateFilter);
+                }
+                payments = [...payments].sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime());
+                const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+                return (
+                  <>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      {customerViewDateFilter ? `Payments on ${customerViewDateFilter}` : "All payment records (date-wise)"}
+                    </p>
+                    {payments.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-6 text-center">No payment records found.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-cms-table-header">
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Date</th>
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Invoice</th>
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Material</th>
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Amount</th>
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Method</th>
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {payments.map((p, idx) => {
+                              const sale = sales.find((s) => s._id === p.saleId);
+                              return (
+                                <tr key={p._id || idx} className={`border-t border-border ${idx % 2 === 0 ? "bg-cms-table-row" : "bg-cms-table-row-alt"}`}>
+                                  <td className="px-3 py-2 text-foreground">
+                                    {new Date(p.paymentDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                                  </td>
+                                  <td className="px-3 py-2 text-foreground">{p.invoiceNo || (sale?.invoiceNo ?? "—")}</td>
+                                  <td className="px-3 py-2 text-foreground">{p.materialName || (sale?.materialName ?? "—")}</td>
+                                  <td className="px-3 py-2 font-semibold text-green-600">Rs. {p.amount.toLocaleString()}</td>
+                                  <td className="px-3 py-2 text-foreground capitalize">{(p.paymentMethod || "").replace("_", " ")}</td>
+                                  <td className="px-3 py-2 text-muted-foreground">{p.notes || "—"}</td>
+                                </tr>
+                              );
+                            })}
+                            <tr className="border-t-2 border-border bg-cms-card">
+                              <td className="px-3 py-2 font-semibold text-foreground" colSpan={3}>Total</td>
+                              <td className="px-3 py-2 font-bold text-green-600">Rs. {totalAmount.toLocaleString()}</td>
+                              <td className="px-3 py-2 text-muted-foreground" colSpan={2}>{payments.length} payment(s)</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Dialog - UNCOMMENTED AND CORRECTED */}
       <AddSaleDialog

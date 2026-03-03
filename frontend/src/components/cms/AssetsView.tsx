@@ -81,6 +81,8 @@ export function AssetsView() {
     totalAssets: 0,
     totalValue: 0,
   });
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Fetch all assets
   const fetchAssets = async () => {
@@ -417,6 +419,18 @@ const handleAddAsset = async (assetData: any) => {
     item.assignedTo.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedData = filteredData.slice(startIndex, startIndex + itemsPerPage);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(Math.max(1, totalPages));
+  }, [filteredData.length, currentPage, totalPages]);
+
   if (showDetails && selectedAsset) {
     return <AssetDetailsView 
       onBack={() => setShowDetails(false)} 
@@ -517,7 +531,7 @@ const handleAddAsset = async (assetData: any) => {
               </tr>
             </thead>
             <tbody>
-              {filteredData.map((item, index) => (
+              {paginatedData.map((item, index) => (
                 <tr
                   key={item._id}
                   className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'} hover:bg-cms-card-hover transition-colors`}
@@ -581,20 +595,33 @@ const handleAddAsset = async (assetData: any) => {
             </div>
           )}
 
-          {/* Pagination */}
-          <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
-            <button className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button className="w-8 h-8 bg-primary text-primary-foreground rounded-md text-sm font-medium">1</button>
-            <button className="w-8 h-8 hover:bg-secondary text-muted-foreground rounded-md text-sm font-medium transition-colors">2</button>
-            <button className="w-8 h-8 hover:bg-secondary text-muted-foreground rounded-md text-sm font-medium transition-colors">3</button>
-            <span className="text-muted-foreground px-2">.....</span>
-            <button className="w-8 h-8 hover:bg-secondary text-muted-foreground rounded-md text-sm font-medium transition-colors">10</button>
-            <button className="p-1.5 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+          {/* Pagination - 10 records per page (same as Roznamcha) */}
+          {filteredData.length > 0 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-cms-card">
+              <div className="text-sm text-muted-foreground">
+                Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredData.length)} of {filteredData.length} assets
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-lg border border-border hover:bg-cms-card-hover disabled:opacity-50 disabled:cursor-not-allowed text-foreground"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-sm text-foreground px-2">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-lg border border-border hover:bg-cms-card-hover disabled:opacity-50 disabled:cursor-not-allowed text-foreground"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

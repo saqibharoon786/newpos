@@ -2024,6 +2024,41 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
     return byColor;
   }, [productionData]);
 
+  // Weight-wise summary: by material (total produced, sold, remaining per material)
+  const weightSummary = React.useMemo(() => {
+    const byMaterial: Record<string, {
+      totalWeight: number;
+      soldWeight: number;
+      remainingWeight: number;
+      colors: Record<string, { totalWeight: number; soldWeight: number; remainingWeight: number }>;
+    }> = {};
+    productionData.forEach((prod) => {
+      const material = prod.materialName || "Unknown";
+      const colorName = getColorName(prod.color || "#FFFFFF");
+      const total = prod.outputWeight ?? 0;
+      const remaining = prod.availableWeight ?? total ?? 0;
+      const sold = total - remaining;
+      if (!byMaterial[material]) {
+        byMaterial[material] = {
+          totalWeight: 0,
+          soldWeight: 0,
+          remainingWeight: 0,
+          colors: {},
+        };
+      }
+      byMaterial[material].totalWeight += total;
+      byMaterial[material].soldWeight += sold;
+      byMaterial[material].remainingWeight += remaining;
+      if (!byMaterial[material].colors[colorName]) {
+        byMaterial[material].colors[colorName] = { totalWeight: 0, soldWeight: 0, remainingWeight: 0 };
+      }
+      byMaterial[material].colors[colorName].totalWeight += total;
+      byMaterial[material].colors[colorName].soldWeight += sold;
+      byMaterial[material].colors[colorName].remainingWeight += remaining;
+    });
+    return byMaterial;
+  }, [productionData]);
+
   const getColorHex = (colorName: string) => {
     const c = colorOptions.find(o => o.name.toLowerCase() === colorName.toLowerCase());
     return c ? c.value : "#CCCCCC";
@@ -2084,7 +2119,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
         </div>
       </div>
 
-      {/* Color-wise Weight Summary (same as POP style) */}
+      {/* Color-wise Weight Summary */}
       {Object.keys(colorSummary).length > 0 && (
         <div className="mb-6">
           <h4 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
@@ -2155,7 +2190,75 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
           </div>
         </div>
       )}
-      
+
+      {/* Weight-wise Summary (by Material) */}
+      {Object.keys(weightSummary).length > 0 && (
+        <div className="mb-6">
+          <h4 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+            <Package className="w-4 h-4 text-primary" />
+            Weight-wise Summary (by Material)
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {Object.entries(weightSummary)
+              .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
+              .map(([materialName, data]) => {
+                const total = Math.round(data.totalWeight * 10) / 10;
+                const sold = Math.round(data.soldWeight * 10) / 10;
+                const remaining = Math.round(data.remainingWeight * 10) / 10;
+                return (
+                  <div key={materialName} className="bg-cms-table-header rounded-lg p-3 border border-border">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-foreground">{materialName}</span>
+                      <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded">
+                        {total.toLocaleString()} kg
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Total Produced:</span>
+                        <span className="font-medium text-foreground">{total.toLocaleString()} kg</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Sold:</span>
+                        <span className="font-medium text-green-600">{sold.toLocaleString()} kg</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Remaining:</span>
+                        <span className="font-medium text-primary">{remaining.toLocaleString()} kg</span>
+                      </div>
+                    </div>
+                    {Object.keys(data.colors).length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <div className="text-xs text-muted-foreground mb-2">Breakdown by Color:</div>
+                        <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                          {Object.entries(data.colors)
+                            .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
+                            .map(([colorName, cData]) => (
+                              <div key={colorName} className="flex justify-between items-center text-xs">
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className="w-2 h-2 rounded-full border border-border"
+                                    style={{ backgroundColor: getColorHex(colorName) }}
+                                  />
+                                  <span className="text-foreground">{colorName}</span>
+                                </div>
+                                <div className="flex gap-3">
+                                  <span className="text-primary">{Math.round(cData.remainingWeight * 10) / 10} kg</span>
+                                  <span className="text-muted-foreground">/</span>
+                                  <span className="text-foreground">{Math.round(cData.totalWeight * 10) / 10} kg</span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
       {filteredData.length === 0 ? (
         <div className="text-center py-12">
           <History className="w-12 h-12 text-muted-foreground mx-auto mb-4" />

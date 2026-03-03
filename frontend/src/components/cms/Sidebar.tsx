@@ -11,7 +11,7 @@ const menuItems = [
   { id: "pop", label: "POP", icon: ShoppingCart },
     { id: "process", label: "Process", icon: ShoppingCart },
   { id: "pos", label: "POS", icon: Store },
-  { id: "roznamcha", label: "Roznamcha", icon: BookOpen },
+  { id: "roznamcha", label: "Kharcha", icon: BookOpen },
   { id: "assets", label: "Assets", icon: Package },
   { id: "customers", label: "Customers", icon: Users },
   { id: "employees", label: "Employee", icon: UserCog },
