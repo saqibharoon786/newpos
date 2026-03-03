@@ -978,6 +978,188 @@ const PaymentHistoryModal = ({
   );
 };
 
+/** Modal: pay combined total for a customer; amount is distributed across sales (FIFO). */
+const PayTotalModal = ({
+  open,
+  onClose,
+  customerName,
+  sales,
+  totalRemaining,
+  onSuccess,
+  formatCurrency,
+}: {
+  open: boolean;
+  onClose: () => void;
+  customerName: string;
+  sales: Sale[];
+  totalRemaining: number;
+  onSuccess: (records: PaymentHistory[]) => void;
+  formatCurrency: (n: number) => string;
+}) => {
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentDate, setPaymentDate] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState<string>("cash");
+  const [notes, setNotes] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (open && totalRemaining > 0) {
+      setPaymentAmount(String(totalRemaining));
+      setPaymentDate(new Date().toISOString().split("T")[0]);
+      setPaymentMethod("cash");
+      setNotes("");
+    }
+  }, [open, totalRemaining]);
+
+  const handleSubmit = async () => {
+    const amount = parseFloat(paymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast({ title: "Error", description: "Enter a valid amount", variant: "destructive" });
+      return;
+    }
+    if (amount > totalRemaining) {
+      toast({
+        title: "Error",
+        description: `Amount cannot exceed total remaining Rs. ${formatCurrency(totalRemaining)}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    const records: PaymentHistory[] = [];
+    let left = amount;
+    try {
+      for (const sale of sales) {
+        if (left <= 0) break;
+        const saleRemaining = sale.remainingAmount ?? (parseFloat(sale.finalAmount || sale.sellingPrice) - (sale.amountPaid || 0));
+        const pay = Math.min(left, saleRemaining);
+        if (pay <= 0) continue;
+
+        const newAmountPaid = (sale.amountPaid || 0) + pay;
+        const totalAmount = parseFloat(sale.finalAmount || sale.sellingPrice);
+        const newPaymentStatus = newAmountPaid >= totalAmount ? "paid" : "partial";
+        const newRemainingAmount = Math.max(0, totalAmount - newAmountPaid);
+
+        const paymentRecord: PaymentHistory = {
+          _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          saleId: sale._id,
+          amount: pay,
+          paymentDate: paymentDate,
+          paymentMethod: paymentMethod,
+          notes: notes || `Payment Rs. ${formatCurrency(pay)}`,
+          invoiceNo: sale.invoiceNo,
+          materialName: sale.materialName,
+        };
+
+        await api.put(`${SALES_API_URL}/${sale._id}`, {
+          amountPaid: newAmountPaid,
+          paymentStatus: newPaymentStatus,
+          remainingAmount: newRemainingAmount,
+        });
+
+        records.push(paymentRecord);
+        left -= pay;
+      }
+
+      toast({
+        title: "Success",
+        description: `Payment of Rs. ${formatCurrency(amount)} recorded.`,
+      });
+      onSuccess(records);
+      onClose();
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err.response?.data?.message || "Failed to record payment",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!open || sales.length === 0) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-md">
+        <div className="bg-cms-table-header px-4 py-3 border-b border-border flex justify-between items-center">
+          <h3 className="text-sm font-semibold text-foreground">Pay total — {customerName}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-cms-card-hover rounded">
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div className="p-3 bg-cms-card rounded-lg border border-border">
+            <p className="text-xs text-muted-foreground">Total remaining</p>
+            <p className="text-xl font-bold text-red-600">Rs. {formatCurrency(totalRemaining)}</p>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Amount to pay</label>
+            <input
+              type="number"
+              value={paymentAmount}
+              onChange={(e) => setPaymentAmount(e.target.value)}
+              className="w-full bg-cms-card border border-border rounded-md px-3 py-2 text-foreground"
+              min={0}
+              step={1}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Date</label>
+            <input
+              type="date"
+              value={paymentDate}
+              onChange={(e) => setPaymentDate(e.target.value)}
+              className="w-full bg-cms-card border border-border rounded-md px-3 py-2 text-foreground"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Method</label>
+            <select
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+              className="w-full bg-cms-card border border-border rounded-md px-3 py-2 text-foreground"
+            >
+              <option value="cash">Cash</option>
+              <option value="bank">Bank</option>
+              <option value="online">Online</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Notes (optional)</label>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full bg-cms-card border border-border rounded-md px-3 py-2 text-foreground"
+              placeholder="Notes"
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={onClose}
+              className="flex-1 px-3 py-2 border border-border rounded-md text-sm font-medium text-foreground hover:bg-cms-card-hover"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="flex-1 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-1"
+            >
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {isSubmitting ? "Saving…" : "Pay"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export function POSView() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -997,6 +1179,8 @@ export function POSView() {
   const [customerViewPaymentsModalOpen, setCustomerViewPaymentsModalOpen] = useState(false);
   const [selectedCustomerName, setSelectedCustomerName] = useState<string | null>(null);
   const [customerViewDateFilter, setCustomerViewDateFilter] = useState<string>("");
+  const [payTotalModalOpen, setPayTotalModalOpen] = useState(false);
+  const [payTotalData, setPayTotalData] = useState<{ customerName: string; sales: Sale[]; totalRemaining: number } | null>(null);
   
   const [allPayments, setAllPayments] = useState<PaymentHistory[]>(() => {
     const savedPayments = localStorage.getItem('sale_payments');
@@ -1243,7 +1427,7 @@ export function POSView() {
     return c ? c.name : (hex || "—");
   };
 
-  // Customer-wise summary (from filtered sales) with quality-wise weight and color
+  // Customer-wise summary: total pay = sab items (HD, plastic bag, etc.) ki payment ka sum, with breakdown
   const customerSummary = useMemo(() => {
     const byCustomer: Record<string, {
       sales: number;
@@ -1255,6 +1439,8 @@ export function POSView() {
       qualities: Set<string>;
       colors: Set<string>;
       qualityWeight: Record<string, number>;
+      qualityPaid: Record<string, number>;   // payment per quality (HD, Plastic bag, etc.)
+      materialPaid: Record<string, number>;  // payment per material name
     }> = {};
     filteredSales.forEach((sale) => {
       const name = (sale.buyerName || "Unknown").trim() || "Unknown";
@@ -1264,6 +1450,7 @@ export function POSView() {
       const weight = parseFloat(sale.weight) || 0;
       const units = parseInt(sale.unit, 10) || 0;
       const quality = (sale as Sale & { quality?: string }).quality?.trim() || "Unknown";
+      const materialName = (sale.materialName || "Unknown").trim() || "Unknown";
       const colorHex = sale.materialColor?.trim() || "";
       if (!byCustomer[name]) {
         byCustomer[name] = {
@@ -1276,6 +1463,8 @@ export function POSView() {
           qualities: new Set<string>(),
           colors: new Set<string>(),
           qualityWeight: {},
+          qualityPaid: {},
+          materialPaid: {},
         };
       }
       byCustomer[name].sales += 1;
@@ -1288,6 +1477,8 @@ export function POSView() {
       if (colorHex) byCustomer[name].colors.add(colorHex);
       const qKey = quality || "Unknown";
       byCustomer[name].qualityWeight[qKey] = (byCustomer[name].qualityWeight[qKey] || 0) + weight;
+      byCustomer[name].qualityPaid[qKey] = (byCustomer[name].qualityPaid[qKey] || 0) + paid;
+      byCustomer[name].materialPaid[materialName] = (byCustomer[name].materialPaid[materialName] || 0) + paid;
     });
     return Object.entries(byCustomer).map(([customerName, data]) => ({
       customerName,
@@ -1300,6 +1491,8 @@ export function POSView() {
       qualities: Array.from(data.qualities).filter(Boolean).sort(),
       colors: Array.from(data.colors).filter(Boolean),
       qualityWeight: data.qualityWeight,
+      qualityPaid: data.qualityPaid,
+      materialPaid: data.materialPaid,
     })).sort((a, b) => b.totalAmount - a.totalAmount);
   }, [filteredSales]);
 
@@ -1427,9 +1620,25 @@ export function POSView() {
                     <span className="font-semibold text-foreground">Rs. {formatCurrency(row.totalAmount)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Paid</span>
+                    <span className="text-muted-foreground">Total Pay</span>
                     <span className="font-semibold text-green-600">Rs. {formatCurrency(row.amountPaid)}</span>
                   </div>
+                  {row.qualityPaid && Object.keys(row.qualityPaid).length > 0 && (
+                    <div className="pt-0.5 pl-1">
+                      <span className="text-xs text-muted-foreground block mb-0.5">By type:</span>
+                      <div className="space-y-0.5">
+                        {Object.entries(row.qualityPaid)
+                          .filter(([, amt]) => amt > 0)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([q, amt]) => (
+                            <div key={q} className="flex justify-between items-center text-xs">
+                              <span className="text-foreground">{q}</span>
+                              <span className="font-medium text-green-600">Rs. {formatCurrency(amt)}</span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Remaining</span>
                     <span className={`font-semibold ${row.remainingAmount > 0 ? "text-red-600" : "text-muted-foreground"}`}>
@@ -1819,49 +2028,62 @@ export function POSView() {
         allPayments={allPayments}
       />
 
-      {/* Customer Pay Modal - date-wise payment from summary card */}
-      {customerPayModalOpen && selectedCustomerName && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
-            <div className="bg-cms-table-header px-4 py-3 border-b border-border flex justify-between items-center">
-              <h3 className="text-sm font-semibold text-foreground">Pay — {selectedCustomerName}</h3>
-              <button onClick={() => { setCustomerPayModalOpen(false); setSelectedCustomerName(null); }} className="p-1 hover:bg-cms-card-hover rounded">
-                <X className="w-4 h-4 text-muted-foreground" />
-              </button>
-            </div>
-            <div className="p-4 overflow-y-auto flex-1">
-              <p className="text-xs text-muted-foreground mb-3">Select sale to record payment (date-wise amount):</p>
-              {filteredSales
-                .filter((s) => (s.buyerName || "").trim() === selectedCustomerName && (s.remainingAmount || 0) > 0)
-                .map((sale) => (
-                  <div
-                    key={sale._id}
-                    className="flex items-center justify-between py-2 px-3 rounded-lg border border-border bg-cms-card mb-2"
+      {/* Customer Pay Modal — total remaining + one Pay total button */}
+      {customerPayModalOpen && selectedCustomerName && (() => {
+        const customerSales = filteredSales.filter(
+          (s) => (s.buyerName || "").trim() === selectedCustomerName && (s.remainingAmount || 0) > 0
+        );
+        const totalRemaining = customerSales.reduce((sum, s) => sum + (s.remainingAmount || 0), 0);
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-md overflow-hidden flex flex-col">
+              <div className="bg-cms-table-header px-4 py-3 border-b border-border flex justify-between items-center">
+                <h3 className="text-sm font-semibold text-foreground">Pay — {selectedCustomerName}</h3>
+                <button onClick={() => { setCustomerPayModalOpen(false); setSelectedCustomerName(null); }} className="p-1 hover:bg-cms-card-hover rounded">
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+              <div className="p-4">
+                <p className="text-xs text-muted-foreground mb-2">Total remaining (all items combined):</p>
+                <div className="p-4 rounded-lg border border-border bg-cms-card mb-4">
+                  <p className="text-2xl font-bold text-red-600">Rs. {formatCurrency(totalRemaining)}</p>
+                </div>
+                {totalRemaining > 0 ? (
+                  <button
+                    onClick={() => {
+                      setPayTotalData({ customerName: selectedCustomerName, sales: customerSales, totalRemaining });
+                      setCustomerPayModalOpen(false);
+                      setSelectedCustomerName(null);
+                      setPayTotalModalOpen(true);
+                    }}
+                    className="w-full px-4 py-3 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center justify-center gap-2"
                   >
-                    <div>
-                      <span className="text-sm font-medium text-foreground">{sale.invoiceNo}</span>
-                      <span className="text-xs text-muted-foreground ml-2">{sale.materialName}</span>
-                      <p className="text-xs text-red-600 mt-0.5">Remaining: Rs. {formatCurrency(sale.remainingAmount || 0)}</p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setCustomerPayModalOpen(false);
-                        setSelectedCustomerName(null);
-                        handleRecordPayment(sale);
-                      }}
-                      className="px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-xs font-medium"
-                    >
-                      Pay
-                    </button>
-                  </div>
-                ))}
-              {filteredSales.filter((s) => (s.buyerName || "").trim() === selectedCustomerName && (s.remainingAmount || 0) > 0).length === 0 && (
-                <p className="text-sm text-muted-foreground py-4 text-center">No remaining amount to pay for this customer.</p>
-              )}
+                    <DollarSign className="w-4 h-4" />
+                    Pay total
+                  </button>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">No remaining amount to pay for this customer.</p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      <PayTotalModal
+        open={payTotalModalOpen}
+        onClose={() => { setPayTotalModalOpen(false); setPayTotalData(null); }}
+        customerName={payTotalData?.customerName ?? ""}
+        sales={payTotalData?.sales ?? []}
+        totalRemaining={payTotalData?.totalRemaining ?? 0}
+        onSuccess={(records) => {
+          setAllPayments((prev) => [...prev, ...records]);
+          fetchSales();
+          setPayTotalModalOpen(false);
+          setPayTotalData(null);
+        }}
+        formatCurrency={formatCurrency}
+      />
 
       {/* Customer View Payments Modal - sara record is date ko, payment history */}
       {customerViewPaymentsModalOpen && selectedCustomerName && (
