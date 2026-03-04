@@ -2731,7 +2731,7 @@ export function ProcessingModule() {
   };
   
   return (
-    <div className="flex-1 p-6 overflow-auto animate-fade-in">
+    <div className="flex-1 min-w-0 p-3 sm:p-4 md:p-6 overflow-auto animate-fade-in">
       {/* Header */}
       <div className="bg-cms-table-header rounded-lg px-4 py-3 mb-6 flex items-center justify-between border-l-4 border-primary">
         <div className="flex items-center gap-3">

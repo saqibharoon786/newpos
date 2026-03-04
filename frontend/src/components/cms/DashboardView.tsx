@@ -103,11 +103,11 @@ export function DashboardView() {
 
   if (loading) {
     return (
-      <div className="flex-1 p-6 overflow-auto animate-fade-in">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Dashboard Overview</h1>
+      <div className="flex-1 min-w-0 p-3 sm:p-4 md:p-6 overflow-auto animate-fade-in">
+        <div className="flex justify-between items-center mb-4 sm:mb-6">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Dashboard Overview</h1>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-6">
           {[...Array(6)].map((_, i) => (
             <div key={i} className="bg-cms-card rounded-xl p-4 animate-pulse">
               <div className="h-4 bg-muted rounded w-2/3 mb-3" />
@@ -121,9 +121,9 @@ export function DashboardView() {
 
   if (error) {
     return (
-      <div className="flex-1 p-6 overflow-auto animate-fade-in">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Dashboard Overview</h1>
+      <div className="flex-1 min-w-0 p-3 sm:p-4 md:p-6 overflow-auto animate-fade-in">
+        <div className="flex justify-between items-center mb-4 sm:mb-6 gap-2 flex-wrap">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Dashboard Overview</h1>
           <button onClick={() => fetchDashboardData()} className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm">
             Retry
           </button>
@@ -141,12 +141,12 @@ export function DashboardView() {
   }
 
   return (
-    <div className="flex-1 p-6 overflow-auto animate-fade-in">
+    <div className="flex-1 min-w-0 p-3 sm:p-4 md:p-6 overflow-auto animate-fade-in">
       {/* Header + Period selector + Month/Year calendar */}
-      <div className="flex flex-col gap-4 mb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <h1 className="text-2xl font-bold text-foreground">Dashboard Overview</h1>
-          <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex flex-col gap-3 sm:gap-4 mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Dashboard Overview</h1>
+          <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
             <span className="text-sm text-muted-foreground flex items-center gap-1">
               <Calendar className="w-4 h-4" />
               {periodLabel}
@@ -214,7 +214,7 @@ export function DashboardView() {
       </div>
 
       {/* Stats: Total Products, Sales count, Sales amount, Expenses (roznamcha), Profit (sales - expenses) */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-4 sm:mb-6">
         <StatsCard
           icon={Package}
           iconColor="text-cms-accent"
@@ -254,12 +254,12 @@ export function DashboardView() {
         />
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="col-span-2">
+      {/* Charts Row - stack on mobile */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
+        <div className="lg:col-span-2 min-w-0">
           <SalesChart />
         </div>
-        <div className="col-span-1">
+        <div className="lg:col-span-1 min-w-0">
           <RoznamchaWidget />
         </div>
       </div>

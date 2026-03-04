@@ -17,6 +17,7 @@ const api = axios.create({
 // Define endpoints using environment variable
 const SALES_API_URL = `${API_BASE_URL}/api/sales`;
 const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
+const FINANCE_DEPOSIT_URL = `${API_BASE_URL}/api/finance/deposit`;
 
 interface Sale {
   _id: string;
@@ -394,6 +395,23 @@ const PaymentModal = ({
       );
 
       if (response.data.success) {
+        const method = paymentMethod.toLowerCase();
+        if (['jazzcash', 'easypaisa', 'bank'].includes(method)) {
+          try {
+            await api.post(FINANCE_DEPOSIT_URL, {
+              method,
+              amount: Number(amount),
+              description: `POS Payment - ${(sale.buyerName || 'Customer').trim()} - ${sale.invoiceNo || sale.materialName || 'Sale'}`,
+              reference: `POS-${sale._id}-${Date.now()}`,
+            });
+          } catch (depositErr: any) {
+            toast({
+              title: "Payment saved",
+              description: "Finance deposit could not be added: " + (depositErr.response?.data?.message || depositErr.message),
+              variant: "destructive",
+            });
+          }
+        }
         toast({
           title: "Success",
           description: `Payment of Rs. ${amount.toLocaleString()} recorded successfully!`,
@@ -512,10 +530,10 @@ const PaymentModal = ({
                 onChange={(e) => setPaymentMethod(e.target.value)}
                 className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               >
-                <option value="cash">Cash</option>
-                <option value="bank_transfer">Bank Transfer</option>
-                <option value="cheque">Cheque</option>
-                <option value="online">Online Payment</option>
+                <option value="cash">Cash (Drawer)</option>
+                <option value="jazzcash">JazzCash</option>
+                <option value="easypaisa">EasyPaisa</option>
+                <option value="bank">Bank</option>
                 <option value="other">Other</option>
               </select>
             </div>
@@ -576,6 +594,7 @@ const MarkAsPaidModal = ({
   onPaymentSuccess: (paymentRecord: PaymentHistory) => void;
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<string>('cash');
 
   const handleMarkPaid = async () => {
     if (!sale) return;
@@ -584,13 +603,14 @@ const MarkAsPaidModal = ({
     try {
       const totalAmount = parseFloat(sale.finalAmount || sale.sellingPrice);
       const remainingAmount = totalAmount - sale.amountPaid;
+      const method = paymentMethod.toLowerCase();
       
       const paymentRecord: PaymentHistory = {
         _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         saleId: sale._id,
         amount: remainingAmount,
         paymentDate: new Date().toISOString().split('T')[0],
-        paymentMethod: 'cash',
+        paymentMethod: method,
         notes: 'Marked as fully paid',
         invoiceNo: sale.invoiceNo,
         materialName: sale.materialName
@@ -608,6 +628,22 @@ const MarkAsPaidModal = ({
       );
 
       if (response.data.success) {
+        if (['jazzcash', 'easypaisa', 'bank'].includes(method)) {
+          try {
+            await api.post(FINANCE_DEPOSIT_URL, {
+              method,
+              amount: remainingAmount,
+              description: `POS Payment - ${(sale.buyerName || 'Customer').trim()} - ${sale.invoiceNo || sale.materialName || 'Sale'}`,
+              reference: `POS-${sale._id}-${Date.now()}`,
+            });
+          } catch (depositErr: any) {
+            toast({
+              title: "Marked as paid",
+              description: "Finance deposit could not be added: " + (depositErr.response?.data?.message || depositErr.message),
+              variant: "destructive",
+            });
+          }
+        }
         toast({
           title: "Success",
           description: `Sale marked as fully paid!`,
@@ -680,6 +716,22 @@ const MarkAsPaidModal = ({
               <span className="text-xs text-muted-foreground">→</span>
               <PaymentStatusBadge status={'paid'} />
             </div>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-xs text-muted-foreground mb-1.5">Payment Method</label>
+            <select
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+              className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground"
+            >
+              <option value="cash">Cash (Drawer)</option>
+              <option value="jazzcash">JazzCash</option>
+              <option value="easypaisa">EasyPaisa</option>
+              <option value="bank">Bank</option>
+              <option value="other">Other</option>
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">JazzCash / EasyPaisa / Bank payments are added to Finance → Deposit.</p>
           </div>
 
           <div className="mb-6">
@@ -1062,6 +1114,24 @@ const PayTotalModal = ({
         left -= pay;
       }
 
+      const method = paymentMethod.toLowerCase();
+      if (['jazzcash', 'easypaisa', 'bank'].includes(method)) {
+        try {
+          await api.post(FINANCE_DEPOSIT_URL, {
+            method,
+            amount: Number(amount),
+            description: `POS Payment - ${customerName} - Multiple invoices`,
+            reference: `POS-TOTAL-${Date.now()}`,
+          });
+        } catch (depositErr: any) {
+          toast({
+            title: "Payment saved",
+            description: "Finance deposit could not be added: " + (depositErr.response?.data?.message || depositErr.message),
+            variant: "destructive",
+          });
+        }
+      }
+
       toast({
         title: "Success",
         description: `Payment of Rs. ${formatCurrency(amount)} recorded.`,
@@ -1122,9 +1192,10 @@ const PayTotalModal = ({
               onChange={(e) => setPaymentMethod(e.target.value)}
               className="w-full bg-cms-card border border-border rounded-md px-3 py-2 text-foreground"
             >
-              <option value="cash">Cash</option>
+              <option value="cash">Cash (Drawer)</option>
+              <option value="jazzcash">JazzCash</option>
+              <option value="easypaisa">EasyPaisa</option>
               <option value="bank">Bank</option>
-              <option value="online">Online</option>
               <option value="other">Other</option>
             </select>
           </div>
@@ -1517,9 +1588,9 @@ export function POSView() {
   }
 
   return (
-    <div className="flex-1 p-6 overflow-auto">
+    <div className="flex-1 min-w-0 p-3 sm:p-4 md:p-6 overflow-auto">
       {/* Header */}
-      <div className="bg-cms-table-header rounded-lg px-4 py-3 mb-6 flex items-center gap-3 border-l-4 border-primary">
+      <div className="bg-cms-table-header rounded-lg px-3 sm:px-4 py-3 mb-4 sm:mb-6 flex items-center gap-3 border-l-4 border-primary">
         <div className="w-8 h-6 bg-primary rounded-sm flex items-center justify-center">
           <ShoppingCart className="w-4 h-4 text-primary-foreground" />
         </div>
@@ -1779,10 +1850,11 @@ export function POSView() {
           </div>
         ) : (
           <>
-            <table className="w-full">
+            <div className="overflow-x-auto -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6">
+            <table className="w-full min-w-[900px]">
               <thead>
                 <tr className="bg-cms-table-header">
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Invoice No.</th>
+                  <th className="text-left px-2 sm:px-4 py-3 text-xs sm:text-sm font-medium text-foreground">Invoice No.</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Customer Name</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight (kg)</th>
@@ -1929,6 +2001,7 @@ export function POSView() {
                 })}
               </tbody>
             </table>
+            </div>
 
             {totalPages > 1 && (
               <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
