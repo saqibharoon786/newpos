@@ -97,9 +97,28 @@
     @apply border-border;
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Inter', sans-serif;
+    overflow-x: hidden;
+    /* Safe area for notched devices */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Touch-friendly minimum tap targets on mobile */
+  @media (max-width: 767px) {
+    button:not(.no-touch-target),
+    a[role="button"],
+    [role="button"] {
+      min-height: 44px;
+      min-width: 44px;
+    }
   }
 
   /* Apply the custom color to all input fields */
@@ -160,4 +179,22 @@
 /* You can also create a specific CSS class for this color */
 .input-bg-custom {
   background-color: hsl(185deg 36.43% 22.04% / 72%) !important;
+}
+
+/* ========== Mobile responsive utilities ========== */
+/* Horizontal scroll for tables on small screens */
+.table-scroll-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-left: -0.5rem;
+  margin-right: -0.5rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+@media (max-width: 767px) {
+  /* Full-bleed modals on mobile */
+  [data-state="open"].fixed.inset-0 {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
 }

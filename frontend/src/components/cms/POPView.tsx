@@ -3895,7 +3895,7 @@ export function POPView() {
   }
 
   return (
-    <div className="flex-1 p-6 overflow-auto animate-fade-in">
+    <div className="flex-1 min-w-0 p-3 sm:p-4 md:p-6 overflow-auto animate-fade-in">
       <div className="bg-cms-table-header rounded-lg px-4 py-3 mb-6 flex items-center gap-3 border-l-4 border-primary">
         <div className="w-8 h-6 bg-primary rounded-sm flex items-center justify-center">
           <ShoppingCart className="w-4 h-4 text-primary-foreground" />

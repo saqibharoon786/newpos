@@ -11,7 +11,8 @@ import CustomersView from "./CustomersView";
 import Employee from "./Employee";
 import Finance from "./Finance";
 import Process from "./process";
-import { LogOut } from "lucide-react";
+import { LogOut, Menu } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const SUPER_ADMIN = {
   email: "superadmin@gmail.com",
@@ -20,8 +21,10 @@ const SUPER_ADMIN = {
 
 export function CMSDashboard() {
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userEmail, setUserEmail] = useState("");
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   // Get user email
   useEffect(() => {
@@ -112,41 +115,51 @@ export function CMSDashboard() {
   };
 
   return (
-    <div className="min-h-screen flex">
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
-      
-      <div className="flex-1 flex flex-col">
-        {/* Top Header Bar with Color Scheme */}
-        <div className="bg-gradient-to-r from-teal-800 to-teal-700 text-white h-14 flex items-center justify-between px-6">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <span className="text-sm font-medium">Session Actives</span>
-            </div>
-            <div className="text-lg font-semibold ml-4">
-              {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+    <div className="min-h-screen flex flex-col md:flex-row">
+      <Sidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        isOpen={sidebarOpen}
+        onClose={isMobile ? () => setSidebarOpen(false) : undefined}
+      />
+
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top Header - responsive */}
+        <header className="bg-gradient-to-r from-teal-800 to-teal-700 text-white h-14 flex items-center justify-between gap-2 px-3 sm:px-4 md:px-6 flex-shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            {isMobile && (
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="p-2 rounded-md hover:bg-white/10 touch-manipulation flex-shrink-0"
+                aria-label="Open menu"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
+            )}
+            <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0 hidden sm:block" />
+              <span className="text-xs sm:text-sm font-medium truncate">
+                {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+              </span>
             </div>
           </div>
-          
-          {/* User Info and Logout */}
-          <div className="flex items-center gap-4">
-            <div className="text-sm text-white/80 hidden md:block">
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className="text-xs text-white/80 hidden sm:block truncate max-w-[100px] md:max-w-none">
               {userEmail.split('@')[0]}
-            </div>
-            
-            {/* Logout Button */}
+            </span>
             <button
               onClick={logout}
-              className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all duration-200"
+              className="flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 rounded-md text-xs sm:text-sm font-medium bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all duration-200 touch-manipulation"
             >
               <LogOut className="w-4 h-4" />
-              Logout
+              <span className="hidden sm:inline">Logout</span>
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Main Content - No Footer */}
-        <main className="flex-1 overflow-auto bg-background p-6">
+        <main className="flex-1 overflow-auto bg-background p-3 sm:p-4 md:p-6 min-h-0">
           {renderContent()}
         </main>
       </div>

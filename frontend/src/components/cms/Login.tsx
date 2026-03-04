@@ -195,8 +195,8 @@ const Index = () => {
       </div>
 
       {/* Main Content Container */}
-      <div className="relative z-10 min-h-screen flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-6xl flex flex-col lg:flex-row items-center justify-between gap-12 lg:gap-24">
+      <div className="relative z-10 min-h-screen flex items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
+        <div className="w-full max-w-6xl flex flex-col lg:flex-row items-center justify-between gap-8 sm:gap-12 lg:gap-24">
           
           {/* Left Side - Branding & Stats */}
           <div className="flex flex-col space-y-10 lg:space-y-14 flex-1 animate-[fadeInLeft_0.8s_ease-out]">
@@ -218,7 +218,7 @@ const Index = () => {
 
             {/* Headline */}
             <div className="animate-[fadeIn_1s_ease-out_0.3s_both]">
-              <h1 className="text-3xl lg:text-[2.5rem] font-bold leading-tight" style={{ color: '#ffffff' }}>
+              <h1 className="text-2xl sm:text-3xl lg:text-[2.5rem] font-bold leading-tight" style={{ color: '#ffffff' }}>
                 Innovating Plastic<br />
                 Solutions with Data-<br />
                 Driven Productions
@@ -281,9 +281,9 @@ const Index = () => {
           </div>
 
           {/* Right Side - Login Form */}
-          <div className="w-full max-w-md flex-shrink-0 animate-[fadeInRight_0.8s_ease-out]">
-            <div className="text-center lg:text-left mb-8">
-              <h2 className="text-2xl font-bold mb-2 animate-[fadeIn_0.8s_ease-out_0.2s_both]" style={{ color: '#ffffff' }}>Login Super Admin</h2>
+          <div className="w-full max-w-md flex-shrink-0 min-w-0 animate-[fadeInRight_0.8s_ease-out]">
+            <div className="text-center lg:text-left mb-6 sm:mb-8">
+              <h2 className="text-xl sm:text-2xl font-bold mb-2 animate-[fadeIn_0.8s_ease-out_0.2s_both]" style={{ color: '#ffffff' }}>Login Super Admin</h2>
               <p className="text-sm animate-[fadeIn_0.8s_ease-out_0.4s_both]" style={{ color: '#7aadad' }}>
                 Please enter your detail to access the dashboard
               </p>

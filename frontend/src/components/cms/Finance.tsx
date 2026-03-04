@@ -756,17 +756,17 @@ export default function FinanceModule() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background min-w-0">
       {/* Header Section */}
-      <div className="px-6 py-5 bg-card border-b border-border">
+      <div className="px-3 sm:px-4 md:px-6 py-4 sm:py-5 bg-card border-b border-border">
         <div className="max-w-screen-2xl mx-auto">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 bg-primary/20 rounded-2xl flex items-center justify-center border border-primary/30">
-                <BanknoteIcon className="w-7 h-7 text-primary" />
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 bg-primary/20 rounded-2xl flex items-center justify-center border border-primary/30 flex-shrink-0">
+                <BanknoteIcon className="w-6 h-6 sm:w-7 sm:h-7 text-primary" />
               </div>
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">Finance Management</h1>
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold text-foreground truncate">Finance Management</h1>
                 <p className="text-sm text-muted-foreground">Total Balance: <span className="text-primary font-semibold">{formatCurrency(totalBalance)}</span></p>
               </div>
             </div>
@@ -794,10 +794,10 @@ export default function FinanceModule() {
         </div>
       </div>
 
-      <div className="px-6 py-6">
-        <div className="max-w-screen-2xl mx-auto space-y-6">
+      <div className="px-3 sm:px-4 md:px-6 py-4 sm:py-6 overflow-x-hidden">
+        <div className="max-w-screen-2xl mx-auto space-y-4 sm:space-y-6">
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
             {[
               { 
                 label: "Total Balance", 

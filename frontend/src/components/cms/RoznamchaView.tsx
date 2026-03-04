@@ -1663,23 +1663,23 @@ export function RoznamchaView() {
 
   return (
     <>
-      <div className="flex-1 p-6 overflow-auto animate-fade-in">
+      <div className="flex-1 min-w-0 p-3 sm:p-4 md:p-6 overflow-auto animate-fade-in">
         {/* Header */}
-        <div className="bg-cms-table-header rounded-lg px-4 py-3 mb-6 flex items-center gap-3 border-l-4 border-primary">
-          <div className="w-8 h-6 bg-primary rounded-sm flex items-center justify-center">
+        <div className="bg-cms-table-header rounded-lg px-3 sm:px-4 py-3 mb-4 sm:mb-6 flex items-center gap-3 border-l-4 border-primary">
+          <div className="w-8 h-6 bg-primary rounded-sm flex items-center justify-center flex-shrink-0">
             <BookOpen className="w-4 h-4 text-primary-foreground" />
           </div>
-          <h1 className="text-lg font-semibold text-foreground">Daily Expense <span className="text-muted-foreground">(Roznamcha)</span></h1>
+          <h1 className="text-base sm:text-lg font-semibold text-foreground truncate">Daily Expense <span className="text-muted-foreground">(Roznamcha)</span></h1>
         </div>
 
         {/* Tabs and Actions Row */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-1 bg-cms-card rounded-lg p-1">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6">
+          <div className="flex items-center gap-1 bg-cms-card rounded-lg p-1 overflow-x-auto">
             {["All", "Daily", "Weekly", "Monthly"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => handleActiveTabChange(tab)}
-                className={`px-6 py-2 rounded-md text-sm font-medium transition-colors ${
+                className={`px-3 sm:px-6 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap touch-manipulation ${
                   activeTab === tab
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground"
@@ -1702,8 +1702,8 @@ export function RoznamchaView() {
         </div>
 
         {/* Filters Row */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <select
               value={filters.purpose}
               onChange={(e) => {
@@ -1752,7 +1752,7 @@ export function RoznamchaView() {
               placeholder="Search for expense, subject, person"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-cms-card border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-80"
+              className="bg-cms-card border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-80 min-w-0"
             />
           </div>
         </div>
@@ -1832,10 +1832,11 @@ export function RoznamchaView() {
                 </div>
               )}
               
-              <table className="w-full">
+              <div className="overflow-x-auto -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6">
+              <table className="w-full min-w-[700px]">
                 <thead>
                   <tr className="bg-cms-table-header">
-                    <th className="text-center px-4 py-3 text-sm font-medium text-foreground">#</th>
+                    <th className="text-center px-2 sm:px-4 py-3 text-xs sm:text-sm font-medium text-foreground">#</th>
                     <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Subject</th>
                     <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Purpose</th>
                     <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Usage</th>
@@ -1941,6 +1942,7 @@ export function RoznamchaView() {
                   })}
                 </tbody>
               </table>
+              </div>
 
               {/* Enhanced Pagination */}
               {pagination.totalPages > 1 && (
