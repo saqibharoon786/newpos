@@ -1392,6 +1392,32 @@ export function POSView() {
     setPaymentHistoryModalOpen(true);
   };
 
+  const handleDeleteCustomer = async (customerName: string) => {
+    if (!confirm(`Are you sure you want to delete all sales to customer "${customerName}"? This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      const customerSales = sales.filter(s => (s.buyerName || "").trim() === customerName);
+      for (const sale of customerSales) {
+        await api.delete(`${SALES_API_URL}/${sale._id}`);
+      }
+      
+      toast({
+        title: "Success",
+        description: `Deleted all sales to customer "${customerName}"`,
+      });
+      
+      await fetchSales();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to delete customer sales",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handlePaymentSuccess = async (newPayment: PaymentHistory) => {
     setAllPayments(prev => [...prev, newPayment]);
     await fetchSales();
@@ -1768,6 +1794,7 @@ export function POSView() {
                       <DollarSign className="w-3.5 h-3.5" />
                       Pay
                     </button>
+                  <div className="flex gap-2">
                     <button
                       onClick={() => {
                         setSelectedCustomerName(row.customerName);
@@ -1779,6 +1806,14 @@ export function POSView() {
                       <History className="w-3.5 h-3.5" />
                       View
                     </button>
+                    <button
+                      onClick={() => handleDeleteCustomer(row.customerName)}
+                      className="px-3 py-1.5 bg-destructive/10 hover:bg-destructive/20 border border-destructive/20 text-destructive rounded-md text-xs font-medium transition-colors flex items-center justify-center gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete
+                    </button>
+                  </div>
                   </div>
                 </div>
               </div>
