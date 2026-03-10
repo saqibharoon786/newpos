@@ -254,10 +254,16 @@ const StockStatusBadge = ({ status }: { status: 'available' | 'partially_sold' |
 // Vendor Summary Component
 const VendorSummary = ({ 
   purchases, 
-  searchTerm 
+  searchTerm,
+  onPayTotal,
+  onViewPayments,
+  onDeleteVendor
 }: { 
   purchases: PurchaseWithRemaining[], 
-  searchTerm: string 
+  searchTerm: string,
+  onPayTotal: (vendorName: string, vendorPurchases: PurchaseWithRemaining[], totalRemaining: number) => void,
+  onViewPayments: (vendorName: string) => void,
+  onDeleteVendor: (vendorName: string) => void
 }) => {
   const [expandedVendor, setExpandedVendor] = useState<string | null>(null);
   
@@ -551,6 +557,38 @@ const VendorSummary = ({
                         </div>
                       </div>
                     )}
+                    
+                    {/* Action Buttons */}
+                    <div className="mt-3 pt-3 border-t border-border space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => onViewPayments(vendorName)}
+                          className="bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md py-2 px-3 text-sm font-medium transition-colors flex items-center justify-center gap-1"
+                        >
+                          <History className="w-4 h-4" />
+                          View
+                        </button>
+                        <button
+                          onClick={() => onDeleteVendor(vendorName)}
+                          className="bg-destructive/10 hover:bg-destructive/20 border border-destructive/20 text-destructive rounded-md py-2 px-3 text-sm font-medium transition-colors flex items-center justify-center gap-1"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete
+                        </button>
+                      </div>
+                      {data.totalRemainingAmount > 0 && (
+                        <button
+                          onClick={() => {
+                            const vendorPurchases = purchases.filter(p => p.vendor === vendorName);
+                            onPayTotal(vendorName, vendorPurchases, data.totalRemainingAmount);
+                          }}
+                          className="w-full bg-primary text-primary-foreground rounded-md py-2 px-4 text-sm font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                        >
+                          <DollarSign className="w-4 h-4" />
+                          Pay Total (Rs. {data.totalRemainingAmount.toLocaleString()})
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1497,6 +1535,286 @@ const PaymentModal = ({
               )}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// PayTotalVendorModal Component
+const PayTotalVendorModal = ({
+  open,
+  onClose,
+  vendorName,
+  purchases,
+  totalRemaining,
+  onSuccess,
+  formatCurrency,
+}: {
+  open: boolean;
+  onClose: () => void;
+  vendorName: string;
+  purchases: PurchaseWithRemaining[];
+  totalRemaining: number;
+  onSuccess: (records: PaymentHistory[]) => void;
+  formatCurrency: (n: number) => string;
+}) => {
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentDate, setPaymentDate] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState<string>("cash");
+  const [notes, setNotes] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [balances, setBalances] = useState({
+    drawer: 0,
+    easypaisa: 0,
+    jazzcash: 0,
+    bank: 0,
+  });
+  const [checkingBalance, setCheckingBalance] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (open && totalRemaining > 0) {
+      setPaymentAmount(String(totalRemaining));
+      setPaymentDate(new Date().toISOString().split("T")[0]);
+      setPaymentMethod("cash");
+      setNotes("");
+      fetchBalances();
+    }
+  }, [open, totalRemaining]);
+
+  const fetchBalances = async () => {
+    setCheckingBalance(true);
+    try {
+      const balancesData = await financeApi.getAllBalances();
+      setBalances(balancesData);
+    } catch (error) {
+      console.error("Failed to fetch balances:", error);
+    } finally {
+      setCheckingBalance(false);
+    }
+  };
+
+  const getFinanceMethod = (paymentMethod: string): string => {
+    const methodMap: Record<string, string> = {
+      'cash': 'drawer',
+      'bank_transfer': 'bank',
+      'cheque': 'bank',
+      'easypaisa': 'easypaisa',
+      'jazzcash': 'jazzcash',
+      'online': 'bank',
+      'other': 'drawer'
+    };
+    return methodMap[paymentMethod] || 'drawer';
+  };
+
+  const getCurrentBalance = () => {
+    const financeMethod = getFinanceMethod(paymentMethod);
+    return balances[financeMethod as keyof typeof balances] || 0;
+  };
+
+  const handleSubmit = async () => {
+    const amount = parseFloat(paymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast({ title: "Error", description: "Enter a valid amount", variant: "destructive" });
+      return;
+    }
+    if (amount > totalRemaining) {
+      toast({
+        title: "Error",
+        description: `Amount cannot exceed total remaining Rs. ${formatCurrency(totalRemaining)}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const financeMethod = getFinanceMethod(paymentMethod);
+    const currentBalance = getCurrentBalance();
+    const shouldCheckBalance = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
+
+    if (shouldCheckBalance && amount > currentBalance) {
+      toast({
+        title: "Insufficient Balance",
+        description: `${financeApi.getMethodLabel(financeMethod)} has Rs. ${currentBalance.toLocaleString()}. Required: Rs. ${amount.toLocaleString()}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    const records: PaymentHistory[] = [];
+    let left = amount;
+    try {
+      // Update finance balance first
+      if (shouldCheckBalance) {
+        try {
+          await financeApi.updateBalance(
+            financeMethod,
+            amount,
+            `POP Payment - ${vendorName} - Multiple purchases`
+          );
+          toast({
+            title: "Finance Updated",
+            description: `Rs. ${amount.toLocaleString()} deducted from ${financeApi.getMethodLabel(financeMethod)}`,
+          });
+        } catch (financeError: any) {
+          console.error("Failed to update finance:", financeError);
+          toast({
+            title: "Error",
+            description: `Failed to update ${financeApi.getMethodLabel(financeMethod)} balance`,
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
+      for (const purchase of purchases) {
+        if (left <= 0) break;
+        const purchaseRemaining = purchase.remainingAmount ?? (purchase.price - (purchase.amountPaid || 0));
+        const pay = Math.min(left, purchaseRemaining);
+        if (pay <= 0) continue;
+
+        const newAmountPaid = (purchase.amountPaid || 0) + pay;
+        const totalAmount = purchase.price;
+        const newPaidAmount = newAmountPaid >= totalAmount ? "paid" : "partial";
+        const newRemainingAmount = Math.max(0, totalAmount - newAmountPaid);
+
+        const paymentRecord: PaymentHistory = {
+          _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          purchaseId: purchase._id,
+          amount: pay,
+          paymentDate: paymentDate,
+          paymentMethod: paymentMethod,
+          notes: notes || `Payment Rs. ${formatCurrency(pay)}`,
+          receiptNo: purchase.receiptNo,
+          materialName: purchase.materialName,
+          financeUpdated: shouldCheckBalance,
+          financeMethod: financeMethod
+        };
+
+        await api.put(`${PURCHASES_API_URL}/${purchase._id}`, {
+          amountPaid: newAmountPaid,
+          paidAmount: newPaidAmount,
+          remainingAmount: newRemainingAmount,
+        });
+
+        records.push(paymentRecord);
+        left -= pay;
+      }
+
+      toast({
+        title: "Success",
+        description: `Payment of Rs. ${formatCurrency(amount)} recorded.`,
+      });
+      onSuccess(records);
+      onClose();
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err.response?.data?.message || "Failed to record payment",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!open || purchases.length === 0) return null;
+
+  const financeMethod = getFinanceMethod(paymentMethod);
+  const currentBalance = getCurrentBalance();
+  const showBalanceCheck = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-md">
+        <div className="bg-cms-table-header px-4 py-3 border-b border-border flex justify-between items-center">
+          <h3 className="text-sm font-semibold text-foreground">Pay total — {vendorName}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-cms-card-hover rounded">
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div className="p-3 bg-cms-card rounded-lg border border-border">
+            <p className="text-xs text-muted-foreground">Total remaining</p>
+            <p className="text-xl font-bold text-red-600">Rs. {formatCurrency(totalRemaining)}</p>
+          </div>
+          
+          {showBalanceCheck && (
+            <div className="p-3 bg-cms-card rounded-lg border border-border">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-xs text-muted-foreground">Current Balance</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {financeApi.getMethodLabel(financeMethod)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className={`text-lg font-bold ${
+                    currentBalance >= parseFloat(paymentAmount || "0") 
+                      ? 'text-green-600' 
+                      : 'text-red-600'
+                  }`}>
+                    Rs. {formatCurrency(currentBalance)}
+                  </p>
+                  {checkingBalance && (
+                    <p className="text-xs text-muted-foreground">Checking...</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Amount to pay</label>
+            <input
+              type="number"
+              value={paymentAmount}
+              onChange={(e) => setPaymentAmount(e.target.value)}
+              className="w-full bg-cms-card border border-border rounded-md px-3 py-2 text-foreground"
+              min={0}
+              step={1}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Date</label>
+            <input
+              type="date"
+              value={paymentDate}
+              onChange={(e) => setPaymentDate(e.target.value)}
+              className="w-full bg-cms-card border border-border rounded-md px-3 py-2 text-foreground"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Method</label>
+            <select
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+              className="w-full bg-cms-card border border-border rounded-md px-3 py-2 text-foreground"
+            >
+              <option value="cash">Cash (Drawer)</option>
+              <option value="jazzcash">JazzCash</option>
+              <option value="easypaisa">EasyPaisa</option>
+              <option value="bank">Bank</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Notes</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full bg-cms-card border border-border rounded-md px-3 py-2 text-foreground"
+              rows={2}
+              placeholder="Optional notes..."
+            />
+          </div>
+          <button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="w-full bg-primary text-primary-foreground rounded-md py-2 font-medium disabled:opacity-50"
+          >
+            {isSubmitting ? "Processing..." : `Pay Rs. ${formatCurrency(parseFloat(paymentAmount) || 0)}`}
+          </button>
         </div>
       </div>
     </div>
@@ -3609,6 +3927,60 @@ export function POPView() {
   const [paymentHistoryModalOpen, setPaymentHistoryModalOpen] = useState(false);
   const [selectedPurchaseForPayment, setSelectedPurchaseForPayment] = useState<PurchaseWithRemaining | null>(null);
   
+  // Vendor pay total modal states
+  const [vendorPayModalOpen, setVendorPayModalOpen] = useState(false);
+  const [selectedVendorName, setSelectedVendorName] = useState<string | null>(null);
+  const [payTotalVendorData, setPayTotalVendorData] = useState<{ vendorName: string; purchases: PurchaseWithRemaining[]; totalRemaining: number } | null>(null);
+  
+  // Vendor payment history modal states
+  const [vendorViewPaymentsModalOpen, setVendorViewPaymentsModalOpen] = useState(false);
+  const [selectedVendorForPayments, setSelectedVendorForPayments] = useState<string | null>(null);
+  const [vendorViewDateFilter, setVendorViewDateFilter] = useState<string>("");
+  
+  // Handler for vendor pay total
+  const handleVendorPayTotal = (vendorName: string, vendorPurchases: PurchaseWithRemaining[], totalRemaining: number) => {
+    setPayTotalVendorData({
+      vendorName,
+      purchases: vendorPurchases,
+      totalRemaining
+    });
+    setVendorPayModalOpen(true);
+  };
+  
+  // Handler for viewing vendor payments
+  const handleViewVendorPayments = (vendorName: string) => {
+    setSelectedVendorForPayments(vendorName);
+    setVendorViewDateFilter("");
+    setVendorViewPaymentsModalOpen(true);
+  };
+  
+  // Handler for deleting vendor
+  const handleDeleteVendor = async (vendorName: string) => {
+    if (!confirm(`Are you sure you want to delete all purchases from vendor "${vendorName}"? This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      const vendorPurchases = purchases.filter(p => p.vendor === vendorName);
+      for (const purchase of vendorPurchases) {
+        await api.delete(`${PURCHASES_API_URL}/${purchase._id}`);
+      }
+      
+      toast({
+        title: "Success",
+        description: `Deleted all purchases from vendor "${vendorName}"`,
+      });
+      
+      await fetchPurchases();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to delete vendor purchases",
+        variant: "destructive",
+      });
+    }
+  };
+  
   const [allPayments, setAllPayments] = useState<PaymentHistory[]>(() => {
     const savedPayments = localStorage.getItem('purchase_payments');
     return savedPayments ? JSON.parse(savedPayments) : [];
@@ -3829,12 +4201,15 @@ export function POPView() {
     setPaymentHistoryModalOpen(true);
   };
 
-  const handlePaymentSuccess = async (newPayment: PaymentHistory) => {
-    setAllPayments(prev => [...prev, newPayment]);
+  const handlePaymentSuccess = async (newPayment: PaymentHistory | PaymentHistory[]) => {
+    const payments = Array.isArray(newPayment) ? newPayment : [newPayment];
+    setAllPayments(prev => [...prev, ...payments]);
     await fetchPurchases();
     setPaymentModalOpen(false);
     setMarkAsPaidModalOpen(false);
+    setVendorPayModalOpen(false);
     setSelectedPurchaseForPayment(null);
+    setPayTotalVendorData(null);
   };
 
   const filteredPurchases = purchases.filter(purchase => {
@@ -4023,7 +4398,13 @@ export function POPView() {
 
       {/* Vendor Summary Component */}
       {filteredPurchases.length > 0 && (
-        <VendorSummary purchases={filteredPurchases} searchTerm={searchTerm} />
+        <VendorSummary 
+          purchases={filteredPurchases} 
+          searchTerm={searchTerm}
+          onPayTotal={handleVendorPayTotal}
+          onViewPayments={handleViewVendorPayments}
+          onDeleteVendor={handleDeleteVendor}
+        />
       )}
 
       {/* Weight Summary Component */}
@@ -4309,6 +4690,100 @@ export function POPView() {
         purchase={selectedPurchaseForPayment}
         allPayments={allPayments}
       />
+
+      <PayTotalVendorModal
+        open={vendorPayModalOpen}
+        onClose={() => {
+          setVendorPayModalOpen(false);
+          setPayTotalVendorData(null);
+        }}
+        vendorName={payTotalVendorData?.vendorName ?? ""}
+        purchases={payTotalVendorData?.purchases ?? []}
+        totalRemaining={payTotalVendorData?.totalRemaining ?? 0}
+        onSuccess={handlePaymentSuccess}
+        formatCurrency={formatCurrency}
+      />
+
+      {/* Vendor View Payments Modal - sara record is date ko, payment history */}
+      {vendorViewPaymentsModalOpen && selectedVendorForPayments && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="bg-cms-table-header px-4 py-3 border-b border-border flex justify-between items-center flex-wrap gap-2">
+              <h3 className="text-sm font-semibold text-foreground">Payment records — {selectedVendorForPayments}</h3>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={vendorViewDateFilter}
+                  onChange={(e) => setVendorViewDateFilter(e.target.value)}
+                  className="bg-cms-card border border-border rounded-md px-2 py-1.5 text-xs text-foreground"
+                  placeholder="Filter by date"
+                />
+                <button onClick={() => { setVendorViewPaymentsModalOpen(false); setSelectedVendorForPayments(null); setVendorViewDateFilter(""); }} className="p-1.5 hover:bg-cms-card-hover rounded">
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              {(() => {
+                const vendorPurchaseIds = filteredPurchases.filter((p) => p.vendor === selectedVendorForPayments).map((p) => p._id);
+                let payments = allPayments.filter((p) => vendorPurchaseIds.includes(p.purchaseId));
+                if (vendorViewDateFilter) {
+                  payments = payments.filter((p) => p.paymentDate === vendorViewDateFilter);
+                }
+                payments = [...payments].sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime());
+                const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+                return (
+                  <>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      {vendorViewDateFilter ? `Payments on ${vendorViewDateFilter}` : "All payment records (date-wise)"}
+                    </p>
+                    {payments.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-6 text-center">No payment records found.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-cms-table-header">
+                              <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Date</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Receipt No</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Material</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Method</th>
+                              <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Amount</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {payments.map((payment, index) => (
+                              <tr key={index} className="border-b border-border hover:bg-cms-card-hover">
+                                <td className="px-3 py-2 text-foreground">{new Date(payment.paymentDate).toLocaleDateString('en-GB')}</td>
+                                <td className="px-3 py-2 text-foreground">{payment.receiptNo || 'N/A'}</td>
+                                <td className="px-3 py-2 text-foreground">{payment.materialName || 'N/A'}</td>
+                                <td className="px-3 py-2 text-foreground">{payment.paymentMethod || 'N/A'}</td>
+                                <td className="px-3 py-2 text-right text-foreground font-medium">Rs. {payment.amount.toLocaleString()}</td>
+                                <td className="px-3 py-2 text-foreground">{payment.notes || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-cms-table-header font-medium">
+                              <td colSpan={4} className="px-3 py-2 text-right text-foreground">Total Payments:</td>
+                              <td className="px-3 py-2 text-right text-foreground font-bold">Rs. {totalAmount.toLocaleString()}</td>
+                              <td></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {payments.length} payment{payments.length !== 1 ? 's' : ''} • Total: Rs. {totalAmount.toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
