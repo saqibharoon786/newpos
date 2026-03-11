@@ -180,6 +180,7 @@ const createProductionRecord = async (req, res) => {
       batchNo,
       productionDate: productionDateValue,
       availableWeight: productionData.availableWeight ?? totalWeight,
+      weightUsedFromPOP: weightUsedFromPOP || 0,
       purchaseId: purchaseId || undefined,
     });
 
@@ -340,6 +341,7 @@ const getProductionData = async (req, res) => {
         color: doc.color,
         outputWeight: doc.totalWeight,
         availableWeight: avail,
+        weightUsedFromPOP: doc.weightUsedFromPOP || 0,
         wasteWeight: 0,
         efficiency: 0,
         productionDate: doc.productionDate,
@@ -494,6 +496,40 @@ const updateProduction = async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
+
+    // If weightUsed is provided, calculate availableWeight
+    const currentProduction = await ProductionData.findById(id);
+    if (!currentProduction) {
+      return res.status(404).json({
+        success: false,
+        message: "Production record not found",
+      });
+    }
+
+    // If weightUsed is provided, calculate availableWeight (this is SOLD weight/deduction from stock)
+    if (updateData.weightUsed !== undefined) {
+      const totalWeight = updateData.totalWeight !== undefined ? updateData.totalWeight : currentProduction.totalWeight;
+      const weightUsed = parseFloat(updateData.weightUsed) || 0;
+      updateData.availableWeight = Math.max(0, totalWeight - weightUsed);
+      delete updateData.weightUsed; 
+    }
+
+    // If weightUsedFromPOP is updated, adjust the Purchase record
+    if (updateData.weightUsedFromPOP !== undefined) {
+      const newUsedFromPOP = parseFloat(updateData.weightUsedFromPOP) || 0;
+      const oldUsedFromPOP = currentProduction.weightUsedFromPOP || 0;
+      const purchaseId = updateData.purchaseId || currentProduction.purchaseId;
+
+      if (purchaseId && newUsedFromPOP !== oldUsedFromPOP) {
+        const purchase = await Purchase.findById(purchaseId);
+        if (purchase) {
+          const diff = newUsedFromPOP - oldUsedFromPOP;
+          const currentConsumed = parseFloat(purchase.productionConsumedWeight) || 0;
+          purchase.productionConsumedWeight = currentConsumed + diff;
+          await purchase.save();
+        }
+      }
+    }
 
     const production = await ProductionData.findByIdAndUpdate(id, updateData, {
       new: true,

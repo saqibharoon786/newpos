@@ -118,10 +118,11 @@ const productionDataSchema = new mongoose.Schema(
       },
     ],
     notes: String,
-    status: {
-      type: String,
-      enum: ["completed", "in_progress", "pending"],
-      default: "completed",
+    weightUsedFromPOP: {
+      type: Number,
+      required: false,
+      min: 0,
+      default: 0,
     },
   },
   { timestamps: true }

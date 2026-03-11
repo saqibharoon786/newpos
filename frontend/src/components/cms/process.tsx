@@ -168,6 +168,7 @@ interface ProductionData {
   notes?: string;
   totalBags?: number;
   bagWeight?: number;
+  weightUsedFromPOP?: number;
 }
 
 // Stage configuration
@@ -1406,7 +1407,7 @@ const StartProcessFormModal = ({
       setSelectedMachine(machines[0]?.id || "");
       setTotalBags("");
       setTotalWeight("");
-      setWeightUsedFromPOP("");
+      setWeightUsedFromPOP(initialMaterial?.popAvailableWeight ? String(initialMaterial.popAvailableWeight) : "");
       setMachineOutputWeight("");
       setProductionDate(getLocalDateString());
       setSelectedColor(initialMaterial?.color || "#FFFFFF");
@@ -1811,6 +1812,7 @@ const EditProductionModal = ({
   const [totalBags, setTotalBags] = useState("");
   const [totalWeight, setTotalWeight] = useState("");
   const [availableWeight, setAvailableWeight] = useState("");
+  const [weightUsedFromPOP, setWeightUsedFromPOP] = useState("");
   const [productionDate, setProductionDate] = useState("");
   const [selectedShift, setSelectedShift] = useState<"morning" | "evening" | "night">("morning");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1823,6 +1825,7 @@ const EditProductionModal = ({
       setTotalBags(String(production.totalBags || ""));
       setTotalWeight(String(production.outputWeight || ""));
       setAvailableWeight(String(production.availableWeight ?? production.outputWeight ?? ""));
+      setWeightUsedFromPOP(String(production.weightUsedFromPOP ?? "0"));
       setProductionDate(production.productionDate ? formatDateLocal(new Date(production.productionDate)) : "");
       setSelectedShift((production.shift as "morning" | "evening" | "night") || "morning");
     }
@@ -1858,6 +1861,7 @@ const EditProductionModal = ({
         totalBags: bags,
         totalWeight: weight,
         availableWeight: avail,
+        weightUsedFromPOP: parseFloat(weightUsedFromPOP.replace(",", ".")) || 0,
         productionDate: productionDate || getLocalDateString(),
         shift: selectedShift,
       };
@@ -1911,6 +1915,10 @@ const EditProductionModal = ({
               <label className="block text-xs text-muted-foreground mb-1.5">Total Weight (kg) *</label>
               <input type="text" value={totalWeight} onChange={(e) => setTotalWeight(e.target.value)} className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
             </div>
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Weight Used from POP (kg)</label>
+            <input type="text" value={weightUsedFromPOP} onChange={(e) => setWeightUsedFromPOP(e.target.value)} placeholder="e.g. 500" className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
           </div>
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Available Weight (kg) *</label>
@@ -2279,6 +2287,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Shift</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Status</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Raw Weight</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
               </tr>
             </thead>
@@ -2344,6 +2353,9 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={prod.status} />
+                  </td>
+                  <td className="px-4 py-3 text-sm font-semibold text-foreground">
+                    {prod.weightUsedFromPOP || 0} kg
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
