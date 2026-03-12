@@ -2039,10 +2039,12 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
       soldWeight: number;
       remainingWeight: number;
       colors: Record<string, { totalWeight: number; soldWeight: number; remainingWeight: number }>;
+      qualities: Record<string, { totalWeight: number; soldWeight: number; remainingWeight: number }>;
     }> = {};
     productionData.forEach((prod) => {
       const material = prod.materialName || "Unknown";
       const colorName = getColorName(prod.color || "#FFFFFF");
+      const quality = prod.quality || "Unknown";
       const total = prod.outputWeight ?? 0;
       const remaining = prod.availableWeight ?? total ?? 0;
       const sold = total - remaining;
@@ -2052,6 +2054,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
           soldWeight: 0,
           remainingWeight: 0,
           colors: {},
+          qualities: {},
         };
       }
       byMaterial[material].totalWeight += total;
@@ -2063,6 +2066,13 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
       byMaterial[material].colors[colorName].totalWeight += total;
       byMaterial[material].colors[colorName].soldWeight += sold;
       byMaterial[material].colors[colorName].remainingWeight += remaining;
+
+      if (!byMaterial[material].qualities[quality]) {
+        byMaterial[material].qualities[quality] = { totalWeight: 0, soldWeight: 0, remainingWeight: 0 };
+      }
+      byMaterial[material].qualities[quality].totalWeight += total;
+      byMaterial[material].qualities[quality].soldWeight += sold;
+      byMaterial[material].qualities[quality].remainingWeight += remaining;
     });
     return byMaterial;
   }, [productionData]);
@@ -2254,6 +2264,28 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
                                   <span className="text-primary">{Math.round(cData.remainingWeight * 10) / 10} kg</span>
                                   <span className="text-muted-foreground">/</span>
                                   <span className="text-foreground">{Math.round(cData.totalWeight * 10) / 10} kg</span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+                    {Object.keys(data.qualities).length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <div className="text-xs text-muted-foreground mb-2">Breakdown by Quality:</div>
+                        <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                          {Object.entries(data.qualities)
+                            .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
+                            .map(([quality, qData]) => (
+                              <div key={quality} className="flex justify-between items-center text-xs">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full bg-primary/50" />
+                                  <span className="text-foreground">{quality}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-primary">{Math.round(qData.remainingWeight * 10) / 10} kg</span>
+                                  <span className="text-muted-foreground">/</span>
+                                  <span className="text-foreground">{Math.round(qData.totalWeight * 10) / 10} kg</span>
                                 </div>
                               </div>
                             ))}
