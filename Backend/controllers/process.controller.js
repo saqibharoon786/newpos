@@ -147,6 +147,13 @@ const createProductionRecord = async (req, res) => {
           if (toDeduct > 0) {
             purchase.productionConsumedWeight = currentConsumed + toDeduct;
             await purchase.save();
+            
+            // Also update ProcessingMaterial if it exists
+            await ProcessingMaterial.findOneAndUpdate(
+              { purchaseId: purchase._id },
+              { availableWeight: purchase.remainingWeight }
+            );
+
             remainingToAllocate -= toDeduct;
           }
         }
@@ -155,7 +162,13 @@ const createProductionRecord = async (req, res) => {
         if (purchase) {
           const current = parseFloat(purchase.productionConsumedWeight) || 0;
           purchase.productionConsumedWeight = current + weightUsedFromPOP;
-          await purchase.save();
+          await purchase.save(); // Triggers remainingWeight update
+
+          // Also update ProcessingMaterial if it exists
+          await ProcessingMaterial.findOneAndUpdate(
+            { purchaseId: purchase._id },
+            { availableWeight: purchase.remainingWeight }
+          );
         }
       }
     }
@@ -527,6 +540,12 @@ const updateProduction = async (req, res) => {
           const currentConsumed = parseFloat(purchase.productionConsumedWeight) || 0;
           purchase.productionConsumedWeight = currentConsumed + diff;
           await purchase.save();
+
+          // Also update ProcessingMaterial if it exists
+          await ProcessingMaterial.findOneAndUpdate(
+            { purchaseId: purchase._id },
+            { availableWeight: purchase.remainingWeight }
+          );
         }
       }
     }
@@ -561,7 +580,8 @@ const deleteProduction = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const production = await ProductionData.findByIdAndDelete(id);
+    // Find the record first to get the weightUsedFromPOP and purchaseId
+    const production = await ProductionData.findById(id);
 
     if (!production) {
       return res.status(404).json({
@@ -569,6 +589,30 @@ const deleteProduction = async (req, res) => {
         message: "Production record not found",
       });
     }
+
+    // Restore consumed weight to Purchase record if applicable
+    if (production.weightUsedFromPOP > 0 && production.purchaseId) {
+      const purchase = await Purchase.findById(production.purchaseId);
+      if (purchase) {
+        const currentConsumed = parseFloat(purchase.productionConsumedWeight) || 0;
+        const restoredWeight = production.weightUsedFromPOP;
+        
+        // Update purchase consumed weight
+        purchase.productionConsumedWeight = Math.max(0, currentConsumed - restoredWeight);
+        await purchase.save(); // This will also trigger remainingWeight recalculation
+
+        // Also update ProcessingMaterial if it exists so the queue stays in sync
+        const material = await ProcessingMaterial.findOne({ purchaseId: production.purchaseId });
+        if (material) {
+          material.availableWeight = purchase.remainingWeight;
+          // If it was marked processed or in_progress, maybe reset to pending if weight is restored?
+          // For now, let's just restore weight.
+          await material.save();
+        }
+      }
+    }
+
+    await ProductionData.findByIdAndDelete(id);
 
     res.status(200).json({
       success: true,
