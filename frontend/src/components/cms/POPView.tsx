@@ -1792,9 +1792,12 @@ const PayTotalVendorModal = ({
               className="w-full bg-cms-card border border-border rounded-md px-3 py-2 text-foreground"
             >
               <option value="cash">Cash (Drawer)</option>
-              <option value="jazzcash">JazzCash</option>
               <option value="easypaisa">EasyPaisa</option>
-              <option value="bank">Bank</option>
+              <option value="jazzcash">JazzCash</option>
+              <option value="bank">Bank (Generic)</option>
+              <option value="bank_transfer">Bank Transfer</option>
+              <option value="cheque">Cheque</option>
+              <option value="online">Online Payment</option>
               <option value="other">Other</option>
             </select>
           </div>
@@ -3609,6 +3612,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                   <option value="cash">Cash (From Drawer)</option>
                   <option value="easypaisa">Easypaisa</option>
                   <option value="jazzcash">JazzCash</option>
+                  <option value="bank">Bank (Generic)</option>
                   <option value="bank_transfer">Bank Transfer</option>
                   <option value="cheque">Cheque</option>
                   <option value="online">Online Payment</option>

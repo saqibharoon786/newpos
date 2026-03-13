@@ -12,7 +12,7 @@ const TransactionSchema = new mongoose.Schema({
   },
   method: {
     type: String,
-    enum: ['drawer', 'easypaisa', 'jazzcash', 'bank'],
+    enum: ['drawer', 'easypaisa', 'jazzcash', 'bank', 'bank_transfer', 'cheque', 'online'],
     required: true
   },
   amount: {
@@ -64,11 +64,20 @@ TransactionSchema.statics.getBalances = async function() {
   };
 
   transactions.forEach(transaction => {
-    const method = transaction.method;
-    if (transaction.type === 'deposit') {
-      balances[method] += transaction.amount;
-    } else {
-      balances[method] -= transaction.amount;
+    let method = transaction.method;
+    
+    // Aggregate bank-related methods into the main 'bank' balance
+    if (['bank_transfer', 'cheque', 'online'].includes(method)) {
+      method = 'bank';
+    }
+    
+    // Only update if the method is one of our tracking buckets
+    if (balances.hasOwnProperty(method)) {
+      if (transaction.type === 'deposit') {
+        balances[method] += transaction.amount;
+      } else {
+        balances[method] -= transaction.amount;
+      }
     }
   });
 

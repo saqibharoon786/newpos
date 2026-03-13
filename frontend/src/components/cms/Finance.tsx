@@ -102,13 +102,15 @@ export default function FinanceModule() {
   const [depositData, setDepositData] = useState({
     method: 'drawer',
     amount: '',
-    description: ''
+    description: '',
+    reference: ''
   });
 
   const [withdrawData, setWithdrawData] = useState({
     method: 'drawer',
     amount: '',
-    description: ''
+    description: '',
+    reference: ''
   });
 
   // State for editing
@@ -139,6 +141,9 @@ export default function FinanceModule() {
       easypaisa: 'Easypaisa',
       jazzcash: 'JazzCash',
       bank: 'Bank Account',
+      bank_transfer: 'Bank Transfer',
+      cheque: 'Cheque',
+      online: 'Online Payment',
     };
     return labels[method.toLowerCase()] || method;
   };
@@ -157,6 +162,9 @@ export default function FinanceModule() {
         return <Smartphone className={className} />;
       case 'bank':
       case 'bankaccount':
+      case 'bank_transfer':
+      case 'cheque':
+      case 'online':
         return <Building className={className} />;
       default:
         return <Wallet className={className} />;
@@ -382,7 +390,8 @@ export default function FinanceModule() {
       const response = await API.post('/finance/deposit', {
         method: data.method,
         amount: parseFloat(data.amount),
-        description: data.description || 'Deposit'
+        description: data.description || 'Deposit',
+        reference: data.reference
       });
       
       console.log('Deposit response:', response.data);
@@ -410,7 +419,8 @@ export default function FinanceModule() {
         setDepositData({
           method: 'drawer',
           amount: '',
-          description: ''
+          description: '',
+          reference: ''
         });
         
         return response.data;
@@ -448,7 +458,8 @@ export default function FinanceModule() {
       const response = await API.post('/finance/withdraw', {
         method: data.method,
         amount: parseFloat(data.amount),
-        description: data.description || 'Withdrawal'
+        description: data.description || 'Withdrawal',
+        reference: data.reference
       });
       
       console.log('Withdrawal response:', response.data);
@@ -476,7 +487,8 @@ export default function FinanceModule() {
         setWithdrawData({
           method: 'drawer',
           amount: '',
-          description: ''
+          description: '',
+          reference: ''
         });
         
         return response.data;
@@ -617,7 +629,8 @@ export default function FinanceModule() {
       await createDeposit({
         method: depositData.method,
         amount: amount,
-        description: depositData.description || 'Deposit'
+        description: depositData.description || 'Deposit',
+        reference: depositData.reference
       });
     } catch (error: any) {
       toast.error(error.message || 'Error creating deposit');
@@ -635,7 +648,8 @@ export default function FinanceModule() {
       await createWithdrawal({
         method: withdrawData.method,
         amount: amount,
-        description: withdrawData.description || 'Withdrawal'
+        description: withdrawData.description || 'Withdrawal',
+        reference: withdrawData.reference
       });
     } catch (error: any) {
       toast.error(error.message || 'Error creating withdrawal');
@@ -952,6 +966,9 @@ export default function FinanceModule() {
                         <SelectItem value="easypaisa">Easypaisa</SelectItem>
                         <SelectItem value="jazzcash">JazzCash</SelectItem>
                         <SelectItem value="bank">Bank Account</SelectItem>
+                        <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="cheque">Cheque</SelectItem>
+                        <SelectItem value="online">Online Payment</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -976,6 +993,17 @@ export default function FinanceModule() {
                       placeholder="Optional description"
                       value={depositData.description}
                       onChange={(e) => setDepositData({ ...depositData, description: e.target.value })}
+                      className="bg-secondary border-border text-foreground"
+                      disabled={loading.deposit}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-foreground text-sm">Reference (Bank ID / Cheque No)</Label>
+                    <Input
+                      placeholder="Optional reference"
+                      value={depositData.reference}
+                      onChange={(e) => setDepositData({ ...depositData, reference: e.target.value })}
                       className="bg-secondary border-border text-foreground"
                       disabled={loading.deposit}
                     />
@@ -1030,6 +1058,9 @@ export default function FinanceModule() {
                         <SelectItem value="easypaisa">Easypaisa</SelectItem>
                         <SelectItem value="jazzcash">JazzCash</SelectItem>
                         <SelectItem value="bank">Bank Account</SelectItem>
+                        <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="cheque">Cheque</SelectItem>
+                        <SelectItem value="online">Online Payment</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1054,6 +1085,17 @@ export default function FinanceModule() {
                       placeholder="Optional description"
                       value={withdrawData.description}
                       onChange={(e) => setWithdrawData({ ...withdrawData, description: e.target.value })}
+                      className="bg-secondary border-border text-foreground"
+                      disabled={loading.withdraw}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-foreground text-sm">Reference (Bank ID / Cheque No)</Label>
+                    <Input
+                      placeholder="Optional reference"
+                      value={withdrawData.reference}
+                      onChange={(e) => setWithdrawData({ ...withdrawData, reference: e.target.value })}
                       className="bg-secondary border-border text-foreground"
                       disabled={loading.withdraw}
                     />
