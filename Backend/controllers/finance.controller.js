@@ -15,7 +15,10 @@ const getMethodLabel = (method) => {
     drawer: 'Cash Drawer',
     easypaisa: 'Easypaisa',
     jazzcash: 'JazzCash',
-    bank: 'Bank Account'
+    bank: 'Bank Account',
+    bank_transfer: 'Bank Transfer',
+    cheque: 'Cheque',
+    online: 'Online Payment'
   };
   return labels[method] || method;
 };
