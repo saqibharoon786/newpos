@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -117,6 +117,7 @@ export default function FinanceModule() {
   const [editTransaction, setEditTransaction] = useState<Transaction | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
+  const [selectedMonth, setSelectedMonth] = useState('');
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 10,
@@ -303,6 +304,19 @@ export default function FinanceModule() {
     filterTransactions();
   }, [transactions, searchQuery, filterType]);
 
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    // We wrap it in a setTimeout to allow the state to properly update first
+    const timer = setTimeout(() => {
+      fetchTransactions(1);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [selectedMonth]);
+
   // ==================== API FUNCTIONS ====================
   const fetchInitialData = async () => {
     try {
@@ -326,6 +340,14 @@ export default function FinanceModule() {
 
       if (searchQuery) params.search = searchQuery;
       if (filterType !== 'all') params.type = filterType;
+
+      if (selectedMonth) {
+        const [year, month] = selectedMonth.split('-');
+        const startDate = new Date(parseInt(year), parseInt(month) - 1, 1).toISOString();
+        const endDate = new Date(parseInt(year), parseInt(month), 0, 23, 59, 59, 999).toISOString();
+        params.startDate = startDate;
+        params.endDate = endDate;
+      }
 
       const response = await API.get('/finance/transactions', { params });
       
@@ -686,7 +708,7 @@ export default function FinanceModule() {
 
   const handleSearch = useCallback(() => {
     fetchTransactions(1);
-  }, [searchQuery, filterType]);
+  }, [searchQuery, filterType, selectedMonth]);
 
   const handlePrintReceipt = (transaction: Transaction) => {
     const printWindow = window.open('', '_blank');
@@ -900,6 +922,15 @@ export default function FinanceModule() {
                   }}
                 />
               )}
+            </div>
+            <div className="w-auto">
+              <Input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-card border-border text-foreground w-full sm:w-[160px]"
+                disabled={loading.transactions}
+              />
             </div>
             <Select 
               value={filterType} 

@@ -1219,6 +1219,9 @@ export function RoznamchaView() {
     personResponsible: "",
     usage: ""
   });
+  const [selectedMonth, setSelectedMonth] = useState("");
+  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedYear, setSelectedYear] = useState("");
   const [optimisticUpdates, setOptimisticUpdates] = useState<{[key: string]: ExpenseItem}>({});
 
   // Pagination states
@@ -1250,11 +1253,11 @@ export function RoznamchaView() {
       // Add search term if it exists
       if (searchTerm) params.append('search', searchTerm);
       
-      // Handle active tab filters: Daily | Weekly | Monthly
+      // Handle active tab filters: Daily | Weekly | Monthly | Yearly
       if (activeTab === "Daily") {
-        const today = new Date().toISOString().split('T')[0];
-        params.append('startDate', today);
-        params.append('endDate', today);
+        const targetDate = selectedDate || new Date().toISOString().split('T')[0];
+        params.append('startDate', targetDate);
+        params.append('endDate', targetDate);
       } else if (activeTab === "Weekly") {
         const now = new Date();
         const day = now.getDay(); // 0 Sun, 1 Mon, ...
@@ -1268,11 +1271,25 @@ export function RoznamchaView() {
         params.append('startDate', firstDay);
         params.append('endDate', lastDay);
       } else if (activeTab === "Monthly") {
-        const now = new Date();
-        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-        params.append('startDate', firstDay);
-        params.append('endDate', lastDay);
+        if (selectedMonth) {
+          const [year, month] = selectedMonth.split('-');
+          const startDate = new Date(parseInt(year), parseInt(month) - 1, 1).toISOString().split('T')[0];
+          const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0];
+          params.append('startDate', startDate);
+          params.append('endDate', endDate);
+        } else {
+          const now = new Date();
+          const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+          const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+          params.append('startDate', firstDay);
+          params.append('endDate', lastDay);
+        }
+      } else if (activeTab === "Yearly") {
+        const targetYear = selectedYear || new Date().getFullYear().toString();
+        const startDate = new Date(parseInt(targetYear), 0, 1).toISOString().split('T')[0];
+        const endDate = new Date(parseInt(targetYear), 11, 31).toISOString().split('T')[0];
+        params.append('startDate', startDate);
+        params.append('endDate', endDate);
       }
       
       const response = await api.get(`${EXPENSES_API_URL}/get-all?${params.toString()}`);
@@ -1311,9 +1328,9 @@ export function RoznamchaView() {
       if (filters.personResponsible) params.append('personResponsible', filters.personResponsible);
       if (filters.usage) params.append('usage', filters.usage);
       if (activeTab === "Daily") {
-        const today = new Date().toISOString().split('T')[0];
-        params.append('startDate', today);
-        params.append('endDate', today);
+        const targetDate = selectedDate || new Date().toISOString().split('T')[0];
+        params.append('startDate', targetDate);
+        params.append('endDate', targetDate);
       } else if (activeTab === "Weekly") {
         const now = new Date();
         const day = now.getDay();
@@ -1325,11 +1342,25 @@ export function RoznamchaView() {
         params.append('startDate', monday.toISOString().split('T')[0]);
         params.append('endDate', sunday.toISOString().split('T')[0]);
       } else if (activeTab === "Monthly") {
-        const now = new Date();
-        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-        params.append('startDate', firstDay);
-        params.append('endDate', lastDay);
+        if (selectedMonth) {
+          const [year, month] = selectedMonth.split('-');
+          const startDate = new Date(parseInt(year), parseInt(month) - 1, 1).toISOString().split('T')[0];
+          const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0];
+          params.append('startDate', startDate);
+          params.append('endDate', endDate);
+        } else {
+          const now = new Date();
+          const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+          const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+          params.append('startDate', firstDay);
+          params.append('endDate', lastDay);
+        }
+      } else if (activeTab === "Yearly") {
+        const targetYear = selectedYear || new Date().getFullYear().toString();
+        const startDate = new Date(parseInt(targetYear), 0, 1).toISOString().split('T')[0];
+        const endDate = new Date(parseInt(targetYear), 11, 31).toISOString().split('T')[0];
+        params.append('startDate', startDate);
+        params.append('endDate', endDate);
       }
       const qs = params.toString();
       const url = qs ? `${EXPENSES_API_URL}/stats?${qs}` : `${EXPENSES_API_URL}/stats`;
@@ -1580,22 +1611,20 @@ export function RoznamchaView() {
 
   // Handle filter change
   const handleFilterChange = () => {
-    // Reset to page 1 when filters change
-    fetchExpenses(1);
+    // Relying on useEffect to fetch when state updates
   };
 
   // Handle active tab change
   const handleActiveTabChange = (tab: string) => {
     setActiveTab(tab);
-    // Reset to page 1 when tab changes
-    fetchExpenses(1);
+    // Let useEffect handle resetting page or dependencies
   };
 
   // Total expense = sab pages ki amount (from stats API); fallback = current page sum
   const totalExpenseAllPages = stats?.summary?.totalExpenses ?? 0;
   // Report period label = jo date/period user ne select kiya (print aur display ke liye)
   const reportDateLabel = activeTab === "Daily"
-    ? new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    ? new Date(selectedDate || new Date()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     : activeTab === "Weekly"
       ? (() => {
           const now = new Date();
@@ -1608,7 +1637,12 @@ export function RoznamchaView() {
           return `${monday.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} – ${sunday.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
         })()
     : activeTab === "Monthly"
-      ? new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+      ? (() => {
+          const date = selectedMonth ? new Date(parseInt(selectedMonth.split('-')[0]), parseInt(selectedMonth.split('-')[1]) - 1, 1) : new Date();
+          return date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+        })()
+    : activeTab === "Yearly"
+      ? (selectedYear || new Date().getFullYear().toString())
       : "All dates";
   const calculateTotalExpenses = () => {
     return expenses.reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
@@ -1659,7 +1693,7 @@ export function RoznamchaView() {
   useEffect(() => {
     fetchExpenses(1);
     fetchStats();
-  }, [filters.purpose, filters.personResponsible, filters.usage, activeTab]);
+  }, [filters.purpose, filters.personResponsible, filters.usage, activeTab, selectedMonth, selectedDate, selectedYear]);
 
   return (
     <>
@@ -1675,7 +1709,7 @@ export function RoznamchaView() {
         {/* Tabs and Actions Row */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6">
           <div className="flex items-center gap-1 bg-cms-card rounded-lg p-1 overflow-x-auto">
-            {["All", "Daily", "Weekly", "Monthly"].map((tab) => (
+            {["All", "Daily", "Weekly", "Monthly", "Yearly"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => handleActiveTabChange(tab)}
@@ -1745,15 +1779,44 @@ export function RoznamchaView() {
               <option value="Company">Company</option>
             </select>
           </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search for expense, subject, person"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-cms-card border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-80 min-w-0"
-            />
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {activeTab === "Daily" && (
+              <input
+                type="date"
+                value={selectedDate || new Date().toISOString().split('T')[0]}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary h-10"
+              />
+            )}
+            {activeTab === "Monthly" && (
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary h-10"
+              />
+            )}
+            {activeTab === "Yearly" && (
+              <select
+                value={selectedYear || new Date().getFullYear().toString()}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary h-10 w-32"
+              >
+                {Array.from({ length: 60 }, (_, i) => new Date().getFullYear() + 10 - i).map(year => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+            )}
+            <div className="relative flex-1 sm:flex-none">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="bg-cms-card border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full md:w-48 lg:w-60 min-w-0"
+              />
+            </div>
           </div>
         </div>
 
@@ -1901,13 +1964,13 @@ export function RoznamchaView() {
                           <div className="flex items-center gap-2">
                             <button 
                               onClick={() => handleEditExpense(expense)}
-                              disabled={isTemp || isOptimistic}
+                              disabled={isTemp || !!isOptimistic}
                               className={`p-1.5 hover:bg-secondary rounded transition-colors ${
-                                isTemp || isOptimistic 
+                                isTemp || !!isOptimistic 
                                   ? 'text-gray-400 cursor-not-allowed' 
                                   : 'text-blue-600 hover:text-blue-700'
                               }`}
-                              title={isTemp || isOptimistic ? "Saving... Please wait" : "Edit"}
+                              title={isTemp || !!isOptimistic ? "Saving... Please wait" : "Edit"}
                             >
                               <Pencil className="w-4 h-4" />
                             </button>
@@ -1925,13 +1988,13 @@ export function RoznamchaView() {
                             </button>
                             <button 
                               onClick={() => handleDeleteExpense(expense._id)}
-                              disabled={isTemp || isOptimistic}
+                              disabled={isTemp || !!isOptimistic}
                               className={`p-1.5 hover:bg-secondary rounded transition-colors ${
-                                isTemp || isOptimistic 
+                                isTemp || !!isOptimistic 
                                   ? 'text-gray-400 cursor-not-allowed' 
                                   : 'text-red-600 hover:text-red-700'
                               }`}
-                              title={isTemp || isOptimistic ? "Saving... Please wait" : "Delete"}
+                              title={isTemp || !!isOptimistic ? "Saving... Please wait" : "Delete"}
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -1999,7 +2062,7 @@ export function RoznamchaView() {
           open={dialogOpen}
           onOpenChange={handleDialogClose}
           onSave={handleSaveExpense}
-          editData={editExpense}
+          editData={editExpense as any}
         />
       </div>
 
