@@ -87,6 +87,8 @@ interface Sale {
   createdAt: string;
   originalPurchaseId?: string;
   originalWeight?: number;
+  notes?: string;
+  transportationCost?: string | number;
 }
 
 interface AddSaleDialogProps {
@@ -294,10 +296,10 @@ export function AddSaleDialog({
       supplierName: editData.supplierName || "",
       invoiceNo: editData.invoiceNo || "",
       weight: editData.weight || "",
-      unit: editData.unit || "",
+      unit: editData.unit || "1",
       purchaseDate: saleDateStr,
       purchaseTime: saleTimeStr,
-      branch: editData.branch || "",
+      branch: editData.branch || "Main",
       materialColor: editData.materialColor || "#FFFFFF",
       actualPrice: editData.actualPrice || "",
       productionCost: editData.productionCost || "",
@@ -313,8 +315,8 @@ export function AddSaleDialog({
       paymentMethod: "Cash",
       paymentStatus: editData.paymentStatus || "none",
       amountPaid: editData.amountPaid?.toString() || "0",
-      transportationCost: "0",
-      notes: "",
+      transportationCost: editData.transportationCost != null ? String(editData.transportationCost) : "0",
+      notes: editData.notes || "",
     });
     
     setSelectedColor(editData.materialColor || "#FFFFFF");
@@ -559,43 +561,102 @@ export function AddSaleDialog({
     return Math.max(0, selling - amountPaid).toFixed(2);
   };
 
+  /** Edit: fill blanks from saved sale so partial edits work; backend still gets valid strings */
+  const getEffectiveFormData = (): typeof formData => {
+    if (!isEdit || !editData) return formData;
+    let purchaseDateFallback = formData.purchaseDate;
+    if (!purchaseDateFallback.trim() && editData.purchaseDate) {
+      try {
+        const d = new Date(editData.purchaseDate);
+        if (!isNaN(d.getTime())) {
+          const dd = String(d.getDate()).padStart(2, "0");
+          const mm = String(d.getMonth() + 1).padStart(2, "0");
+          const yyyy = d.getFullYear();
+          purchaseDateFallback = `${dd}/${mm}/${yyyy}`;
+        }
+      } catch {
+        /* keep */
+      }
+    }
+    let purchaseTimeFallback = formData.purchaseTime;
+    if (!purchaseTimeFallback.trim() && editData.purchaseDate) {
+      try {
+        const t = new Date(editData.purchaseDate);
+        if (!isNaN(t.getTime())) {
+          let hour = t.getHours();
+          const minute = String(t.getMinutes()).padStart(2, "0");
+          const ampm: "AM" | "PM" = hour >= 12 ? "PM" : "AM";
+          const hour12 = hour % 12 || 12;
+          purchaseTimeFallback = `${hour12.toString().padStart(2, "0")}:${minute} ${ampm}`;
+        }
+      } catch {
+        /* keep */
+      }
+    }
+    return {
+      ...formData,
+      materialName: formData.materialName.trim() || editData.materialName || "",
+      supplierName: formData.supplierName.trim() || editData.supplierName || "-",
+      invoiceNo: formData.invoiceNo.trim() || editData.invoiceNo || "",
+      weight: formData.weight.trim() || editData.weight || "",
+      unit: formData.unit.trim() || editData.unit || "1",
+      purchaseDate: purchaseDateFallback,
+      purchaseTime: purchaseTimeFallback,
+      branch: formData.branch.trim() || editData.branch || "Main",
+      sellingPrice: formData.sellingPrice || editData.sellingPrice || "",
+      discount: formData.discount ?? editData.discount ?? "0",
+      buyerName: formData.buyerName.trim() || editData.buyerName || "",
+      buyerPhone: formData.buyerPhone.trim() || editData.buyerPhone || "",
+      buyerAddress: formData.buyerAddress || editData.buyerAddress || "",
+      buyerEmail: formData.buyerEmail || editData.buyerEmail || "",
+      amountPaid: formData.amountPaid ?? String(editData.amountPaid ?? 0),
+    };
+  };
+
   // Validate form
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-    
-    if (!formData.materialName.trim()) newErrors.materialName = "Material name is required";
-    if (!formData.supplierName.trim()) newErrors.supplierName = "Supplier name is required";
-    if (!formData.invoiceNo.trim()) newErrors.invoiceNo = "Invoice number is required";
-    
-    if (!formData.weight.trim()) {
+    const fd = getEffectiveFormData();
+
+    if (!fd.materialName.trim()) newErrors.materialName = "Material name is required";
+    if (!fd.supplierName.trim()) newErrors.supplierName = "Supplier name is required";
+    if (!fd.invoiceNo.trim()) newErrors.invoiceNo = "Invoice number is required";
+
+    if (!fd.weight.trim()) {
       newErrors.weight = "Weight is required";
     } else {
-      const saleWeight = parseFloat(formData.weight);
+      const saleWeight = parseFloat(fd.weight);
       if (isNaN(saleWeight) || saleWeight <= 0) {
         newErrors.weight = "Valid weight is required";
-      } else if (selectedMaterialInfo && saleWeight > selectedMaterialInfo.availableWeight) {
+      } else if (
+        !isEdit &&
+        selectedMaterialInfo &&
+        selectedMaterialInfo.availableWeight > 0 &&
+        saleWeight > selectedMaterialInfo.availableWeight
+      ) {
         newErrors.weight = `Sale weight cannot exceed available weight (${selectedMaterialInfo.availableWeight} kg)`;
       }
     }
-    
-    if (!formData.unit.trim()) newErrors.unit = "Unit is required";
-    if (!formData.purchaseDate) newErrors.purchaseDate = "Sale date is required";
-    if (!formData.purchaseTime) newErrors.purchaseTime = "Sale time is required";
-    if (!formData.branch) newErrors.branch = "Branch is required";
-    if (!formData.sellingPrice || parseFloat(formData.sellingPrice.replace(/,/g, '')) <= 0) newErrors.sellingPrice = "Valid selling price is required";
-    
-    const amountPaid = parseFloat(formData.amountPaid) || 0;
-    const sellingPrice = parseFloat(formData.sellingPrice) || 0;
+
+    if (!fd.unit.trim()) newErrors.unit = "Unit is required";
+    if (!fd.purchaseDate) newErrors.purchaseDate = "Sale date is required";
+    if (!fd.purchaseTime) newErrors.purchaseTime = "Sale time is required";
+    if (!fd.branch) newErrors.branch = "Branch is required";
+    if (!fd.sellingPrice || parseFloat(fd.sellingPrice.replace(/,/g, "")) <= 0)
+      newErrors.sellingPrice = "Valid selling price is required";
+
+    const amountPaid = parseFloat(fd.amountPaid) || 0;
+    const sellingPrice = parseFloat(fd.sellingPrice.replace(/,/g, "")) || 0;
     if (amountPaid < 0) {
       newErrors.amountPaid = "Amount paid cannot be negative";
     } else if (amountPaid > sellingPrice) {
       newErrors.amountPaid = "Amount paid cannot exceed selling price";
     }
-    
-    if (!formData.buyerName.trim()) newErrors.buyerName = "Customer name is required";
-    if (!formData.buyerPhone.trim()) newErrors.buyerPhone = "Buyer phone is required";
-    if (formData.buyerEmail && !/^\S+@\S+\.\S+$/.test(formData.buyerEmail)) newErrors.buyerEmail = "Invalid email address";
-    
+
+    if (!fd.buyerName.trim()) newErrors.buyerName = "Customer name is required";
+    if (!isEdit && !fd.buyerPhone.trim()) newErrors.buyerPhone = "Buyer phone is required";
+    if (fd.buyerEmail && !/^\S+@\S+\.\S+$/.test(fd.buyerEmail)) newErrors.buyerEmail = "Invalid email address";
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -603,21 +664,27 @@ export function AddSaleDialog({
   // Handle form submission
   const handleSubmit = async () => {
     if (!validateForm()) {
-      alert("Please fill in all required fields correctly.");
+      alert("Kuch zaroori fields missing ya galat hain — form par red errors dekhein.");
       return;
     }
 
-    if (selectedMaterialInfo) {
-      const saleWeight = parseFloat(formData.weight);
+    const fd = getEffectiveFormData();
+
+    if (
+      !isEdit &&
+      selectedMaterialInfo &&
+      selectedMaterialInfo.availableWeight > 0
+    ) {
+      const saleWeight = parseFloat(fd.weight);
       if (saleWeight > selectedMaterialInfo.availableWeight) {
         alert(`Sale weight cannot exceed available weight (${selectedMaterialInfo.availableWeight} kg)`);
         return;
       }
     }
 
-    const amountPaid = parseFloat(formData.amountPaid) || 0;
-    const sellingPrice = parseFloat(formData.sellingPrice) || 0;
-    
+    const amountPaid = parseFloat(fd.amountPaid) || 0;
+    const sellingPrice = parseFloat(fd.sellingPrice.replace(/,/g, "")) || 0;
+
     if (amountPaid > sellingPrice) {
       alert(`Amount paid (${amountPaid}) cannot exceed selling price (${sellingPrice})`);
       return;
@@ -643,10 +710,15 @@ export function AddSaleDialog({
         return date.toISOString();
       };
 
-      const dateTime = parseDate(formData.purchaseDate, formData.purchaseTime);
-      const selling = parseFloat(formData.sellingPrice.replace(/,/g, '')) || 0;
-      const discount = parseFloat(formData.discount.replace(/,/g, '')) || 0;
+      const dateTime = parseDate(fd.purchaseDate, fd.purchaseTime);
+      const selling = parseFloat(fd.sellingPrice.replace(/,/g, '')) || 0;
+      const discount = parseFloat(fd.discount.replace(/,/g, '')) || 0;
       const finalAmount = (selling - discount).toFixed(2);
+
+      const qualityValue =
+        selectedMaterialInfo?.quality ||
+        (isEdit && editData ? editData.quality : "") ||
+        "";
 
       // Prepare form data (aggregated = no productionId/purchaseId; backend uses materialName+quality+materialColor and FIFO)
       const formDataToSend = new FormData();
@@ -656,32 +728,32 @@ export function AddSaleDialog({
         formDataToSend.append('purchaseId', selectedMaterialInfo.purchaseId);
       }
       // else: aggregated production – do not send productionId/purchaseId; materialName, quality, materialColor are enough
-      formDataToSend.append('customerName', formData.buyerName);
-      formDataToSend.append('customerPhone', formData.buyerPhone);
-      formDataToSend.append('customerEmail', formData.buyerEmail || '');
-      formDataToSend.append('sellingPrice', formData.sellingPrice);
-      formDataToSend.append('sellingWeight', formData.weight);
+      formDataToSend.append('customerName', fd.buyerName);
+      formDataToSend.append('customerPhone', fd.buyerPhone);
+      formDataToSend.append('customerEmail', fd.buyerEmail || '');
+      formDataToSend.append('sellingPrice', fd.sellingPrice);
+      formDataToSend.append('sellingWeight', fd.weight);
       formDataToSend.append('saleDate', dateTime);
-      formDataToSend.append('paymentMethod', formData.paymentMethod);
-      formDataToSend.append('amountPaid', formData.amountPaid);
-      formDataToSend.append('invoiceNo', formData.invoiceNo);
-      formDataToSend.append('transportationCost', formData.transportationCost);
-      formDataToSend.append('notes', formData.notes);
+      formDataToSend.append('paymentMethod', fd.paymentMethod);
+      formDataToSend.append('amountPaid', fd.amountPaid);
+      formDataToSend.append('invoiceNo', fd.invoiceNo);
+      formDataToSend.append('transportationCost', fd.transportationCost);
+      formDataToSend.append('notes', fd.notes);
 
       // Additional fields
-      formDataToSend.append('materialName', formData.materialName);
-      formDataToSend.append('supplierName', formData.supplierName);
-      formDataToSend.append('quality', selectedMaterialInfo?.quality ?? '');
-      formDataToSend.append('unit', formData.unit);
-      formDataToSend.append('branch', formData.branch);
+      formDataToSend.append('materialName', fd.materialName);
+      formDataToSend.append('supplierName', fd.supplierName);
+      formDataToSend.append('quality', qualityValue);
+      formDataToSend.append('unit', fd.unit);
+      formDataToSend.append('branch', fd.branch);
       formDataToSend.append('materialColor', selectedColor);
       formDataToSend.append('actualPrice', '0');
       formDataToSend.append('productionCost', '0');
-      formDataToSend.append('discount', formData.discount);
-      formDataToSend.append('advancePayment', formData.advancePayment || '0');
-      formDataToSend.append('buyerAddress', formData.buyerAddress || '');
-      formDataToSend.append('buyerCnic', formData.buyerCnic || '');
-      formDataToSend.append('buyerCompany', formData.buyerCompany || '');
+      formDataToSend.append('discount', fd.discount);
+      formDataToSend.append('advancePayment', fd.advancePayment || '0');
+      formDataToSend.append('buyerAddress', fd.buyerAddress || '');
+      formDataToSend.append('buyerCnic', fd.buyerCnic || '');
+      formDataToSend.append('buyerCompany', fd.buyerCompany || '');
       formDataToSend.append('finalAmount', finalAmount);
 
       // Add receipt file

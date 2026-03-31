@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package, ChevronDown, CheckCircle, DollarSign, History, Users } from "lucide-react";
+import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package, ChevronDown, CheckCircle, DollarSign, History, Users, Download, FileText } from "lucide-react";
 import { AddSaleDialog } from "./AddSaleDialog"; // CHANGED: Import AddSaleDialog instead of AddAssetDialog
 import { SaleDetailsView } from "./SaleDetailsView";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
+import { exportAsCsv, exportAsWordTable, inDateRange, toYmd } from "@/lib/exportUtils";
 
 // Configure axios with environment variable
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
@@ -1236,6 +1237,8 @@ export function POSView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [exportStartDate, setExportStartDate] = useState<string>("");
+  const [exportEndDate, setExportEndDate] = useState<string>("");
   const [showDialog, setShowDialog] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
@@ -1470,6 +1473,131 @@ export function POSView() {
     }
   };
 
+  const getExportSales = () => {
+    return filteredSales.filter((sale) =>
+      inDateRange(sale.purchaseDate || sale.createdAt, exportStartDate || undefined, exportEndDate || undefined)
+    );
+  };
+
+  const handleExportSales = (format: "excel" | "word") => {
+    const exportRows = getExportSales();
+    if (exportRows.length === 0) {
+      toast({
+        title: "No data",
+        description: "No POS records found for selected date range.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const headers = [
+      "Date",
+      "Invoice No",
+      "Material",
+      "Customer",
+      "Weight (kg)",
+      "Units",
+      "Total Amount",
+      "Amount Paid",
+      "Remaining Amount",
+      "Payment Status",
+    ];
+    const rows = exportRows.map((sale) => ({
+      "Date": formatDate(sale.purchaseDate || sale.createdAt),
+      "Invoice No": sale.invoiceNo || "N/A",
+      "Material": sale.materialName || "N/A",
+      "Customer": sale.buyerName || "N/A",
+      "Weight (kg)": sale.weight || "0",
+      "Units": sale.unit || "0",
+      "Total Amount": parseFloat(sale.finalAmount || sale.sellingPrice) || 0,
+      "Amount Paid": sale.amountPaid || 0,
+      "Remaining Amount": sale.remainingAmount || 0,
+      "Payment Status": sale.paymentStatus || "none",
+    }));
+    const rangeText =
+      exportStartDate || exportEndDate
+        ? `${exportStartDate || "start"}_to_${exportEndDate || "today"}`
+        : toYmd(new Date());
+
+    if (format === "excel") {
+      exportAsCsv(`POS_Report_${rangeText}.csv`, headers, rows);
+    } else {
+      exportAsWordTable(`POS_Report_${rangeText}.doc`, "POS Report", headers, rows);
+    }
+    toast({
+      title: "Export complete",
+      description: `${exportRows.length} POS records exported.`,
+    });
+  };
+
+  const handleExportCustomerSummary = (format: "excel" | "word") => {
+    if (!customerSummary || customerSummary.length === 0) {
+      toast({
+        title: "No data",
+        description: "No customer summary data to export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const headers = [
+      "Customer",
+      "Sales",
+      "Total Amount",
+      "Total Pay",
+      "Remaining",
+      "Total Weight (kg)",
+      "Total Units",
+      "By Type (Paid)",
+      "By Type (Weight)",
+    ];
+
+    const rows = customerSummary.map((row) => {
+      const typePaid = row.qualityPaid
+        ? Object.entries(row.qualityPaid)
+            .filter(([, amt]) => (amt || 0) > 0)
+            .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+            .map(([k, v]) => `${k}: ${formatCurrency(Number(v) || 0)}`)
+            .join(" | ")
+        : "";
+
+      const typeWeight = row.qualityWeight
+        ? Object.entries(row.qualityWeight)
+            .filter(([, w]) => (w || 0) > 0)
+            .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+            .map(([k, v]) => `${k}: ${Number(v).toLocaleString()} kg`)
+            .join(" | ")
+        : "";
+
+      return {
+        "Customer": row.customerName,
+        "Sales": row.sales,
+        "Total Amount": row.totalAmount,
+        "Total Pay": row.amountPaid,
+        "Remaining": row.remainingAmount,
+        "Total Weight (kg)": row.weight,
+        "Total Units": row.units,
+        "By Type (Paid)": typePaid,
+        "By Type (Weight)": typeWeight,
+      };
+    });
+
+    const rangeText =
+      exportStartDate || exportEndDate
+        ? `${exportStartDate || "start"}_to_${exportEndDate || "today"}`
+        : toYmd(new Date());
+
+    if (format === "excel") {
+      exportAsCsv(`POS_Customer_Summary_${rangeText}.csv`, headers, rows);
+    } else {
+      exportAsWordTable(`POS_Customer_Summary_${rangeText}.doc`, "POS Customer-wise Summary", headers, rows);
+    }
+
+    toast({
+      title: "Export complete",
+      description: `${rows.length} customers exported.`,
+    });
+  };
+
   // Get vehicle number display - safe handling
   const getVehicleNumber = (sale: Sale) => {
     if (sale.vehicleNumber && sale.vehicleNumber.trim() !== '') {
@@ -1694,10 +1822,28 @@ export function POSView() {
       {/* Customer-wise Summary */}
       {customerSummary.length > 0 && (
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-            <Users className="w-4 h-4 text-primary" />
-            Customer-wise Summary
-          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Users className="w-4 h-4 text-primary" />
+              Customer-wise Summary
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => handleExportCustomerSummary("excel")}
+                className="px-3 py-1.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-2 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Excel
+              </button>
+              <button
+                onClick={() => handleExportCustomerSummary("word")}
+                className="px-3 py-1.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-2 transition-colors"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                Word
+              </button>
+            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {customerSummary.map((row) => (
               <div
@@ -1830,18 +1976,48 @@ export function POSView() {
       )}
 
       {/* Action Bar */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="relative">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+          <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search sales..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="bg-cms-card border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-72"
+            className="bg-cms-card border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-72"
           />
         </div>
-        <div className="flex items-center gap-3">
+          <input
+            type="date"
+            value={exportStartDate}
+            onChange={(e) => setExportStartDate(e.target.value)}
+            className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground"
+            title="Export start date"
+          />
+          <input
+            type="date"
+            value={exportEndDate}
+            onChange={(e) => setExportEndDate(e.target.value)}
+            className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground"
+            title="Export end date"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <button
+            onClick={() => handleExportSales("excel")}
+            className="px-3 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Excel
+          </button>
+          <button
+            onClick={() => handleExportSales("word")}
+            className="px-3 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            Word
+          </button>
           <button
             onClick={handleAddNew}
             className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"

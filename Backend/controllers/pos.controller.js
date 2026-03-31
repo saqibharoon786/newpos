@@ -5,6 +5,114 @@ const { ProductionData } = require("../models/process.model.js");
 const path = require("path");
 const fs = require("fs");
 
+const normStr = (v) => (v == null || v === "" ? "" : String(v).trim());
+
+/** Parse weight from sale field (handles commas / "30 kg" style strings). */
+function parseSaleWeight(v) {
+  if (v == null || v === "") return 0;
+  const n = parseFloat(String(v).replace(/,/g, ""));
+  return isNaN(n) ? 0 : n;
+}
+
+/**
+ * Deduct weight from production batches (FIFO, oldest first) — same rules as addSale aggregated path.
+ */
+async function fifoDeductProduction({ materialName, quality, materialColor }, weightToDeduct) {
+  if (weightToDeduct <= 0) return { ok: true };
+  const qualityQ = String(quality || "Standard").trim();
+  const colorC = String(materialColor || "#FFFFFF").trim();
+  const mName = materialName.trim();
+
+  const productions = await ProductionData.find({
+    materialName: mName,
+    $or: [{ availableWeight: { $gt: 0 } }, { availableWeight: { $exists: false } }],
+  })
+    .sort({ productionDate: 1 })
+    .lean();
+
+  const withAvail = productions.filter((p) => (p.availableWeight ?? p.totalWeight ?? 0) > 0);
+  const matching = withAvail.filter(
+    (p) =>
+      normStr(p.materialName) === normStr(mName) &&
+      normStr(p.quality || "Standard") === normStr(qualityQ) &&
+      normStr(p.color || "#FFFFFF") === normStr(colorC)
+  );
+
+  let totalAvailable = 0;
+  for (const p of matching) {
+    totalAvailable += p.availableWeight ?? p.totalWeight ?? 0;
+  }
+  if (weightToDeduct > totalAvailable) {
+    return {
+      ok: false,
+      message: `Cannot increase sale weight. Only ${totalAvailable} kg available across production batches.`,
+    };
+  }
+
+  let remaining = weightToDeduct;
+  for (const p of matching) {
+    if (remaining <= 0) break;
+    const avail = p.availableWeight ?? p.totalWeight ?? 0;
+    const deduct = Math.min(remaining, avail);
+    if (deduct <= 0) continue;
+    const prod = await ProductionData.findById(p._id);
+    if (!prod) continue;
+    const newAvail = (prod.availableWeight ?? prod.totalWeight ?? 0) - deduct;
+    prod.availableWeight = Math.max(0, newAvail);
+    await prod.save();
+    remaining -= deduct;
+  }
+  if (remaining > 0) {
+    return { ok: false, message: "Insufficient production stock for this weight change." };
+  }
+  return { ok: true };
+}
+
+/**
+ * Return weight to production batches (newest first; cap each batch at totalWeight).
+ */
+async function fifoReturnProduction({ materialName, quality, materialColor }, weightToReturn) {
+  if (weightToReturn <= 0) return { ok: true };
+  const qualityQ = String(quality || "Standard").trim();
+  const colorC = String(materialColor || "#FFFFFF").trim();
+  const mName = materialName.trim();
+
+  const productions = await ProductionData.find({ materialName: mName })
+    .sort({ productionDate: -1 })
+    .lean();
+
+  const matching = productions.filter(
+    (p) =>
+      normStr(p.materialName) === normStr(mName) &&
+      normStr(p.quality || "Standard") === normStr(qualityQ) &&
+      normStr(p.color || "#FFFFFF") === normStr(colorC)
+  );
+
+  let remaining = weightToReturn;
+  for (const p of matching) {
+    if (remaining <= 0) break;
+    const prod = await ProductionData.findById(p._id);
+    if (!prod) continue;
+    const curAvail = prod.availableWeight ?? prod.totalWeight ?? 0;
+    const total = prod.totalWeight ?? 0;
+    const room = Math.max(0, total - curAvail);
+    const toAdd = Math.min(remaining, room);
+    if (toAdd > 0) {
+      prod.availableWeight = curAvail + toAdd;
+      await prod.save();
+      remaining -= toAdd;
+    }
+  }
+  if (remaining > 0) {
+    return {
+      ok: false,
+      message:
+        "Cannot decrease sale weight by that amount — stock return could not be applied to production batches. Check data consistency.",
+    };
+  }
+  return { ok: true };
+}
+
 // ➕ Add Sale (with optional receipt image)
 // Supports sale from POP purchase (purchaseId) OR from Production List (productionId)
 const addSale = async (req, res) => {
@@ -390,6 +498,35 @@ const updateSale = async (req, res) => {
     // Prepare update data
     const updateData = { ...req.body };
 
+    // Align with add-sale API: frontend sends sellingWeight; Sale model uses weight
+    if (updateData.sellingWeight !== undefined && updateData.weight === undefined) {
+      updateData.weight = String(updateData.sellingWeight);
+    }
+    delete updateData.sellingWeight;
+
+    // Form uses customerName; Sale model uses buyerName
+    if (updateData.customerName !== undefined) {
+      updateData.buyerName = updateData.customerName;
+      delete updateData.customerName;
+    }
+    if (updateData.customerPhone !== undefined) {
+      updateData.buyerPhone = updateData.customerPhone;
+      delete updateData.customerPhone;
+    }
+    if (updateData.customerEmail !== undefined) {
+      updateData.buyerEmail = updateData.customerEmail;
+      delete updateData.customerEmail;
+    }
+
+    const oldWeight = parseSaleWeight(existingSale.weight);
+    let newWeight = oldWeight;
+    if (updateData.weight !== undefined) {
+      newWeight = parseSaleWeight(updateData.weight);
+    }
+    const weightDelta = newWeight - oldWeight;
+
+    const salePurchaseId = existingSale.purchaseId;
+
     // Handle receipt image
     if (req.file) {
       console.log("New file uploaded:", req.file.filename);
@@ -425,6 +562,75 @@ const updateSale = async (req, res) => {
     // Handle advance payment
     if (updateData.advancePayment !== undefined) {
       updateData.advancePayment = parseFloat(updateData.advancePayment) || 0;
+    }
+
+    // Sync POP / production stock when sale weight changes (mirrors addSale deductions)
+    if (weightDelta !== 0) {
+      if (newWeight <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Sale weight must be greater than zero.",
+        });
+      }
+
+      if (salePurchaseId) {
+        const purchase = await Purchase.findById(salePurchaseId);
+        if (!purchase) {
+          return res.status(400).json({
+            success: false,
+            message: "Linked purchase record not found; cannot adjust stock.",
+          });
+        }
+        const originalWeight = parseFloat(purchase.weight) || 0;
+        const currentSoldWeight = parseFloat(purchase.soldWeight) || 0;
+        const newSoldWeight = currentSoldWeight + weightDelta;
+        if (newSoldWeight < 0) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid weight change for purchase stock.",
+          });
+        }
+        if (newSoldWeight > originalWeight) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot increase sale weight beyond available purchase stock (${originalWeight} kg total).`,
+          });
+        }
+        purchase.soldWeight = newSoldWeight;
+        await purchase.save();
+      } else {
+        const materialName =
+          updateData.materialName !== undefined ? updateData.materialName : existingSale.materialName;
+        const quality =
+          updateData.quality !== undefined ? updateData.quality : existingSale.quality;
+        const materialColor =
+          updateData.materialColor !== undefined ? updateData.materialColor : existingSale.materialColor;
+
+        if (!materialName || !String(materialName).trim()) {
+          return res.status(400).json({
+            success: false,
+            message: "Cannot adjust production stock: material name missing on this sale.",
+          });
+        }
+
+        if (weightDelta > 0) {
+          const r = await fifoDeductProduction(
+            { materialName, quality, materialColor },
+            weightDelta
+          );
+          if (!r.ok) {
+            return res.status(400).json({ success: false, message: r.message });
+          }
+        } else {
+          const r = await fifoReturnProduction(
+            { materialName, quality, materialColor },
+            Math.abs(weightDelta)
+          );
+          if (!r.ok) {
+            return res.status(400).json({ success: false, message: r.message });
+          }
+        }
+      }
     }
 
     const sale = await Sale.findByIdAndUpdate(

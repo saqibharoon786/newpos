@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, Printer, Pencil, Eye, Trash2, ChevronLeft, ChevronRight, ChevronDown, BookOpen, Calendar, Filter, CheckCircle, XCircle, IndianRupee, FileText, Package, User, Building } from "lucide-react";
+import { Search, Plus, Printer, Pencil, Eye, Trash2, ChevronLeft, ChevronRight, ChevronDown, BookOpen, Calendar, Filter, CheckCircle, XCircle, IndianRupee, FileText, Package, User, Building, Download } from "lucide-react";
 import { AddExpenseDialog } from "./AddExpenseDialog";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
+import { exportAsCsv, exportAsWordTable, toYmd } from "@/lib/exportUtils";
 
 // Configure axios with environment variable
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
@@ -1222,6 +1223,8 @@ export function RoznamchaView() {
   const [selectedMonth, setSelectedMonth] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
   const [optimisticUpdates, setOptimisticUpdates] = useState<{[key: string]: ExpenseItem}>({});
 
   // Pagination states
@@ -1370,6 +1373,88 @@ export function RoznamchaView() {
       }
     } catch (error) {
       console.error("Error fetching stats:", error);
+    }
+  };
+
+  const exportExpensesBackup = async (format: "excel" | "word") => {
+    try {
+      const params = new URLSearchParams();
+      params.append("page", "1");
+      params.append("limit", "5000");
+      params.append("sortBy", "createdAt");
+      params.append("sortOrder", "desc");
+      if (filters.purpose) params.append("purpose", filters.purpose);
+      if (filters.personResponsible) params.append("personResponsible", filters.personResponsible);
+      if (filters.usage) params.append("usage", filters.usage);
+      if (searchTerm) params.append("search", searchTerm);
+
+      if (exportStartDate || exportEndDate) {
+        if (exportStartDate) params.append("startDate", exportStartDate);
+        if (exportEndDate) params.append("endDate", exportEndDate);
+      } else if (activeTab === "Daily") {
+        const targetDate = selectedDate || new Date().toISOString().split("T")[0];
+        params.append("startDate", targetDate);
+        params.append("endDate", targetDate);
+      } else if (activeTab === "Weekly") {
+        const now = new Date();
+        const day = now.getDay();
+        const mondayOffset = day === 0 ? -6 : 1 - day;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + mondayOffset);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        params.append("startDate", monday.toISOString().split("T")[0]);
+        params.append("endDate", sunday.toISOString().split("T")[0]);
+      } else if (activeTab === "Monthly") {
+        if (selectedMonth) {
+          const [year, month] = selectedMonth.split("-");
+          params.append("startDate", new Date(parseInt(year), parseInt(month) - 1, 1).toISOString().split("T")[0]);
+          params.append("endDate", new Date(parseInt(year), parseInt(month), 0).toISOString().split("T")[0]);
+        }
+      } else if (activeTab === "Yearly") {
+        const targetYear = selectedYear || new Date().getFullYear().toString();
+        params.append("startDate", new Date(parseInt(targetYear), 0, 1).toISOString().split("T")[0]);
+        params.append("endDate", new Date(parseInt(targetYear), 11, 31).toISOString().split("T")[0]);
+      }
+
+      const response = await api.get(`${EXPENSES_API_URL}/get-all?${params.toString()}`);
+      if (!response.data.success) throw new Error("Failed to fetch expenses for export");
+      const allRows: ExpenseItem[] = response.data.data || [];
+      if (allRows.length === 0) {
+        toast({
+          title: "No data",
+          description: "No expense records found for selected filter/date range.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const headers = ["Date", "Time", "Subject", "Purpose", "Usage", "Price", "Responsible", "Description"];
+      const rows = allRows.map((e) => ({
+        "Date": formatDateWithMonthName(e.date),
+        "Time": e.time || "",
+        "Subject": e.subject || "",
+        "Purpose": e.purpose || "",
+        "Usage": e.usage || "",
+        "Price": e.price || 0,
+        "Responsible": e.personResponsible || "",
+        "Description": e.description || "",
+      }));
+      const fileRange = exportStartDate || exportEndDate
+        ? `${exportStartDate || "start"}_to_${exportEndDate || "today"}`
+        : `${activeTab}_${toYmd(new Date())}`;
+      if (format === "excel") {
+        exportAsCsv(`Roznamcha_Backup_${fileRange}.csv`, headers, rows);
+      } else {
+        exportAsWordTable(`Roznamcha_Backup_${fileRange}.doc`, "Roznamcha Expense Report", headers, rows);
+      }
+      toast({ title: "Export complete", description: `${rows.length} expense records exported.` });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to export expenses backup.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -1844,7 +1929,35 @@ export function RoznamchaView() {
         </div>
 
         {/* Professional Print Button */}
-        <div className="flex justify-end mb-4">
+        <div className="flex flex-wrap justify-end gap-2 mb-4">
+          <input
+            type="date"
+            value={exportStartDate}
+            onChange={(e) => setExportStartDate(e.target.value)}
+            className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground"
+            title="Backup start date"
+          />
+          <input
+            type="date"
+            value={exportEndDate}
+            onChange={(e) => setExportEndDate(e.target.value)}
+            className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground"
+            title="Backup end date"
+          />
+          <button
+            onClick={() => exportExpensesBackup("excel")}
+            className="px-4 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Excel Backup
+          </button>
+          <button
+            onClick={() => exportExpensesBackup("word")}
+            className="px-4 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            Word Backup
+          </button>
           <button 
             onClick={() => handleProfessionalPrint(expenses, pagination.currentPage, pagination.totalPages, pagination.totalItems, calculateTotalExpenses, totalExpenseAllPages, reportDateLabel)}
             className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
