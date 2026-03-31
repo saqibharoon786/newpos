@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package, ChevronDown, CheckCircle, DollarSign, History, Wallet, Smartphone, Building } from "lucide-react";
+import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package, ChevronDown, CheckCircle, DollarSign, History, Wallet, Smartphone, Building, Download, FileText } from "lucide-react";
 import { PurchaseDetailsView } from "./PurchaseDetailsView";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
+import { exportAsCsv, exportAsExcelTable, exportAsWordTable, inDateRange, toYmd } from "@/lib/exportUtils";
 
 // Configure axios with environment variable
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
@@ -266,7 +267,13 @@ const VendorSummary = ({
   onDeleteVendor: (vendorName: string) => void
 }) => {
   const [expandedVendor, setExpandedVendor] = useState<string | null>(null);
+  const [exportStartDate, setExportStartDate] = useState<string>("");
+  const [exportEndDate, setExportEndDate] = useState<string>("");
   
+  const purchasesInRange = purchases.filter((p) =>
+    inDateRange(p.purchaseDate || p.createdAt, exportStartDate || undefined, exportEndDate || undefined)
+  );
+
   // Calculate vendor-wise summary
   const calculateVendorSummary = () => {
     const vendorSummary: Record<string, {
@@ -290,7 +297,7 @@ const VendorSummary = ({
       };
     }> = {};
     
-    purchases.forEach(purchase => {
+    purchasesInRange.forEach(purchase => {
       const vendor = purchase.vendor || 'Unknown';
       const price = purchase.price || 0;
       const amountPaid = purchase.amountPaid || 0;
@@ -376,10 +383,59 @@ const VendorSummary = ({
   const vendorSummary = calculateVendorSummary();
   
   if (purchases.length === 0) return null;
+
+  const handleExportVendorSummary = (format: "excel" | "word") => {
+    const headers = [
+      "Vendor",
+      "Total Purchases",
+      "Total Price",
+      "Amount Paid",
+      "Remaining Amount",
+      "Total Weight (kg)",
+      "Used Weight (kg)",
+      "Remaining Weight (kg)",
+      "Payment Status Count",
+      "Stock Status Count",
+      "Materials",
+    ];
+    const rows = Object.entries(vendorSummary)
+      .sort((a, b) => (b[1].totalRemainingAmount || 0) - (a[1].totalRemainingAmount || 0))
+      .map(([vendorName, data]) => ({
+        "Vendor": vendorName,
+        "Total Purchases": data.totalPurchases,
+        "Total Price": data.totalPrice,
+        "Amount Paid": data.totalAmountPaid,
+        "Remaining Amount": data.totalRemainingAmount,
+        "Total Weight (kg)": Math.round((data.totalWeight || 0) * 100) / 100,
+        "Used Weight (kg)": Math.round((data.totalProcessWeight || 0) * 100) / 100,
+        "Remaining Weight (kg)": Math.round((data.totalRemainingWeight || 0) * 100) / 100,
+        "Payment Status Count": `paid: ${data.paymentStatus.paid} | partial: ${data.paymentStatus.partial} | none: ${data.paymentStatus.none}`,
+        "Stock Status Count": `available: ${data.stockStatus.available} | partial: ${data.stockStatus.partially_sold} | sold: ${data.stockStatus.sold_out}`,
+        "Materials": (data.materials || []).map((m) => `${m.name} (${Math.round((m.weight || 0) * 100) / 100} kg)`).join(" | "),
+      }));
+
+    if (rows.length === 0) {
+      toast({ title: "No data", description: "No vendor summary to export.", variant: "destructive" });
+      return;
+    }
+
+    const suffix =
+      exportStartDate || exportEndDate
+        ? `${exportStartDate || "start"}_to_${exportEndDate || "today"}`
+        : toYmd(new Date());
+
+    if (format === "excel") {
+      // Use .xls table to keep alignment/boxes clear in Excel
+      exportAsExcelTable(`POP_Vendor_Summary_${suffix}.xls`, "POP Vendor-wise Summary", headers, rows);
+    } else {
+      exportAsWordTable(`POP_Vendor_Summary_${suffix}.doc`, "POP Vendor-wise Summary", headers, rows);
+    }
+    toast({ title: "Export complete", description: `${rows.length} vendors exported.` });
+  };
   
   return (
     <div className="bg-cms-card rounded-lg p-4 mb-6 border border-border">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div>
           <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
             <Building className="w-5 h-5 text-primary" />
@@ -393,6 +449,36 @@ const VendorSummary = ({
           <p className="text-xs text-muted-foreground">
             Total: {Object.keys(vendorSummary).length} vendor{Object.keys(vendorSummary).length !== 1 ? 's' : ''}
           </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="date"
+            value={exportStartDate}
+            onChange={(e) => setExportStartDate(e.target.value)}
+            className="bg-cms-card-hover border border-border rounded-md px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            title="Start date"
+          />
+          <input
+            type="date"
+            value={exportEndDate}
+            onChange={(e) => setExportEndDate(e.target.value)}
+            className="bg-cms-card-hover border border-border rounded-md px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            title="End date"
+          />
+          <button
+            onClick={() => handleExportVendorSummary("excel")}
+            className="px-3 py-1.5 bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-2 transition-colors hover:bg-secondary"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Excel
+          </button>
+          <button
+            onClick={() => handleExportVendorSummary("word")}
+            className="px-3 py-1.5 bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-2 transition-colors hover:bg-secondary"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Word
+          </button>
         </div>
       </div>
       
@@ -3920,6 +4006,8 @@ export function POPView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [exportStartDate, setExportStartDate] = useState<string>("");
+  const [exportEndDate, setExportEndDate] = useState<string>("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [showDetails, setShowDetails] = useState(false);
@@ -4253,6 +4341,66 @@ export function POPView() {
     }
   };
 
+  const getExportPurchases = () => {
+    return filteredPurchases.filter((purchase) =>
+      inDateRange(purchase.purchaseDate || purchase.createdAt, exportStartDate || undefined, exportEndDate || undefined)
+    );
+  };
+
+  const handleExportPurchases = (format: "excel" | "word") => {
+    const exportRows = getExportPurchases();
+    if (exportRows.length === 0) {
+      toast({
+        title: "No data",
+        description: "No POP records found for selected date range.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const headers = [
+      "Date",
+      "Receipt No",
+      "Material Name",
+      "Quality",
+      "Vendor",
+      "Total Weight (kg)",
+      "Used Weight (kg)",
+      "Remaining Weight (kg)",
+      "Price",
+      "Amount Paid",
+      "Remaining Amount",
+      "Payment Status",
+    ];
+    const rows = exportRows.map((p) => ({
+      "Date": formatDateTime(p.purchaseDate || p.createdAt),
+      "Receipt No": p.receiptNo || "N/A",
+      "Material Name": p.materialName || "N/A",
+      "Quality": p.quality || "N/A",
+      "Vendor": p.vendor || "N/A",
+      "Total Weight (kg)": p.weight || 0,
+      "Used Weight (kg)": p.productionConsumedWeight || 0,
+      "Remaining Weight (kg)": p.remainingWeight || 0,
+      "Price": p.price || 0,
+      "Amount Paid": p.amountPaid || 0,
+      "Remaining Amount": p.remainingAmount || 0,
+      "Payment Status": p.paidAmount || "none",
+    }));
+    const rangeText =
+      exportStartDate || exportEndDate
+        ? `${exportStartDate || "start"}_to_${exportEndDate || "today"}`
+        : toYmd(new Date());
+
+    if (format === "excel") {
+      exportAsCsv(`POP_Report_${rangeText}.csv`, headers, rows);
+    } else {
+      exportAsWordTable(`POP_Report_${rangeText}.doc`, "POP Report", headers, rows);
+    }
+    toast({
+      title: "Export complete",
+      description: `${exportRows.length} POP records exported.`,
+    });
+  };
+
   const totals = calculateTotals();
 
   const itemsPerPage = 10;
@@ -4365,15 +4513,16 @@ export function POPView() {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-6">
-        <div className="relative">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+          <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search by Material, Quality (e.g., PP750), Color (e.g., red, lal), Receipt No., Vendor..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="bg-cms-card border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-96"
+            className="bg-cms-card border border-border rounded-lg pl-10 pr-10 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-96"
           />
           {searchTerm && (
             <X
@@ -4382,7 +4531,36 @@ export function POPView() {
             />
           )}
         </div>
-        <div className="flex items-center gap-3">
+          <input
+            type="date"
+            value={exportStartDate}
+            onChange={(e) => setExportStartDate(e.target.value)}
+            className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground"
+            title="Export start date"
+          />
+          <input
+            type="date"
+            value={exportEndDate}
+            onChange={(e) => setExportEndDate(e.target.value)}
+            className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground"
+            title="Export end date"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <button
+            onClick={() => handleExportPurchases("excel")}
+            className="px-3 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Excel
+          </button>
+          <button
+            onClick={() => handleExportPurchases("word")}
+            className="px-3 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            Word
+          </button>
           <button
             onClick={handleAddNew}
             className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"

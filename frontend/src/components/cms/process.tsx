@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
+import { exportAsCsv, exportAsWordTable, inDateRange, toYmd } from "@/lib/exportUtils";
 
 // Configure axios with environment variable
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
@@ -1954,6 +1955,8 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
   const [filterDate, setFilterDate] = useState<string>("");
   const [filterShift, setFilterShift] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [exportStartDate, setExportStartDate] = useState<string>("");
+  const [exportEndDate, setExportEndDate] = useState<string>("");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedProduction, setSelectedProduction] = useState<ProductionData | null>(null);
   const [editingProduction, setEditingProduction] = useState<ProductionData | null>(null);
@@ -1981,6 +1984,65 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
     }
     return true;
   });
+
+  const exportData = filteredData.filter((prod) =>
+    inDateRange(prod.productionDate, exportStartDate || undefined, exportEndDate || undefined)
+  );
+
+  const handleExportHistory = (format: "excel" | "word") => {
+    if (exportData.length === 0) {
+      toast({
+        title: "No data",
+        description: "No production records found for selected date range.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const headers = [
+      "Date",
+      "Batch No",
+      "Material",
+      "Quality",
+      "Shift",
+      "Total Output (kg)",
+      "Sold (kg)",
+      "Remaining (kg)",
+      "Total Bags",
+      "Efficiency (%)",
+      "Status",
+    ];
+    const rows = exportData.map((prod) => {
+      const total = prod.outputWeight ?? 0;
+      const remaining = prod.availableWeight ?? total;
+      const sold = Math.round((total - remaining) * 100) / 100;
+      return {
+        "Date": new Date(prod.productionDate).toLocaleDateString(),
+        "Batch No": prod.batchNo,
+        "Material": prod.materialName,
+        "Quality": prod.quality || "N/A",
+        "Shift": prod.shift,
+        "Total Output (kg)": total,
+        "Sold (kg)": sold,
+        "Remaining (kg)": remaining,
+        "Total Bags": prod.totalBags || 0,
+        "Efficiency (%)": prod.efficiency || 0,
+        "Status": prod.status,
+      };
+    });
+    const rangeText =
+      exportStartDate || exportEndDate
+        ? `${exportStartDate || "start"}_to_${exportEndDate || "today"}`
+        : toYmd(new Date());
+    if (format === "excel") {
+      exportAsCsv(`Process_History_${rangeText}.csv`, headers, rows);
+    } else {
+      exportAsWordTable(`Process_History_${rangeText}.doc`, "Process Production History", headers, rows);
+    }
+    toast({
+      title: "Export complete",
+      description: `${rows.length} process records exported.`,
+    });
+  };
 
   const itemsPerPage = 10;
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
@@ -2077,6 +2139,66 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
     return byMaterial;
   }, [productionData]);
 
+  const exportColorSummaryRows = Object.entries(colorSummary)
+    .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
+    .map(([colorName, data]) => ({
+      "Color": colorName,
+      "Total Produced (kg)": Math.round((data.totalWeight || 0) * 100) / 100,
+      "Sold (kg)": Math.round((data.soldWeight || 0) * 100) / 100,
+      "Remaining (kg)": Math.round((data.remainingWeight || 0) * 100) / 100,
+      "By Quality": Object.entries(data.qualities || {})
+        .sort((a, b) => (b[1].totalWeight || 0) - (a[1].totalWeight || 0))
+        .map(([q, qd]) => `${q}: ${Math.round((qd.remainingWeight || 0) * 100) / 100} / ${Math.round((qd.totalWeight || 0) * 100) / 100} kg`)
+        .join(" | "),
+    }));
+
+  const exportWeightSummaryRows = Object.entries(weightSummary)
+    .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
+    .map(([materialName, data]) => ({
+      "Material": materialName,
+      "Total Produced (kg)": Math.round((data.totalWeight || 0) * 100) / 100,
+      "Sold (kg)": Math.round((data.soldWeight || 0) * 100) / 100,
+      "Remaining (kg)": Math.round((data.remainingWeight || 0) * 100) / 100,
+      "By Color": Object.entries(data.colors || {})
+        .sort((a, b) => (b[1].totalWeight || 0) - (a[1].totalWeight || 0))
+        .map(([c, cd]) => `${c}: ${Math.round((cd.remainingWeight || 0) * 100) / 100} / ${Math.round((cd.totalWeight || 0) * 100) / 100} kg`)
+        .join(" | "),
+      "By Quality": Object.entries(data.qualities || {})
+        .sort((a, b) => (b[1].totalWeight || 0) - (a[1].totalWeight || 0))
+        .map(([q, qd]) => `${q}: ${Math.round((qd.remainingWeight || 0) * 100) / 100} / ${Math.round((qd.totalWeight || 0) * 100) / 100} kg`)
+        .join(" | "),
+    }));
+
+  const handleExportColorSummary = (format: "excel" | "word") => {
+    if (exportColorSummaryRows.length === 0) {
+      toast({ title: "No data", description: "No color summary to export.", variant: "destructive" });
+      return;
+    }
+    const headers = ["Color", "Total Produced (kg)", "Sold (kg)", "Remaining (kg)", "By Quality"];
+    const suffix = exportStartDate || exportEndDate ? `${exportStartDate || "start"}_to_${exportEndDate || "today"}` : toYmd(new Date());
+    if (format === "excel") {
+      exportAsCsv(`Process_Color_Summary_${suffix}.csv`, headers, exportColorSummaryRows);
+    } else {
+      exportAsWordTable(`Process_Color_Summary_${suffix}.doc`, "Process Color-wise Summary", headers, exportColorSummaryRows);
+    }
+    toast({ title: "Export complete", description: `${exportColorSummaryRows.length} colors exported.` });
+  };
+
+  const handleExportWeightSummary = (format: "excel" | "word") => {
+    if (exportWeightSummaryRows.length === 0) {
+      toast({ title: "No data", description: "No weight summary to export.", variant: "destructive" });
+      return;
+    }
+    const headers = ["Material", "Total Produced (kg)", "Sold (kg)", "Remaining (kg)", "By Color", "By Quality"];
+    const suffix = exportStartDate || exportEndDate ? `${exportStartDate || "start"}_to_${exportEndDate || "today"}` : toYmd(new Date());
+    if (format === "excel") {
+      exportAsCsv(`Process_Weight_Summary_${suffix}.csv`, headers, exportWeightSummaryRows);
+    } else {
+      exportAsWordTable(`Process_Weight_Summary_${suffix}.doc`, "Process Weight-wise Summary", headers, exportWeightSummaryRows);
+    }
+    toast({ title: "Export complete", description: `${exportWeightSummaryRows.length} materials exported.` });
+  };
+
   const getColorHex = (colorName: string) => {
     const c = colorOptions.find(o => o.name.toLowerCase() === colorName.toLowerCase());
     return c ? c.value : "#CCCCCC";
@@ -2094,7 +2216,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
             {productionData.length} production records
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <input
             type="date"
             value={filterDate}
@@ -2121,18 +2243,33 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
             <option value="partial">Partial</option>
             <option value="failed">Failed</option>
           </select>
+          <input
+            type="date"
+            value={exportStartDate}
+            onChange={(e) => setExportStartDate(e.target.value)}
+            className="bg-cms-card-hover border border-border rounded-md px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            title="Export start date"
+          />
+          <input
+            type="date"
+            value={exportEndDate}
+            onChange={(e) => setExportEndDate(e.target.value)}
+            className="bg-cms-card-hover border border-border rounded-md px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            title="Export end date"
+          />
           <button
-            onClick={() => {
-              // Export functionality
-              toast({
-                title: "Export",
-                description: "Exporting production data...",
-              });
-            }}
+            onClick={() => handleExportHistory("excel")}
             className="px-3 py-1.5 bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-1 transition-colors hover:bg-secondary"
           >
             <Download className="w-3 h-3" />
-            Export
+            Excel
+          </button>
+          <button
+            onClick={() => handleExportHistory("word")}
+            className="px-3 py-1.5 bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-1 transition-colors hover:bg-secondary"
+          >
+            <Download className="w-3 h-3" />
+            Word
           </button>
         </div>
       </div>
@@ -2140,10 +2277,28 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
       {/* Color-wise Weight Summary */}
       {Object.keys(colorSummary).length > 0 && (
         <div className="mb-6">
-          <h4 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-gradient-to-r from-red-500 to-blue-500" />
-            Color-wise Weight Summary
-          </h4>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+            <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-gradient-to-r from-red-500 to-blue-500" />
+              Color-wise Weight Summary
+            </h4>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => handleExportColorSummary("excel")}
+                className="px-3 py-1.5 bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-1 transition-colors hover:bg-secondary"
+              >
+                <Download className="w-3 h-3" />
+                Excel
+              </button>
+              <button
+                onClick={() => handleExportColorSummary("word")}
+                className="px-3 py-1.5 bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-1 transition-colors hover:bg-secondary"
+              >
+                <Download className="w-3 h-3" />
+                Word
+              </button>
+            </div>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {Object.entries(colorSummary)
               .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
@@ -2212,10 +2367,28 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
       {/* Weight-wise Summary (by Material) */}
       {Object.keys(weightSummary).length > 0 && (
         <div className="mb-6">
-          <h4 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
-            <Package className="w-4 h-4 text-primary" />
-            Weight-wise Summary (by Material)
-          </h4>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+            <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+              <Package className="w-4 h-4 text-primary" />
+              Weight-wise Summary (by Material)
+            </h4>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => handleExportWeightSummary("excel")}
+                className="px-3 py-1.5 bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-1 transition-colors hover:bg-secondary"
+              >
+                <Download className="w-3 h-3" />
+                Excel
+              </button>
+              <button
+                onClick={() => handleExportWeightSummary("word")}
+                className="px-3 py-1.5 bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-1 transition-colors hover:bg-secondary"
+              >
+                <Download className="w-3 h-3" />
+                Word
+              </button>
+            </div>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {Object.entries(weightSummary)
               .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
