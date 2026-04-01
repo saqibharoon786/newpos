@@ -17,6 +17,68 @@ const api = axios.create({
 // API endpoints
 const EXPENSES_API_URL = `${API_BASE_URL}/api/expenses`;
 
+/** YYYY-MM-DD in local calendar (toISOString shifts dates in non-UTC zones). */
+function formatLocalYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function monthRangeFromYyyyMm(yyyyMm: string): { start: string; end: string } {
+  const parts = yyyyMm.split("-");
+  const y = parseInt(parts[0], 10);
+  const mo = parseInt(parts[1], 10);
+  if (!y || !mo || mo < 1 || mo > 12) {
+    const now = new Date();
+    return {
+      start: formatLocalYmd(new Date(now.getFullYear(), now.getMonth(), 1)),
+      end: formatLocalYmd(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+    };
+  }
+  return {
+    start: formatLocalYmd(new Date(y, mo - 1, 1)),
+    end: formatLocalYmd(new Date(y, mo, 0)),
+  };
+}
+
+function currentMonthInputValue(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Full year list for expense filters (native <input type="month"> often hides old years). */
+function buildExpenseYearOptions(): number[] {
+  const cy = new Date().getFullYear();
+  const list: number[] = [];
+  for (let y = cy + 15; y >= 1950; y--) list.push(y);
+  return list;
+}
+
+const MONTH_PICKER_OPTIONS: { v: string; label: string }[] = [
+  { v: "01", label: "January" },
+  { v: "02", label: "February" },
+  { v: "03", label: "March" },
+  { v: "04", label: "April" },
+  { v: "05", label: "May" },
+  { v: "06", label: "June" },
+  { v: "07", label: "July" },
+  { v: "08", label: "August" },
+  { v: "09", label: "September" },
+  { v: "10", label: "October" },
+  { v: "11", label: "November" },
+  { v: "12", label: "December" },
+];
+
+function parseYyyyMm(s: string): { y: string; m: string } {
+  if (s && /^\d{4}-\d{2}$/.test(s)) {
+    const [ys, ms] = s.split("-");
+    return { y: ys, m: ms.padStart(2, "0") };
+  }
+  const d = new Date();
+  return { y: String(d.getFullYear()), m: String(d.getMonth() + 1).padStart(2, "0") };
+}
+
 interface ExpenseItem {
   _id: string;
   subject: string;
@@ -112,7 +174,8 @@ const handleProfessionalPrint = (
   totalItems: number,
   calculateTotalExpenses: () => number,
   totalAllPages: number,
-  reportDateLabel: string
+  reportDateLabel: string,
+  itemsPerPage: number = 10
 ) => {
   const printWindow = window.open('', '_blank');
   if (!printWindow) return;
@@ -492,7 +555,7 @@ const handleProfessionalPrint = (
             </thead>
             <tbody>
               ${expenses.map((expense, index) => {
-                const serialNumber = (currentPage - 1) * 10 + index + 1;
+                const serialNumber = (currentPage - 1) * itemsPerPage + index + 1;
                 const formattedDate = formatDateWithMonthName(expense.date);
                 const priceValue = parseFloat(expense.price.replace(/,/g, ''));
                 
@@ -1220,9 +1283,14 @@ export function RoznamchaView() {
     personResponsible: "",
     usage: ""
   });
-  const [selectedMonth, setSelectedMonth] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthInputValue);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
+  /** On "All" tab: optional month+year (both set = filter applied). */
+  const [allTabYear, setAllTabYear] = useState("");
+  const [allTabMonthNum, setAllTabMonthNum] = useState("");
+  const allTabMonthFilter =
+    allTabYear && allTabMonthNum ? `${allTabYear}-${allTabMonthNum}` : "";
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
   const [optimisticUpdates, setOptimisticUpdates] = useState<{[key: string]: ExpenseItem}>({});
@@ -1243,57 +1311,55 @@ export function RoznamchaView() {
     try {
       // Build query parameters
       const params = new URLSearchParams();
-      params.append('page', page.toString());
-      params.append('limit', '10');
-      params.append('sortBy', 'createdAt');
-      params.append('sortOrder', 'desc');
-      
+      params.append("page", page.toString());
+      params.append("sortBy", "createdAt");
+      params.append("sortOrder", "desc");
+
       // Add filters if they exist
-      if (filters.purpose) params.append('purpose', filters.purpose);
-      if (filters.personResponsible) params.append('personResponsible', filters.personResponsible);
-      if (filters.usage) params.append('usage', filters.usage);
-      
-      // Add search term if it exists
-      if (searchTerm) params.append('search', searchTerm);
-      
-      // Handle active tab filters: Daily | Weekly | Monthly | Yearly
+      if (filters.purpose) params.append("purpose", filters.purpose);
+      if (filters.personResponsible) params.append("personResponsible", filters.personResponsible);
+      if (filters.usage) params.append("usage", filters.usage);
+
+      if (searchTerm) params.append("search", searchTerm);
+
+      let dateRangeActive = false;
+      // Handle active tab filters: Daily | Weekly | Monthly | Yearly | All (+ optional month)
       if (activeTab === "Daily") {
-        const targetDate = selectedDate || new Date().toISOString().split('T')[0];
-        params.append('startDate', targetDate);
-        params.append('endDate', targetDate);
+        const targetDate = selectedDate || formatLocalYmd(new Date());
+        params.append("startDate", targetDate);
+        params.append("endDate", targetDate);
+        dateRangeActive = true;
       } else if (activeTab === "Weekly") {
         const now = new Date();
-        const day = now.getDay(); // 0 Sun, 1 Mon, ...
+        const day = now.getDay();
         const mondayOffset = day === 0 ? -6 : 1 - day;
         const monday = new Date(now);
         monday.setDate(now.getDate() + mondayOffset);
         const sunday = new Date(monday);
         sunday.setDate(monday.getDate() + 6);
-        const firstDay = monday.toISOString().split('T')[0];
-        const lastDay = sunday.toISOString().split('T')[0];
-        params.append('startDate', firstDay);
-        params.append('endDate', lastDay);
+        params.append("startDate", formatLocalYmd(monday));
+        params.append("endDate", formatLocalYmd(sunday));
+        dateRangeActive = true;
       } else if (activeTab === "Monthly") {
-        if (selectedMonth) {
-          const [year, month] = selectedMonth.split('-');
-          const startDate = new Date(parseInt(year), parseInt(month) - 1, 1).toISOString().split('T')[0];
-          const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0];
-          params.append('startDate', startDate);
-          params.append('endDate', endDate);
-        } else {
-          const now = new Date();
-          const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-          const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-          params.append('startDate', firstDay);
-          params.append('endDate', lastDay);
-        }
+        const { start, end } = monthRangeFromYyyyMm(selectedMonth || currentMonthInputValue());
+        params.append("startDate", start);
+        params.append("endDate", end);
+        dateRangeActive = true;
       } else if (activeTab === "Yearly") {
         const targetYear = selectedYear || new Date().getFullYear().toString();
-        const startDate = new Date(parseInt(targetYear), 0, 1).toISOString().split('T')[0];
-        const endDate = new Date(parseInt(targetYear), 11, 31).toISOString().split('T')[0];
-        params.append('startDate', startDate);
-        params.append('endDate', endDate);
+        const y = parseInt(targetYear, 10);
+        params.append("startDate", formatLocalYmd(new Date(y, 0, 1)));
+        params.append("endDate", formatLocalYmd(new Date(y, 11, 31)));
+        dateRangeActive = true;
+      } else if (activeTab === "All" && allTabMonthFilter.trim()) {
+        const { start, end } = monthRangeFromYyyyMm(allTabMonthFilter.trim());
+        params.append("startDate", start);
+        params.append("endDate", end);
+        dateRangeActive = true;
       }
+
+      // Month / year / day filters: fetch enough rows so the full month (etc.) is visible (was capped at 10)
+      params.append("limit", dateRangeActive ? "500" : "10");
       
       const response = await api.get(`${EXPENSES_API_URL}/get-all?${params.toString()}`);
       
@@ -1331,9 +1397,9 @@ export function RoznamchaView() {
       if (filters.personResponsible) params.append('personResponsible', filters.personResponsible);
       if (filters.usage) params.append('usage', filters.usage);
       if (activeTab === "Daily") {
-        const targetDate = selectedDate || new Date().toISOString().split('T')[0];
-        params.append('startDate', targetDate);
-        params.append('endDate', targetDate);
+        const targetDate = selectedDate || formatLocalYmd(new Date());
+        params.append("startDate", targetDate);
+        params.append("endDate", targetDate);
       } else if (activeTab === "Weekly") {
         const now = new Date();
         const day = now.getDay();
@@ -1342,28 +1408,21 @@ export function RoznamchaView() {
         monday.setDate(now.getDate() + mondayOffset);
         const sunday = new Date(monday);
         sunday.setDate(monday.getDate() + 6);
-        params.append('startDate', monday.toISOString().split('T')[0]);
-        params.append('endDate', sunday.toISOString().split('T')[0]);
+        params.append("startDate", formatLocalYmd(monday));
+        params.append("endDate", formatLocalYmd(sunday));
       } else if (activeTab === "Monthly") {
-        if (selectedMonth) {
-          const [year, month] = selectedMonth.split('-');
-          const startDate = new Date(parseInt(year), parseInt(month) - 1, 1).toISOString().split('T')[0];
-          const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0];
-          params.append('startDate', startDate);
-          params.append('endDate', endDate);
-        } else {
-          const now = new Date();
-          const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-          const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-          params.append('startDate', firstDay);
-          params.append('endDate', lastDay);
-        }
+        const { start, end } = monthRangeFromYyyyMm(selectedMonth || currentMonthInputValue());
+        params.append("startDate", start);
+        params.append("endDate", end);
       } else if (activeTab === "Yearly") {
         const targetYear = selectedYear || new Date().getFullYear().toString();
-        const startDate = new Date(parseInt(targetYear), 0, 1).toISOString().split('T')[0];
-        const endDate = new Date(parseInt(targetYear), 11, 31).toISOString().split('T')[0];
-        params.append('startDate', startDate);
-        params.append('endDate', endDate);
+        const y = parseInt(targetYear, 10);
+        params.append("startDate", formatLocalYmd(new Date(y, 0, 1)));
+        params.append("endDate", formatLocalYmd(new Date(y, 11, 31)));
+      } else if (activeTab === "All" && allTabMonthFilter.trim()) {
+        const { start, end } = monthRangeFromYyyyMm(allTabMonthFilter.trim());
+        params.append("startDate", start);
+        params.append("endDate", end);
       }
       const qs = params.toString();
       const url = qs ? `${EXPENSES_API_URL}/stats?${qs}` : `${EXPENSES_API_URL}/stats`;
@@ -1392,7 +1451,7 @@ export function RoznamchaView() {
         if (exportStartDate) params.append("startDate", exportStartDate);
         if (exportEndDate) params.append("endDate", exportEndDate);
       } else if (activeTab === "Daily") {
-        const targetDate = selectedDate || new Date().toISOString().split("T")[0];
+        const targetDate = selectedDate || formatLocalYmd(new Date());
         params.append("startDate", targetDate);
         params.append("endDate", targetDate);
       } else if (activeTab === "Weekly") {
@@ -1403,18 +1462,21 @@ export function RoznamchaView() {
         monday.setDate(now.getDate() + mondayOffset);
         const sunday = new Date(monday);
         sunday.setDate(monday.getDate() + 6);
-        params.append("startDate", monday.toISOString().split("T")[0]);
-        params.append("endDate", sunday.toISOString().split("T")[0]);
+        params.append("startDate", formatLocalYmd(monday));
+        params.append("endDate", formatLocalYmd(sunday));
       } else if (activeTab === "Monthly") {
-        if (selectedMonth) {
-          const [year, month] = selectedMonth.split("-");
-          params.append("startDate", new Date(parseInt(year), parseInt(month) - 1, 1).toISOString().split("T")[0]);
-          params.append("endDate", new Date(parseInt(year), parseInt(month), 0).toISOString().split("T")[0]);
-        }
+        const { start, end } = monthRangeFromYyyyMm(selectedMonth || currentMonthInputValue());
+        params.append("startDate", start);
+        params.append("endDate", end);
       } else if (activeTab === "Yearly") {
         const targetYear = selectedYear || new Date().getFullYear().toString();
-        params.append("startDate", new Date(parseInt(targetYear), 0, 1).toISOString().split("T")[0]);
-        params.append("endDate", new Date(parseInt(targetYear), 11, 31).toISOString().split("T")[0]);
+        const y = parseInt(targetYear, 10);
+        params.append("startDate", formatLocalYmd(new Date(y, 0, 1)));
+        params.append("endDate", formatLocalYmd(new Date(y, 11, 31)));
+      } else if (activeTab === "All" && allTabMonthFilter.trim()) {
+        const { start, end } = monthRangeFromYyyyMm(allTabMonthFilter.trim());
+        params.append("startDate", start);
+        params.append("endDate", end);
       }
 
       const response = await api.get(`${EXPENSES_API_URL}/get-all?${params.toString()}`);
@@ -1728,7 +1790,12 @@ export function RoznamchaView() {
         })()
     : activeTab === "Yearly"
       ? (selectedYear || new Date().getFullYear().toString())
-      : "All dates";
+      : activeTab === "All" && allTabMonthFilter.trim()
+        ? new Date(`${monthRangeFromYyyyMm(allTabMonthFilter.trim()).start}T12:00:00`).toLocaleDateString("en-GB", {
+            month: "long",
+            year: "numeric",
+          })
+        : "All dates";
   const calculateTotalExpenses = () => {
     return expenses.reduce((total, expense) => total + (parseFloat(expense.price.replace(/,/g, '')) || 0), 0);
   };
@@ -1778,7 +1845,7 @@ export function RoznamchaView() {
   useEffect(() => {
     fetchExpenses(1);
     fetchStats();
-  }, [filters.purpose, filters.personResponsible, filters.usage, activeTab, selectedMonth, selectedDate, selectedYear]);
+  }, [filters.purpose, filters.personResponsible, filters.usage, activeTab, selectedMonth, selectedDate, selectedYear, allTabYear, allTabMonthNum]);
 
   return (
     <>
@@ -1868,27 +1935,101 @@ export function RoznamchaView() {
             {activeTab === "Daily" && (
               <input
                 type="date"
-                value={selectedDate || new Date().toISOString().split('T')[0]}
+                value={selectedDate || formatLocalYmd(new Date())}
                 onChange={(e) => setSelectedDate(e.target.value)}
                 className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary h-10"
               />
             )}
             {activeTab === "Monthly" && (
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary h-10"
-              />
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={parseYyyyMm(selectedMonth).m}
+                  onChange={(e) => {
+                    const { y } = parseYyyyMm(selectedMonth);
+                    setSelectedMonth(`${y}-${e.target.value}`);
+                  }}
+                  className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary h-10 min-w-[8.5rem]"
+                  title="Month"
+                >
+                  {MONTH_PICKER_OPTIONS.map((mo) => (
+                    <option key={mo.v} value={mo.v}>
+                      {mo.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={parseYyyyMm(selectedMonth).y}
+                  onChange={(e) => {
+                    const { m } = parseYyyyMm(selectedMonth);
+                    setSelectedMonth(`${e.target.value}-${m}`);
+                  }}
+                  className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary h-10 min-w-[5.5rem]"
+                  title="Year"
+                >
+                  {buildExpenseYearOptions().map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {activeTab === "All" && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-muted-foreground whitespace-nowrap hidden sm:inline">
+                  Month filter
+                </span>
+                <select
+                  value={allTabMonthNum}
+                  onChange={(e) => setAllTabMonthNum(e.target.value)}
+                  className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary h-10 min-w-[7.5rem]"
+                  title="Pick month (then year)"
+                >
+                  <option value="">Month…</option>
+                  {MONTH_PICKER_OPTIONS.map((mo) => (
+                    <option key={mo.v} value={mo.v}>
+                      {mo.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={allTabYear}
+                  onChange={(e) => setAllTabYear(e.target.value)}
+                  className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary h-10 min-w-[5.5rem]"
+                  title="Pick year"
+                >
+                  <option value="">Year…</option>
+                  {buildExpenseYearOptions().map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+                {allTabMonthFilter ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAllTabYear("");
+                      setAllTabMonthNum("");
+                    }}
+                    className="text-xs font-medium text-primary hover:underline px-1"
+                  >
+                    Clear month
+                  </button>
+                ) : null}
+              </div>
             )}
             {activeTab === "Yearly" && (
               <select
                 value={selectedYear || new Date().getFullYear().toString()}
                 onChange={(e) => setSelectedYear(e.target.value)}
-                className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary h-10 w-32"
+                className="bg-cms-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary h-10 min-w-[5.5rem]"
+                title="Year"
               >
-                {Array.from({ length: 60 }, (_, i) => new Date().getFullYear() + 10 - i).map(year => (
-                  <option key={year} value={year}>{year}</option>
+                {buildExpenseYearOptions().map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
                 ))}
               </select>
             )}
@@ -1959,7 +2100,18 @@ export function RoznamchaView() {
             Word Backup
           </button>
           <button 
-            onClick={() => handleProfessionalPrint(expenses, pagination.currentPage, pagination.totalPages, pagination.totalItems, calculateTotalExpenses, totalExpenseAllPages, reportDateLabel)}
+            onClick={() =>
+              handleProfessionalPrint(
+                expenses,
+                pagination.currentPage,
+                pagination.totalPages,
+                pagination.totalItems,
+                calculateTotalExpenses,
+                totalExpenseAllPages,
+                reportDateLabel,
+                pagination.itemsPerPage || 10
+              )
+            }
             className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
           >
             <Printer className="w-4 h-4" />
@@ -1970,8 +2122,8 @@ export function RoznamchaView() {
         {/* Pagination Info */}
         <div className="flex items-center justify-between mb-4">
           <div className="text-sm text-muted-foreground">
-            Showing {(pagination.currentPage - 1) * 10 + 1} to{" "}
-            {Math.min(pagination.currentPage * 10, pagination.totalItems)} of{" "}
+            Showing {(pagination.currentPage - 1) * (pagination.itemsPerPage || 10) + 1} to{" "}
+            {Math.min(pagination.currentPage * (pagination.itemsPerPage || 10), pagination.totalItems)} of{" "}
             {pagination.totalItems} expenses
           </div>
           <div className="text-sm text-muted-foreground">
@@ -2026,7 +2178,8 @@ export function RoznamchaView() {
                   {expenses.map((expense, index) => {
                     const isOptimistic = optimisticUpdates[expense._id];
                     const isTemp = expense._id.startsWith('temp-');
-                    const serialNumber = (pagination.currentPage - 1) * 10 + index + 1;
+                    const serialNumber =
+                      (pagination.currentPage - 1) * (pagination.itemsPerPage || 10) + index + 1;
                     const formattedDate = formatDateWithMonthName(expense.date);
                     
                     return (

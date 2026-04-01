@@ -518,6 +518,24 @@ const updateSale = async (req, res) => {
       delete updateData.customerEmail;
     }
 
+    // Add-sale sends saleDate (ISO); Sale model stores purchaseDate (YYYY-MM-DD) + purchaseTime
+    if (updateData.saleDate !== undefined && String(updateData.saleDate).trim() !== "") {
+      const sd = String(updateData.saleDate).trim();
+      const d = new Date(sd);
+      if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        updateData.purchaseDate = `${y}-${m}-${day}`;
+        let hour = d.getHours();
+        const minute = String(d.getMinutes()).padStart(2, "0");
+        const ampm = hour >= 12 ? "PM" : "AM";
+        const hour12 = hour % 12 || 12;
+        updateData.purchaseTime = `${hour12.toString().padStart(2, "0")}:${minute} ${ampm}`;
+      }
+      delete updateData.saleDate;
+    }
+
     const oldWeight = parseSaleWeight(existingSale.weight);
     let newWeight = oldWeight;
     if (updateData.weight !== undefined) {
