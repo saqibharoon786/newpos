@@ -18,6 +18,81 @@ function toNormalizedDate(dateStr) {
   return dateStr;
 }
 
+/**
+ * Aggregation expression: normalize stored `date` (YYYY-MM-DD or DD/MM/YYYY) to YYYY-MM-DD
+ * so range filters include all legacy rows (string $gte/$lte on mixed formats misses DD/MM/YYYY).
+ */
+const expenseDateNormExpr = {
+  $let: {
+    vars: {
+      raw: { $ifNull: ["$date", ""] },
+      parts: { $split: [{ $ifNull: ["$date", ""] }, "/"] },
+    },
+    in: {
+      $switch: {
+        branches: [
+          {
+            case: { $regexMatch: { input: "$$raw", regex: /^\d{4}-\d{2}-\d{2}$/ } },
+            then: "$$raw",
+          },
+          {
+            case: { $regexMatch: { input: "$$raw", regex: /^\d{1,2}\/\d{1,2}\/\d{4}$/ } },
+            then: {
+              $concat: [
+                { $arrayElemAt: ["$$parts", 2] },
+                "-",
+                {
+                  $let: {
+                    vars: { mo: { $arrayElemAt: ["$$parts", 1] } },
+                    in: {
+                      $cond: [
+                        { $lt: [{ $strLenCP: "$$mo" }, 2] },
+                        { $concat: ["0", "$$mo"] },
+                        "$$mo",
+                      ],
+                    },
+                  },
+                },
+                "-",
+                {
+                  $let: {
+                    vars: { da: { $arrayElemAt: ["$$parts", 0] } },
+                    in: {
+                      $cond: [
+                        { $lt: [{ $strLenCP: "$$da" }, 2] },
+                        { $concat: ["0", "$$da"] },
+                        "$$da",
+                      ],
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        default: "$$raw",
+      },
+    },
+  },
+};
+
+function buildBaseFilterMatch(purpose, personResponsible, usage) {
+  const m = {};
+  if (purpose && ["Car", "Office", "Travel", "Equipment"].includes(purpose)) {
+    m.purpose = purpose;
+  }
+  if (
+    personResponsible &&
+    ["HR", "Admin", "CEO", "Finance Dept"].includes(personResponsible)
+  ) {
+    m.personResponsible = personResponsible;
+  }
+  if (usage && ["Personal", "Company"].includes(usage)) {
+    m.usage = usage;
+  }
+  return m;
+}
+
 // Get all expenses with filters
 // Backend: expenses.controller.js
 exports.getAllExpenses = async (req, res) => {
@@ -35,78 +110,97 @@ exports.getAllExpenses = async (req, res) => {
       search,
     } = req.query;
 
-    // Convert to numbers and validate
-    const currentPage = Math.max(1, parseInt(page));
-    const pageSize = Math.min(100, Math.max(1, parseInt(limit))); // Max 100 per page
-
-    const query = {};
-
-    // Filter by purpose
-    if (purpose && ["Car", "Office", "Travel", "Equipment"].includes(purpose)) {
-      query.purpose = purpose;
-    }
-
-    // Filter by person responsible
-    if (
-      personResponsible &&
-      ["HR", "Admin", "CEO", "Finance Dept"].includes(personResponsible)
-    ) {
-      query.personResponsible = personResponsible;
-    }
-
-    // Filter by usage
-    if (usage && ["Personal", "Company"].includes(usage)) {
-      query.usage = usage;
-    }
-
-    // Filter by date range (startDate/endDate as YYYY-MM-DD; backend normalizes on create/update)
-    if (startDate || endDate) {
-      const normStart = startDate ? toNormalizedDate(startDate) : null;
-      const normEnd = endDate ? toNormalizedDate(endDate) : null;
-      query.date = {};
-      if (normStart) query.date.$gte = normStart;
-      if (normEnd) query.date.$lte = normEnd;
-    }
-
-    // Search functionality
-    if (search) {
-      query.$or = [
-        { subject: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-      ];
-    }
+    const currentPage = Math.max(1, parseInt(page, 10));
+    const pageSize = Math.min(1000, Math.max(1, parseInt(limit, 10)));
 
     const sortDirection = sortOrder === "desc" ? -1 : 1;
-    const sortOptions = { [sortBy]: sortDirection };
-
-    // Calculate skip value
     const skip = (currentPage - 1) * pageSize;
 
-    // Execute queries in parallel for better performance
-    const [expenses, total] = await Promise.all([
-      Expense.find(query)
-        .sort(sortOptions)
-        .limit(pageSize)
-        .skip(skip)
-        .select("-__v"),
-      Expense.countDocuments(query),
+    const baseMatch = buildBaseFilterMatch(purpose, personResponsible, usage);
+    const normStart = startDate ? toNormalizedDate(startDate) : null;
+    const normEnd = endDate ? toNormalizedDate(endDate) : null;
+    const hasDateFilter = !!(normStart || normEnd);
+
+    if (!hasDateFilter) {
+      const query = { ...baseMatch };
+      if (search) {
+        query.$or = [
+          { subject: { $regex: search, $options: "i" } },
+          { description: { $regex: search, $options: "i" } },
+        ];
+      }
+      const sortOptions = { [sortBy]: sortDirection };
+      const [expenses, total] = await Promise.all([
+        Expense.find(query)
+          .sort(sortOptions)
+          .limit(pageSize)
+          .skip(skip)
+          .select("-__v"),
+        Expense.countDocuments(query),
+      ]);
+      const totalPages = Math.ceil(total / pageSize);
+      return res.json({
+        success: true,
+        data: expenses,
+        pagination: {
+          currentPage,
+          totalPages,
+          totalItems: total,
+          itemsPerPage: pageSize,
+          hasNext: currentPage < totalPages,
+          hasPrevious: currentPage > 1,
+        },
+      });
+    }
+
+    const dateRange = {};
+    if (normStart) dateRange.$gte = normStart;
+    if (normEnd) dateRange.$lte = normEnd;
+
+    const pipeline = [];
+    if (Object.keys(baseMatch).length) {
+      pipeline.push({ $match: baseMatch });
+    }
+    pipeline.push({ $addFields: { _expDateNorm: expenseDateNormExpr } });
+    pipeline.push({ $match: { _expDateNorm: dateRange } });
+
+    if (search) {
+      pipeline.push({
+        $match: {
+          $or: [
+            { subject: { $regex: search, $options: "i" } },
+            { description: { $regex: search, $options: "i" } },
+          ],
+        },
+      });
+    }
+
+    const sortField = sortBy === "date" ? "_expDateNorm" : sortBy;
+
+    const [listResult, countResult] = await Promise.all([
+      Expense.aggregate([
+        ...pipeline,
+        { $sort: { [sortField]: sortDirection } },
+        { $skip: skip },
+        { $limit: pageSize },
+        { $project: { _expDateNorm: 0 } },
+      ]),
+      Expense.aggregate([...pipeline, { $count: "c" }]),
     ]);
 
-    // Calculate pagination info
+    const total = countResult[0]?.c ?? 0;
     const totalPages = Math.ceil(total / pageSize);
-    const hasNext = currentPage < totalPages;
-    const hasPrevious = currentPage > 1;
 
     res.json({
       success: true,
-      data: expenses,
+      data: listResult,
       pagination: {
-        currentPage: currentPage,
-        totalPages: totalPages,
+        currentPage,
+        totalPages,
         totalItems: total,
         itemsPerPage: pageSize,
-        hasNext: hasNext,
-        hasPrevious: hasPrevious,
+        hasNext: currentPage < totalPages,
+        hasPrevious: currentPage > 1,
       },
     });
   } catch (error) {
@@ -306,28 +400,25 @@ exports.getExpenseStats = async (req, res) => {
   try {
     const { startDate, endDate, purpose, personResponsible, usage } = req.query;
 
-    const matchStage = {};
+    const baseMatch = buildBaseFilterMatch(purpose, personResponsible, usage);
+    const normStart = startDate ? toNormalizedDate(startDate) : null;
+    const normEnd = endDate ? toNormalizedDate(endDate) : null;
+    const hasDateFilter = !!(normStart || normEnd);
 
-    if (startDate || endDate) {
-      const normStart = startDate ? toNormalizedDate(startDate) : null;
-      const normEnd = endDate ? toNormalizedDate(endDate) : null;
-      matchStage.date = {};
-      if (normStart) matchStage.date.$gte = normStart;
-      if (normEnd) matchStage.date.$lte = normEnd;
+    const preGroup = [];
+    if (Object.keys(baseMatch).length) {
+      preGroup.push({ $match: baseMatch });
     }
-
-    if (purpose && ["Car", "Office", "Travel", "Equipment"].includes(purpose)) {
-      matchStage.purpose = purpose;
-    }
-    if (personResponsible && ["HR", "Admin", "CEO", "Finance Dept"].includes(personResponsible)) {
-      matchStage.personResponsible = personResponsible;
-    }
-    if (usage && ["Personal", "Company"].includes(usage)) {
-      matchStage.usage = usage;
+    if (hasDateFilter) {
+      const dateRange = {};
+      if (normStart) dateRange.$gte = normStart;
+      if (normEnd) dateRange.$lte = normEnd;
+      preGroup.push({ $addFields: { _expDateNorm: expenseDateNormExpr } });
+      preGroup.push({ $match: { _expDateNorm: dateRange } });
     }
 
     const stats = await Expense.aggregate([
-      { $match: matchStage },
+      ...preGroup,
       {
         $group: {
           _id: null,
@@ -352,7 +443,7 @@ exports.getExpenseStats = async (req, res) => {
 
     // Expenses by purpose
     const purposeStats = await Expense.aggregate([
-      { $match: matchStage },
+      ...preGroup,
       {
         $group: {
           _id: "$purpose",
@@ -371,7 +462,7 @@ exports.getExpenseStats = async (req, res) => {
 
     // Expenses by person responsible
     const personStats = await Expense.aggregate([
-      { $match: matchStage },
+      ...preGroup,
       {
         $group: {
           _id: "$personResponsible",
