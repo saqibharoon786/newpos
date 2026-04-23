@@ -1932,9 +1932,9 @@ const EditProductionModal = ({
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Shift</label>
             <select value={selectedShift} onChange={(e) => setSelectedShift(e.target.value as any)} className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
-              <option value="morning">Morning</option>
+              <option value="morning">Mornings</option>
               <option value="evening">Evening</option>
-              <option value="night">Night</option>
+              <option value="night">Nights</option>
             </select>
           </div>
         </div>
@@ -1942,7 +1942,7 @@ const EditProductionModal = ({
           <button onClick={onClose} disabled={isSubmitting} className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border rounded-md text-sm font-medium">Cancel</button>
           <button onClick={handleSubmit} disabled={isSubmitting || !materialName.trim() || !totalBags || !totalWeight} className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 disabled:opacity-50">
             {isSubmitting ? <RotateCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-            Save
+            Saves
           </button>
         </div>
       </div>
