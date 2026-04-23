@@ -1,6 +1,6 @@
 const Customer = require('../models/customer.model');
 
-// Create a new customer
+
 exports.createCustomer = async (req, res) => {
   try {
     const {
@@ -8,7 +8,7 @@ exports.createCustomer = async (req, res) => {
       phoneNo,
       email,
       cnicNo,
-      registrationDate,
+      registrationDate,    
       address,
       province,
       city,
@@ -83,7 +83,7 @@ exports.createCustomer = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Create customer error:', error);
+    console.error('Create customers error:', error);
 
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
