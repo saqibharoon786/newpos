@@ -310,11 +310,7 @@ export default function FinanceModule() {
       isFirstRender.current = false;
       return;
     }
-    // We wrap it in a setTimeout to allow the state to properly update first
-    const timer = setTimeout(() => {
-      fetchTransactions(1);
-    }, 0);
-    return () => clearTimeout(timer);
+
   }, [selectedMonth]);
 
   // ==================== API FUNCTIONS ====================
