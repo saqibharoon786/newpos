@@ -1,6 +1,6 @@
 const Member = require("../models/member.model")
-const AttendanceDevice = require("../models/attendance.device.model")
-const AttendanceLog = require("../models/attendance.log.model")
+const AttendanceDevice = require("../models/attendanceDevice.model")
+const AttendanceLog = require("../models/attendanceLog.model")
 const logger = require("../config/logger")
 
 class DoorService {

@@ -5,126 +5,142 @@ const Sale = require("../models/pos.model");
 const addPurchase = async (req, res) => {
   try {
     console.log('=== START addPurchase ===');
-    console.log('Request body:', req.body);
     
     const {
-      materialName,
       vendor,
       price,
-      weight,
-      quality,
       purchaseDate,
-      materialColor,
+      purchaseTime,
       vehicleName,
       vehicleType,
       vehicleNumber,
       driverName,
       vehicleColor,
       deliveryDate,
+      deliveryTime,
       receiptNo,
+      code,
       advancePayment,
       amountPaid,
+      materials: materialsJson // JSON string array
     } = req.body;
 
-    console.log('Payment details from request:');
-    console.log('advancePayment:', advancePayment);
-    console.log('amountPaid:', amountPaid);
+    // Parse materials array
+    let materialsArray = [];
+    try {
+      if (materialsJson) {
+        materialsArray = JSON.parse(materialsJson);
+      }
+    } catch (e) {
+      console.error('Error parsing materials JSON:', e);
+      return res.status(400).json({ success: false, message: "Invalid materials format" });
+    }
 
-    // Validate required fields
-    if (!materialName || !vendor || !price || !weight || !purchaseDate) {
+    if (!materialsArray || materialsArray.length === 0 || !vendor || !price || !purchaseDate) {
       return res.status(400).json({
         success: false,
-        message: "Required fields missing: materialName, vendor, price, weight, purchaseDate"
+        message: "Required fields missing: materials, vendor, price, purchaseDate"
       });
     }
 
-    // Convert price to number
-    const priceNum = parseFloat(price) || 0;
+    // Convert total price to number
+    const totalPriceNum = parseFloat(price) || 0;
     
     // Parse advance payment
-    let advancePaymentNum = 0;
+    let totalAdvancePaymentNum = 0;
     if (advancePayment !== undefined && advancePayment !== null && advancePayment !== '') {
-      advancePaymentNum = parseFloat(advancePayment) || 0;
+      totalAdvancePaymentNum = parseFloat(advancePayment) || 0;
     }
     
     // Parse amount paid during purchase
-    let amountPaidNum = 0;
+    let totalAmountPaidNum = 0;
     if (amountPaid !== undefined && amountPaid !== null && amountPaid !== '') {
-      amountPaidNum = parseFloat(amountPaid) || 0;
+      totalAmountPaidNum = parseFloat(amountPaid) || 0;
     }
     
-    // Calculate total paid (advance + amount paid)
-    const totalPaid = advancePaymentNum + amountPaidNum;
-    
-    console.log('Payment calculations:');
-    console.log('Total Price:', priceNum);
-    console.log('Advance Payment:', advancePaymentNum);
-    console.log('Amount Paid:', amountPaidNum);
-    console.log('Total Paid:', totalPaid);
+    // Calculate total weight of all materials
+    let totalWeightAllMaterials = 0;
+    materialsArray.forEach(mat => {
+      totalWeightAllMaterials += (parseFloat(mat.weight) || 0);
+    });
 
-    // Calculate payment status
-    let paidAmount = 'none';
-    let remainingAmount = priceNum;
-    
-    if (totalPaid === 0) {
-      paidAmount = 'none';
-      remainingAmount = priceNum;
-    } else if (totalPaid >= priceNum) {
-      paidAmount = 'paid';
-      remainingAmount = 0;
-    } else {
-      paidAmount = 'partial';
-      remainingAmount = priceNum - totalPaid;
+    if (totalWeightAllMaterials <= 0) {
+      return res.status(400).json({ success: false, message: "Total weight must be greater than zero" });
     }
-
-    console.log('Payment Status:', paidAmount);
-    console.log('Remaining Amount:', remainingAmount);
 
     // Handle vehicle image
     const vehicleImage = req.file ? `/uploads/${req.file.filename}` : "";
 
-    // Create purchase
-    const purchase = await Purchase.create({
-      materialName,
-      vendor,
-      price,
-      weight,
-      quality,
-      purchaseDate,
-      materialColor,
-      vehicleName,
-      vehicleType,
-      vehicleNumber,
-      driverName,
-      vehicleColor,
-      deliveryDate,
-      receiptNo,
-      advancePayment: advancePaymentNum,
-      amountPaid: amountPaidNum,
-      totalPaid: totalPaid,
-      paidAmount: paidAmount,
-      remainingAmount: remainingAmount,
-      vehicleImage,
-    });
+    const createdPurchases = [];
 
-    console.log('Purchase created with payment summary:');
-    console.log('- Advance Payment:', purchase.advancePayment);
-    console.log('- Amount Paid:', purchase.amountPaid);
-    console.log('- Total Paid:', purchase.totalPaid);
-    console.log('- Payment Status:', purchase.paidAmount);
-    console.log('- Remaining Amount:', purchase.remainingAmount);
+    // Loop through materials and create records
+    for (const mat of materialsArray) {
+      const matWeight = parseFloat(mat.weight) || 0;
+      const weightRatio = matWeight / totalWeightAllMaterials;
+      
+      const matPrice = totalPriceNum * weightRatio;
+      const matAdvancePayment = totalAdvancePaymentNum * weightRatio;
+      const matAmountPaid = totalAmountPaidNum * weightRatio;
+      const matTotalPaid = matAdvancePayment + matAmountPaid;
+
+      // Calculate payment status
+      let paidAmount = 'none';
+      let remainingAmount = matPrice;
+      
+      if (matTotalPaid === 0) {
+        paidAmount = 'none';
+        remainingAmount = matPrice;
+      } else if (matTotalPaid >= matPrice - 0.01) { // small tolerance for floating point
+        paidAmount = 'paid';
+        remainingAmount = 0;
+      } else {
+        paidAmount = 'partial';
+        remainingAmount = matPrice - matTotalPaid;
+      }
+
+      // Convert qualities array to comma-separated string
+      const qualityString = Array.isArray(mat.qualities) ? mat.qualities.join(', ') : mat.qualities;
+
+      // Create purchase
+      const purchase = await Purchase.create({
+        materialName: mat.materialName,
+        vendor,
+        price: matPrice.toFixed(2), // Stored as string, similar to before
+        weight: mat.weight,
+        quality: qualityString,
+        purchaseDate,
+        purchaseTime,
+        materialColor: mat.materialColor,
+        vehicleName,
+        vehicleType,
+        vehicleNumber,
+        driverName,
+        vehicleColor,
+        deliveryDate,
+        deliveryTime,
+        receiptNo,
+        code,
+        advancePayment: matAdvancePayment,
+        amountPaid: matAmountPaid,
+        totalPaid: matTotalPaid,
+        paidAmount: paidAmount,
+        remainingAmount: remainingAmount,
+        vehicleImage,
+      });
+      
+      createdPurchases.push(purchase);
+    }
 
     res.status(201).json({
       success: true,
-      message: "Purchase added successfully",
-      data: purchase,
+      message: `Successfully added ${createdPurchases.length} purchases`,
+      data: createdPurchases,
     });
 
   } catch (error) {
     console.error('=== ERROR in addPurchase ===');
     console.error('Error:', error);
     
-    // Handle validation errors
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(val => val.message);
       return res.status(400).json({
@@ -134,7 +150,6 @@ const addPurchase = async (req, res) => {
       });
     }
     
-    // Handle cast errors
     if (error.name === 'CastError') {
       return res.status(400).json({
         success: false,

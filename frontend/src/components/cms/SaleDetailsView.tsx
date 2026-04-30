@@ -21,6 +21,7 @@ interface Sale {
   materialName: string;
   supplierName: string;
   invoiceNo: string;
+  code?: string;
   weight: string;
   unit: string;
   purchaseDate: string;
@@ -456,6 +457,10 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
               <div class="print-row">
                 <span class="print-label">Material Name:</span>
                 <span class="print-value">${sale?.materialName || 'N/A'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Code:</span>
+                <span class="print-value">${sale?.code || 'N/A'}</span>
               </div>
               <div class="print-row">
                 <span class="print-label">Weight:</span>

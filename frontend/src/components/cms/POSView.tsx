@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package, ChevronDown, CheckCircle, DollarSign, History, Users, Download, FileText } from "lucide-react";
 import { AddSaleDialog } from "./AddSaleDialog"; // CHANGED: Import AddSaleDialog instead of AddAssetDialog
@@ -36,6 +37,7 @@ interface Sale {
   sellingPrice: string;
   discount: string;
   advancePayment: number;
+  code?: string;
   
   // Payment tracking fields
   amountPaid: number;
@@ -1255,6 +1257,10 @@ export function POSView() {
   const [customerViewDateFilter, setCustomerViewDateFilter] = useState<string>("");
   const [payTotalModalOpen, setPayTotalModalOpen] = useState(false);
   const [payTotalData, setPayTotalData] = useState<{ customerName: string; sales: Sale[]; totalRemaining: number } | null>(null);
+  const [weightModalOpen, setWeightModalOpen] = useState(false);
+  const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const [codeMaterials, setCodeMaterials] = useState<{ production: any[], available: any[] }>({ production: [], available: [] });
+  const [loadingMaterials, setLoadingMaterials] = useState(false);
   
   const [allPayments, setAllPayments] = useState<PaymentHistory[]>(() => {
     const savedPayments = localStorage.getItem('sale_payments');
@@ -1295,7 +1301,7 @@ export function POSView() {
               purchaseMap.set(purchase.materialName, purchase);
             });
             
-            // Enrich sales data with vehicle details from purchases
+            // Enrich sales data with vehicle details and code from purchases
             salesData = salesData.map((sale: Sale) => {
               const purchase = purchaseMap.get(sale.materialName);
               if (purchase) {
@@ -1308,7 +1314,8 @@ export function POSView() {
                   vehicleColor: purchase.vehicleColor || '',
                   deliveryDate: purchase.deliveryDate || '',
                   vehicleImage: purchase.vehicleImage || '',
-                  purchaseId: purchase._id
+                  purchaseId: purchase._id,
+                  code: purchase.code
                 };
               }
               return sale;
@@ -1342,6 +1349,126 @@ export function POSView() {
     setSelectedSale(sale);
     setIsEditMode(true);
     setShowDialog(true);
+  };
+
+  const handleCodeClick = async (code: string) => {
+    try {
+      setLoadingMaterials(true);
+      setSelectedCode(code);
+      
+      console.log(`=== DEBUGGING CODE ${code} ===`);
+      
+      // First fetch available materials from purchases (this should always work)
+      const purchasesResponse = await api.get(`${PURCHASES_API_URL}/get-all`);
+      let availableMaterials: any[] = [];
+      let productionByCode: any[] = [];
+      
+      if (purchasesResponse.data.success) {
+        const purchases = purchasesResponse.data.data || [];
+        console.log(`Total purchases: ${purchases.length}`);
+        
+        // DEBUG: Show all unique codes in the database
+        const allCodes = [...new Set(purchases.map((p: any) => p.code).filter(Boolean))];
+        console.log(`All codes in database:`, allCodes);
+        
+        // DEBUG: Show all purchases with their codes
+        purchases.forEach((purchase: any) => {
+          console.log(`Purchase: ${purchase.receiptNo} - Code: "${purchase.code}" - Material: ${purchase.materialName}`);
+        });
+        
+        // Show all materials with this code, even if availableWeight is 0
+        availableMaterials = purchases
+          .filter((purchase: any) => {
+            const purchaseCode = purchase.code;
+            const matches = purchaseCode === code || purchaseCode == code || (purchaseCode && purchaseCode.toString() === code);
+            console.log(`Checking purchase ${purchase.receiptNo}: code="${purchaseCode}" vs "${code}" -> matches: ${matches}`);
+            return matches;
+          })
+          .map((purchase: any) => {
+            const originalWeight = parseFloat(purchase.weight) || 0;
+            const productionConsumed = parseFloat(purchase.productionConsumedWeight) || 0;
+            const availableWeight = originalWeight - productionConsumed;
+            
+            return {
+              ...purchase,
+              originalWeight,
+              productionConsumed,
+              availableWeight
+            };
+          });
+        
+        console.log(`Available materials for code ${code}: ${availableMaterials.length}`);
+        if (availableMaterials.length > 0) {
+          console.log(`Materials found:`, availableMaterials.map(m => ({ receipt: m.receiptNo, code: m.code, available: m.availableWeight })));
+        }
+      }
+      
+      // Then fetch production data
+      try {
+        const processingApiUrl = `${API_BASE_URL}/api/processing`;
+        const productionResponse = await api.get(`${processingApiUrl}/production`);
+        
+        if (productionResponse.data.success) {
+          const productionData = productionResponse.data.data || [];
+          console.log(`Total production records: ${productionData.length}`);
+          
+          // Filter production data by code and calculate total processed weight
+          productionByCode = productionData
+            .filter((prod: any) => {
+              const matches = prod.code === code || (prod.code && prod.code.toString() === code);
+              console.log(`Production record: ${prod.batchNo}, code: ${prod.code}, matches: ${matches}`);
+              return matches;
+            })
+            .map((prod: any) => ({
+              ...prod,
+              batchNo: prod.batchNo || 'N/A',
+              materialName: prod.materialName || 'Unknown',
+              quality: prod.quality || 'Unknown',
+              outputWeight: parseFloat(prod.outputWeight) || 0,
+              productionDate: prod.productionDate || prod.createdAt
+            }));
+          
+          console.log(`Production records for code ${code}: ${productionByCode.length}`);
+        }
+      } catch (prodError) {
+        console.log('Production API failed, but continuing with purchase data:', prodError);
+      }
+      
+      // ALWAYS show the modal, even if no data found
+      console.log(`=== FINAL RESULTS FOR CODE ${code} ===`);
+      console.log(`Available Materials: ${availableMaterials.length}`);
+      console.log(`Production Records: ${productionByCode.length}`);
+      console.log(`=====================================`);
+      
+      setCodeMaterials({
+        production: productionByCode,
+        available: availableMaterials
+      });
+      setWeightModalOpen(true);
+      
+      if (availableMaterials.length > 0) {
+        toast({
+          title: "Data Found",
+          description: `Found ${availableMaterials.length} material(s) for code ${code}`,
+          variant: "default",
+        });
+      } else {
+        toast({
+          title: "No Data Found",
+          description: `No materials found for code ${code}. Check console for details.`,
+          variant: "default",
+        });
+      }
+    } catch (error: any) {
+      console.error('Error fetching data:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch data for this code",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingMaterials(false);
+    }
   };
 
   const handleViewDetails = (sale: Sale) => {
@@ -2066,6 +2193,7 @@ export function POSView() {
               <thead>
                 <tr className="bg-cms-table-header">
                   <th className="text-left px-2 sm:px-4 py-3 text-xs sm:text-sm font-medium text-foreground">Invoice No.</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Code</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Customer Name</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight (kg)</th>
@@ -2091,6 +2219,19 @@ export function POSView() {
                     >
                       <td className="px-4 py-3">
                         <span className="text-sm font-medium text-foreground">{sale.invoiceNo || 'N/A'}</span>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-foreground">
+                        {(sale.code === '100' || sale.code === '105' || sale.code === '110') ? (
+                          <button
+                            onClick={() => handleCodeClick(sale.code)}
+                            className="text-primary hover:bg-primary/10 px-2 py-1 rounded transition-colors font-medium"
+                            title="Click to view available weight"
+                          >
+                            {sale.code}
+                          </button>
+                        ) : (
+                          sale.code || 'N/A'
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -2445,6 +2586,141 @@ export function POSView() {
                   </>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Weight Modal for Codes 100, 105, 110 */}
+      {weightModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-2xl">
+            <div className="bg-cms-table-header px-6 py-3 border-b border-border flex justify-between items-center">
+              <div>
+                <p className="text-xs text-muted-foreground">Available Weight for Code</p>
+                <h2 className="text-lg font-bold text-foreground">Code: {selectedCode}</h2>
+              </div>
+              <button
+                onClick={() => setWeightModalOpen(false)}
+                className="p-1 hover:bg-cms-card-hover rounded-md transition-colors"
+              >
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              {loadingMaterials ? (
+                <div className="flex justify-center items-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <span className="ml-2 text-muted-foreground">Loading data...</span>
+                </div>
+              ) : codeMaterials.production.length === 0 && codeMaterials.available.length === 0 ? (
+                <div className="text-center py-8">
+                  <Package className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground mb-2">No data found for code {selectedCode}</p>
+                  <p className="text-sm text-muted-foreground">
+                    This code may not have any production records or available materials yet.
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Try processing some materials with this code first.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-cms-card rounded-lg p-4 border border-border">
+                    <h3 className="text-sm font-medium text-foreground mb-3">Code {selectedCode} Summary</h3>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <div className="text-xs text-muted-foreground">Total Original Weight</div>
+                        <div className="text-lg font-semibold text-blue-600">
+                          {codeMaterials.available.reduce((sum, m) => sum + m.originalWeight, 0).toFixed(1)} kg
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Total Processed Weight</div>
+                        <div className="text-lg font-semibold text-orange-600">
+                          {codeMaterials.available.reduce((sum, m) => sum + m.productionConsumed, 0).toFixed(1)} kg
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Available for Sale</div>
+                        <div className="text-lg font-semibold text-green-600">
+                          {codeMaterials.available.reduce((sum, m) => sum + m.availableWeight, 0).toFixed(1)} kg
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {codeMaterials.production.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-foreground mb-2">Processed Batches</h4>
+                      <div className="max-h-32 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-cms-table-header">
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Batch</th>
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Material</th>
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Output</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {codeMaterials.production.map((prod, index) => (
+                              <tr key={prod._id} className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'}`}>
+                                <td className="px-3 py-2">{prod.batchNo}</td>
+                                <td className="px-3 py-2">{prod.materialName}</td>
+                                <td className="px-3 py-2 font-semibold text-blue-600">
+                                  {prod.outputWeight.toFixed(1)} kg
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {codeMaterials.available.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-foreground mb-2">Materials for Code {selectedCode}</h4>
+                      <div className="max-h-48 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-cms-table-header">
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Receipt</th>
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Material</th>
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Original</th>
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Used</th>
+                              <th className="text-left px-3 py-2 font-medium text-foreground">Available</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {codeMaterials.available.map((material, index) => (
+                              <tr key={material._id} className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'}`}>
+                                <td className="px-3 py-2">{material.receiptNo || 'N/A'}</td>
+                                <td className="px-3 py-2">{material.materialName || 'N/A'}</td>
+                                <td className="px-3 py-2">{material.originalWeight.toFixed(1)} kg</td>
+                                <td className="px-3 py-2">{material.productionConsumed.toFixed(1)} kg</td>
+                                <td className={`px-3 py-2 font-semibold ${material.availableWeight > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  {material.availableWeight.toFixed(1)} kg
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="flex justify-end pt-4 border-t border-border">
+                    <button
+                      onClick={() => setWeightModalOpen(false)}
+                      className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-sm font-medium transition-colors"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

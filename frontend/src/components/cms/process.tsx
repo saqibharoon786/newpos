@@ -33,7 +33,8 @@ import {
   Users,
   User,
   Pencil,
-  Trash2
+  Trash2,
+  ShoppingCart
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
@@ -98,6 +99,7 @@ interface ProcessingMaterial {
   purchaseDate: string;
   status: 'pending' | 'in_progress' | 'processed' | 'on_hold';
   batchNo?: string;
+  code?: string;
 }
 
 interface ProcessingStage {
@@ -152,6 +154,7 @@ interface ProductionData {
   _id: string;
   batchId: string;
   batchNo: string;
+  code?: string;
   materialName: string;
   quality: string;
   color: string;
@@ -296,6 +299,23 @@ const ProcessingDashboard = ({
 }) => {
   const [timeRange, setTimeRange] = useState<'today' | 'week' | 'month'>('today');
   
+  // Calculate available weight by code
+  const getAvailableWeightByCode = () => {
+    const byCode: Record<string, number> = {
+      '100': 0,
+      '105': 0,
+      '110': 0,
+    };
+    productionData.forEach(prod => {
+      if (prod.code && byCode.hasOwnProperty(prod.code)) {
+        byCode[prod.code] += prod.availableWeight ?? prod.outputWeight ?? 0;
+      }
+    });
+    return byCode;
+  };
+  
+  const codeAvailable = getAvailableWeightByCode();
+  
   const calculateMetrics = () => {
     const pendingMaterials = materials.filter(m => m.status === 'pending').length;
     const inProgressBatches = batches.filter(b => b.status === 'processing').length;
@@ -325,6 +345,48 @@ const ProcessingDashboard = ({
   
   return (
     <div className="space-y-6">
+      {/* Available Weight by Code - For Sales */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Code 100 Available</p>
+              <p className="text-3xl font-bold text-blue-700 dark:text-blue-300 mt-2">{Math.round(codeAvailable['100'] * 100) / 100} kg</p>
+              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">Ready for sale</p>
+            </div>
+            <div className="w-12 h-12 bg-blue-200 dark:bg-blue-800 rounded-lg flex items-center justify-center">
+              <ShoppingCart className="w-6 h-6 text-blue-700 dark:text-blue-300" />
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-950 dark:to-amber-900 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-100">Code 105 Available</p>
+              <p className="text-3xl font-bold text-amber-700 dark:text-amber-300 mt-2">{Math.round(codeAvailable['105'] * 100) / 100} kg</p>
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Ready for sale</p>
+            </div>
+            <div className="w-12 h-12 bg-amber-200 dark:bg-amber-800 rounded-lg flex items-center justify-center">
+              <ShoppingCart className="w-6 h-6 text-amber-700 dark:text-amber-300" />
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950 dark:to-green-900 rounded-lg p-4 border border-green-200 dark:border-green-800">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-green-900 dark:text-green-100">Code 110 Available</p>
+              <p className="text-3xl font-bold text-green-700 dark:text-green-300 mt-2">{Math.round(codeAvailable['110'] * 100) / 100} kg</p>
+              <p className="text-xs text-green-600 dark:text-green-400 mt-1">Ready for sale</p>
+            </div>
+            <div className="w-12 h-12 bg-green-200 dark:bg-green-800 rounded-lg flex items-center justify-center">
+              <ShoppingCart className="w-6 h-6 text-green-700 dark:text-green-300" />
+            </div>
+          </div>
+        </div>
+      </div>
+      
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-cms-card rounded-lg p-4 border border-border">
@@ -494,6 +556,7 @@ const ProcessingDashboard = ({
                     </div>
                     <div>
                       <div className="text-sm font-medium text-foreground">
+                        {prod.code ? <span className="font-bold text-primary mr-1">[{prod.code}]</span> : null}
                         {prod.batchNo} - {prod.materialName}
                       </div>
                       <div className="text-xs text-muted-foreground">
@@ -549,7 +612,7 @@ const ProcessingQueue = ({
   const filteredMaterials = materials
     .filter(material => {
       if (filterStatus !== 'all' && material.status !== filterStatus) return false;
-      if (filterQuality !== 'all' && material.quality !== filterQuality) return false;
+      if (filterQuality !== 'all' && !material.quality.includes(filterQuality)) return false;
       if (filterColor !== 'all' && (material.color || '#FFFFFF') !== filterColor) return false;
       return true;
     })
@@ -572,7 +635,8 @@ const ProcessingQueue = ({
 
   type GroupKey = string;
   const groups = filteredMaterials.reduce<Record<GroupKey, ProcessingMaterial[]>>((acc, m) => {
-    const key = `${m.quality}|${m.color || '#FFFFFF'}`;
+    // Group primarily by code, then by color (quality differences should be shown within the group)
+    const key = `${m.code || ''}|${m.color || '#FFFFFF'}`;
     if (!acc[key]) acc[key] = [];
     acc[key].push(m);
     return acc;
@@ -658,7 +722,9 @@ const ProcessingQueue = ({
             const items = Array.isArray(groupMaterials) ? groupMaterials : [];
             const first = items[0];
             if (!first) return null;
-            const quality = first.quality;
+            // Collect all unique qualities from materials in this group
+            const allQualities = Array.from(new Set(items.map(m => m.quality).filter(Boolean)));
+            const quality = allQualities.join(', ');
             const colorHex = first.color || '#FFFFFF';
             const colorName = getColorName(colorHex);
             const totalWeightKg = items.reduce((sum, m) => sum + m.availableWeight, 0);
@@ -674,8 +740,13 @@ const ProcessingQueue = ({
                     title={colorName}
                   />
                   <div>
-                    <div className="text-sm font-semibold text-foreground">
-                      Quality: {quality} • {colorName} color
+                    <div className="text-sm text-foreground">
+                      {first.code && (
+                        <div className="mb-1">
+                          <span className="font-bold text-lg text-primary">Code: {first.code}</span>
+                        </div>
+                      )}
+                      <span className="font-semibold">Quality: {quality}</span> • {colorName} color
                     </div>
                     <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
@@ -737,6 +808,11 @@ const ProcessingQueue = ({
                   <div className="text-sm text-muted-foreground">
                     Receipt #: {selectedMaterial.receiptNo}
                   </div>
+                  {selectedMaterial.code && (
+                    <div className="text-sm text-muted-foreground">
+                      Code: {selectedMaterial.code}
+                    </div>
+                  )}
                 </div>
               </div>
               
@@ -1068,6 +1144,12 @@ const StartProcessingModal = ({
                       <div className="text-xs text-muted-foreground">Receipt No.</div>
                       <div className="text-sm text-foreground">{material.receiptNo}</div>
                     </div>
+                    {material.code && (
+                      <div>
+                        <div className="text-xs text-muted-foreground">Code</div>
+                        <div className="text-sm font-bold text-primary">{material.code}</div>
+                      </div>
+                    )}
                     <div>
                       <div className="text-xs text-muted-foreground">Vendor</div>
                       <div className="text-sm text-foreground">{material.vendor}</div>
@@ -1352,6 +1434,7 @@ const StartProcessFormModal = ({
     quality?: string;
     popAvailableWeight?: number;
     color?: string;
+    code?: string;
     materialOptions?: { materialName: string; purchaseId: string }[];
   } | null;
   purchaseId?: string | null;
@@ -1488,6 +1571,7 @@ const StartProcessFormModal = ({
         shift: selectedShift,
         employees: employeesPayload,
         status: "completed",
+        code: initialMaterial?.code,
       };
       const effectivePurchaseId = (initialMaterial?.materialOptions && materialName.trim())
       ? initialMaterial.materialOptions.find(o => o.materialName.trim() === materialName.trim())?.purchaseId
@@ -2483,6 +2567,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
             <thead>
               <tr className="bg-cms-table-header">
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Batch No.</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Code</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total (kg)</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Sold (kg)</th>
@@ -2501,6 +2586,9 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
                 <tr key={prod._id} className="border-t border-border hover:bg-cms-card-hover transition-colors">
                   <td className="px-4 py-3 text-sm text-foreground font-medium">
                     {prod.batchNo}
+                  </td>
+                  <td className="px-4 py-3 text-sm font-medium text-foreground">
+                    {prod.code || 'N/A'}
                   </td>
                   <td className="px-4 py-3 text-sm text-foreground">
                     <div className="flex items-center gap-2">
@@ -2849,7 +2937,29 @@ export function ProcessingModule() {
         params: { page: 1, limit: 10000 },
       });
       if (productionResponse.data.success) {
-        setProductionData(productionResponse.data.data || []);
+        let productionData = productionResponse.data.data || [];
+        
+        // Also fetch purchases to map codes to production records
+        const purchasesResponse = await axios.get(`${API_BASE_URL}/api/purchases/get-all`);
+        if (purchasesResponse.data.success) {
+          const purchases = purchasesResponse.data.data || [];
+          
+          // Create a map of purchaseId to code
+          const purchaseCodeMap: Record<string, string> = {};
+          purchases.forEach((purchase: any) => {
+            if (purchase._id && purchase.code) {
+              purchaseCodeMap[purchase._id] = purchase.code;
+            }
+          });
+          
+          // Enrich production data with codes from purchases
+          productionData = productionData.map((prod: any) => ({
+            ...prod,
+            code: prod.code || purchaseCodeMap[prod.purchaseId] || undefined
+          }));
+        }
+        
+        setProductionData(productionData);
       }
 
       // Fetch materials from POP: remaining for processing = weight - productionConsumedWeight
@@ -2876,6 +2986,7 @@ export function ProcessingModule() {
             vendor: purchase.vendor || 'Unknown',
             purchaseDate: purchase.purchaseDate || purchase.createdAt,
             status: 'pending',
+            code: purchase.code,
           }));
         setMaterials(processingMaterials);
       }
@@ -3076,6 +3187,7 @@ export function ProcessingModule() {
                 quality: materialForStartProcess.quality,
                 popAvailableWeight: groupTotalWeight ?? materialForStartProcess.availableWeight,
                 color: materialForStartProcess.color,
+                code: materialForStartProcess.code,
                 materialOptions: groupMaterials && groupMaterials.length > 0
                   ? (() => {
                       const seen = new Set<string>();

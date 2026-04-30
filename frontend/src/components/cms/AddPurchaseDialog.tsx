@@ -1,6 +1,6 @@
 import type React from "react"
 import { useState, useEffect, useRef } from "react"
-import { Save, Upload, Calendar, Clock, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react"
+import { Save, Upload, Calendar, Clock, ChevronDown, ChevronLeft, ChevronRight, X, Plus } from "lucide-react"
 import axios from "axios"
 
 // Configure axios with environment variable
@@ -20,16 +20,20 @@ const colorOptions = [
   { name: "Green", color: "bg-green-500", value: "#22C55E" },
 ]
 
+interface MaterialItem {
+  id: string;
+  materialName: string;
+  weight: string;
+  qualities: string[];
+  materialColor: string;
+}
+
 export default function AddPurchasePage() {
   const [formData, setFormData] = useState({
-    materialName: "",
     vendor: "",
     price: "",
-    weight: "",
-    quality: "",
     purchaseDate: "",
     purchaseTime: "",
-    materialColor: "#FFFFFF",
     vehicleName: "",
     vehicleType: "",
     vehicleNumber: "",
@@ -38,8 +42,14 @@ export default function AddPurchasePage() {
     deliveryDate: "",
     deliveryTime: "",
     receiptNo: "",
+    code: "",
     vehicleImage: null as File | null,
   })
+
+  const [materials, setMaterials] = useState<MaterialItem[]>([
+    { id: Date.now().toString(), materialName: "", weight: "", qualities: [], materialColor: "#FFFFFF" }
+  ])
+  const [customQualityInput, setCustomQualityInput] = useState<{ [key: string]: string }>({})
 
   const [selectedMaterialColor, setSelectedMaterialColor] = useState("#FFFFFF")
   const [selectedVehicleColor, setSelectedVehicleColor] = useState("#FFFFFF")
@@ -235,11 +245,14 @@ export default function AddPurchasePage() {
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
 
-    if (!formData.materialName.trim()) newErrors.materialName = "Material name is required"
+    materials.forEach((mat, index) => {
+      if (!mat.materialName.trim()) newErrors[`materialName_${index}`] = "Material name is required"
+      if (!mat.weight || Number.parseFloat(mat.weight) <= 0) newErrors[`weight_${index}`] = "Valid weight is required"
+      if (mat.qualities.length === 0) newErrors[`quality_${index}`] = "At least one quality is required"
+    })
+
     if (!formData.vendor.trim()) newErrors.vendor = "Vendor is required"
-    if (!formData.price || Number.parseFloat(formData.price) <= 0) newErrors.price = "Valid price is required"
-    if (!formData.weight || Number.parseFloat(formData.weight) <= 0) newErrors.weight = "Valid weight is required"
-    if (!formData.quality) newErrors.quality = "Quality is required"
+    if (!formData.price || Number.parseFloat(formData.price) <= 0) newErrors.price = "Valid total price is required"
     if (!formData.purchaseDate) newErrors.purchaseDate = "Purchase date is required"
     if (!formData.vehicleName.trim()) newErrors.vehicleName = "Vehicle name is required"
     if (!formData.vehicleType.trim()) newErrors.vehicleType = "Vehicle type is required"
@@ -247,9 +260,60 @@ export default function AddPurchasePage() {
     if (!formData.driverName.trim()) newErrors.driverName = "Driver name is required"
     if (!formData.deliveryDate) newErrors.deliveryDate = "Delivery date is required"
     if (!formData.receiptNo.trim()) newErrors.receiptNo = "Receipt number is required"
+    if (!formData.code.trim()) newErrors.code = "Code is required"
 
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
+  }
+
+  const handleMaterialChange = (id: string, field: keyof MaterialItem, value: any) => {
+    setMaterials(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m))
+    // Clear error
+    const index = materials.findIndex(m => m.id === id)
+    if (index !== -1 && errors[`${field}_${index}`]) {
+      setErrors(prev => ({ ...prev, [`${field}_${index}`]: "" }))
+    }
+  }
+
+  const addMaterial = () => {
+    setMaterials(prev => [...prev, { 
+      id: Date.now().toString(), 
+      materialName: "", 
+      weight: "", 
+      qualities: [], 
+      materialColor: "#FFFFFF" 
+    }])
+  }
+
+  const removeMaterial = (id: string) => {
+    if (materials.length > 1) {
+      setMaterials(prev => prev.filter(m => m.id !== id))
+    } else {
+      alert("You must have at least one material.")
+    }
+  }
+
+  const addQualityToMaterial = (id: string, quality: string) => {
+    const q = quality.trim()
+    if (!q) return
+    setMaterials(prev => prev.map(m => {
+      if (m.id === id && !m.qualities.includes(q)) {
+        return { ...m, qualities: [...m.qualities, q] }
+      }
+      return m
+    }))
+    setCustomQualityInput(prev => ({ ...prev, [id]: "" }))
+    // Clear error
+    const index = materials.findIndex(m => m.id === id)
+    if (index !== -1 && errors[`quality_${index}`]) {
+      setErrors(prev => ({ ...prev, [`quality_${index}`]: "" }))
+    }
+  }
+
+  const removeQualityFromMaterial = (id: string, qualityToRemove: string) => {
+    setMaterials(prev => prev.map(m => 
+      m.id === id ? { ...m, qualities: m.qualities.filter(q => q !== qualityToRemove) } : m
+    ))
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -260,12 +324,7 @@ export default function AddPurchasePage() {
     }
   }
 
-  const handleQualityChange = (quality: string) => {
-    setFormData((prev) => ({ ...prev, quality }))
-    if (errors.quality) {
-      setErrors((prev) => ({ ...prev, quality: "" }))
-    }
-  }
+  // Removed old handleQualityChange
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -297,14 +356,10 @@ export default function AddPurchasePage() {
       const formDataToSend = new FormData()
 
       const fields = {
-        materialName: formData.materialName,
         vendor: formData.vendor,
         price: formData.price,
-        weight: formData.weight,
-        quality: formData.quality,
         purchaseDate: formData.purchaseDate,
         purchaseTime: formData.purchaseTime,
-        materialColor: selectedMaterialColor,
         vehicleName: formData.vehicleName,
         vehicleType: formData.vehicleType,
         vehicleNumber: formData.vehicleNumber,
@@ -313,6 +368,8 @@ export default function AddPurchasePage() {
         deliveryDate: formData.deliveryDate,
         deliveryTime: formData.deliveryTime,
         receiptNo: formData.receiptNo,
+        code: formData.code,
+        materials: JSON.stringify(materials) // Send array as JSON string
       }
 
       Object.entries(fields).forEach(([key, value]) => {
@@ -376,14 +433,10 @@ export default function AddPurchasePage() {
     const timeStr = `${hour12.toString().padStart(2, '0')}:${minute} ${ampm}`
 
     setFormData({
-      materialName: "",
       vendor: "",
       price: "",
-      weight: "",
-      quality: "",
       purchaseDate: dateStr,
       purchaseTime: timeStr,
-      materialColor: "#FFFFFF",
       vehicleName: "",
       vehicleType: "",
       vehicleNumber: "",
@@ -392,8 +445,12 @@ export default function AddPurchasePage() {
       deliveryDate: dateStr,
       deliveryTime: timeStr,
       receiptNo: "",
+      code: "",
       vehicleImage: null,
     })
+    
+    setMaterials([{ id: Date.now().toString(), materialName: "", weight: "", qualities: [], materialColor: "#FFFFFF" }])
+    setCustomQualityInput({})
     
     setSelectedMaterialColor("#FFFFFF")
     setSelectedVehicleColor("#FFFFFF")
@@ -615,164 +672,222 @@ export default function AddPurchasePage() {
 
         {/* Product Details Section */}
         <div className="mb-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Product Details</h3>
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            <div>
-              <label className="block text-xs text-white/90 mb-1.5">Material Name</label>
-              <input
-                type="text"
-                name="materialName"
-                placeholder="e.g Steel Beams"
-                value={formData.materialName}
-                onChange={handleInputChange}
-                className={`w-full bg-teal-700/50 border ${errors.materialName ? "border-red-400" : "border-teal-600/50"} rounded-md px-3 py-2.5 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-teal-400`}
-              />
-              {errors.materialName && <p className="text-xs text-red-300 mt-1">{errors.materialName}</p>}
-            </div>
-            <div>
-              <label className="block text-xs text-white/90 mb-1.5">Vendor</label>
-              <input
-                type="text"
-                name="vendor"
-                placeholder="e.g Acme Lnc."
-                value={formData.vendor}
-                onChange={handleInputChange}
-                className={`w-full bg-teal-700/50 border ${errors.vendor ? "border-red-400" : "border-teal-600/50"} rounded-md px-3 py-2.5 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-teal-400`}
-              />
-              {errors.vendor && <p className="text-xs text-red-300 mt-1">{errors.vendor}</p>}
-            </div>
-            <div>
-              <label className="block text-xs text-white/90 mb-1.5">Price( Rupees)</label>
-              <input
-                type="number"
-                name="price"
-                min="0"
-                step="0.01"
-                placeholder="e.g 10,000"
-                value={formData.price}
-                onChange={handleInputChange}
-                className={`w-full bg-teal-700/50 border ${errors.price ? "border-red-400" : "border-teal-600/50"} rounded-md px-3 py-2.5 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-teal-400`}
-              />
-              {errors.price && <p className="text-xs text-red-300 mt-1">{errors.price}</p>}
-            </div>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-white">Product Details</h3>
+            <button
+              type="button"
+              onClick={addMaterial}
+              className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 text-white rounded text-sm font-medium flex items-center gap-1 transition-colors"
+            >
+              <Plus className="w-4 h-4" /> Add Material
+            </button>
           </div>
-
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            <div>
-              <label className="block text-xs text-white/90 mb-1.5">Weight</label>
-              <input
-                type="number"
-                name="weight"
-                min="0"
-                step="0.1"
-                placeholder="e.g 500"
-                value={formData.weight}
-                onChange={handleInputChange}
-                className={`w-full bg-teal-700/50 border ${errors.weight ? "border-red-400" : "border-teal-600/50"} rounded-md px-3 py-2.5 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-teal-400`}
-              />
-              {errors.weight && <p className="text-xs text-red-300 mt-1">{errors.weight}</p>}
-            </div>
-            <div>
-              <label className="block text-xs text-white/90 mb-1.5">Quality</label>
-              <div className="flex items-center gap-6 pt-2">
-                <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="quality"
-                    checked={formData.quality === "PP750"}
-                    onChange={() => handleQualityChange("PP750")}
-                    className="w-4 h-4 rounded border-teal-500 bg-teal-700/50 text-teal-400 focus:ring-teal-400 focus:ring-offset-0"
-                  />
-                  PP750
-                </label>
-                <label className="flex items-center gap-2 text-sm text-white cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="quality"
-                    checked={formData.quality === "PP1000"}
-                    onChange={() => handleQualityChange("PP1000")}
-                    className="w-4 h-4 rounded border-teal-500 bg-teal-700/50 text-teal-400 focus:ring-teal-400 focus:ring-offset-0"
-                  />
-                  PP1000
-                </label>
-              </div>
-              {errors.quality && <p className="text-xs text-red-300 mt-1">{errors.quality}</p>}
-            </div>
-            <div>
-              <label className="block text-xs text-white/90 mb-1.5">Purchase Date & Time</label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <div 
-                    className="relative cursor-pointer select-none touch-manipulation"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setShowPurchaseCalendar(prev => !prev)
-                      setShowPurchaseTimePicker(false)
-                      setShowYearDropdown(false)
-                    }}
+          
+          <div className="space-y-6">
+            {materials.map((mat, index) => (
+              <div key={mat.id} className="p-4 bg-teal-800/40 border border-teal-600/30 rounded-lg relative">
+                {materials.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeMaterial(mat.id)}
+                    className="absolute top-2 right-2 p-1.5 bg-red-500/20 hover:bg-red-500/40 text-red-300 rounded transition-colors"
                   >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+                
+                <h4 className="text-sm font-medium text-white mb-3">Material {index + 1}</h4>
+                
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs text-white/90 mb-1.5">Material Name</label>
                     <input
                       type="text"
-                      readOnly
-                      placeholder="dd/mm/yyyy"
-                      value={formData.purchaseDate}
-                      className={`w-full bg-teal-700/50 border ${errors.purchaseDate ? "border-red-400" : "border-teal-600/50"} rounded-md px-3 py-2.5 pr-10 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer select-none`}
+                      placeholder="e.g Steel Beams"
+                      value={mat.materialName}
+                      onChange={(e) => handleMaterialChange(mat.id, "materialName", e.target.value)}
+                      className={`w-full bg-teal-700/50 border ${errors[`materialName_${index}`] ? "border-red-400" : "border-teal-600/50"} rounded-md px-3 py-2.5 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-teal-400`}
                     />
-                    <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60 pointer-events-none" />
+                    {errors[`materialName_${index}`] && <p className="text-xs text-red-300 mt-1">{errors[`materialName_${index}`]}</p>}
                   </div>
-                  {renderCalendar('purchase')}
-                </div>
-                <div className="relative flex-1">
-                  <div 
-                    className="relative cursor-pointer select-none touch-manipulation"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setShowPurchaseTimePicker(prev => !prev)
-                      setShowPurchaseCalendar(false)
-                      setShowYearDropdown(false)
-                    }}
-                  >
+                  
+                  <div>
+                    <label className="block text-xs text-white/90 mb-1.5">Weight (kg)</label>
                     <input
-                      type="text"
-                      readOnly
-                      placeholder="-- : --"
-                      value={formData.purchaseTime}
-                      className="w-full bg-teal-700/50 border border-teal-600/50 rounded-md px-3 py-2.5 pr-10 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer select-none"
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      placeholder="e.g 500"
+                      value={mat.weight}
+                      onChange={(e) => handleMaterialChange(mat.id, "weight", e.target.value)}
+                      className={`w-full bg-teal-700/50 border ${errors[`weight_${index}`] ? "border-red-400" : "border-teal-600/50"} rounded-md px-3 py-2.5 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-teal-400`}
                     />
-                    <Clock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60 pointer-events-none" />
+                    {errors[`weight_${index}`] && <p className="text-xs text-red-300 mt-1">{errors[`weight_${index}`]}</p>}
                   </div>
-                  {renderTimePicker('purchase')}
+
+                  <div>
+                    <label className="block text-xs text-white/90 mb-1.5">Qualities</label>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex flex-wrap gap-1.5 mb-1">
+                        {["PP750", "PP1000", "HD", "Natural", "Dodya", "Pipe", ...mat.qualities.filter(q => !["PP750", "PP1000", "HD", "Natural", "Dodya", "Pipe"].includes(q))].map((q) => {
+                          const isSelected = mat.qualities.includes(q)
+                          return (
+                            <button
+                              key={q}
+                              type="button"
+                              onClick={() => {
+                                if (isSelected) removeQualityFromMaterial(mat.id, q)
+                                else addQualityToMaterial(mat.id, q)
+                              }}
+                              className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors flex items-center gap-1 ${
+                                isSelected 
+                                  ? 'bg-teal-500 text-white border-teal-500' 
+                                  : 'bg-teal-800/30 text-white/70 border-teal-600/50 hover:border-teal-400'
+                              }`}
+                            >
+                              {q}
+                              {isSelected && !["PP750", "PP1000", "HD", "Natural", "Dodya", "Pipe"].includes(q) && (
+                                <X className="w-3 h-3 ml-1" onClick={(e) => { e.stopPropagation(); removeQualityFromMaterial(mat.id, q); }} />
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Type custom quality..."
+                          value={customQualityInput[mat.id] || ""}
+                          onChange={(e) => setCustomQualityInput(prev => ({ ...prev, [mat.id]: e.target.value }))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              addQualityToMaterial(mat.id, e.currentTarget.value)
+                            }
+                          }}
+                          className={`flex-1 bg-teal-700/50 border ${errors[`quality_${index}`] ? "border-red-400" : "border-teal-600/50"} rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-teal-400`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => addQualityToMaterial(mat.id, customQualityInput[mat.id] || "")}
+                          className="px-4 bg-teal-600 hover:bg-teal-500 text-white rounded-md text-sm transition-colors"
+                        >
+                          Add Custom
+                        </button>
+                      </div>
+                      {errors[`quality_${index}`] && <p className="text-xs text-red-300 mt-1">{errors[`quality_${index}`]}</p>}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mb-2">
+                  <label className="block text-xs text-white/90 mb-2">Material Color</label>
+                  <div className="flex items-center gap-3">
+                    {colorOptions.map((color) => (
+                      <label
+                        key={color.value}
+                        className="flex items-center gap-2 cursor-pointer bg-teal-700/40 px-3 py-2 rounded-full border border-teal-600/50"
+                      >
+                        <input
+                          type="radio"
+                          name={`materialColor_${mat.id}`}
+                          value={color.value}
+                          checked={mat.materialColor === color.value}
+                          onChange={() => handleMaterialChange(mat.id, "materialColor", color.value)}
+                          className="sr-only"
+                        />
+                        <div
+                          className={`w-6 h-6 rounded-full ${color.color} border-2 ${mat.materialColor === color.value ? "ring-2 ring-white ring-offset-2 ring-offset-teal-700" : "border-white/30"}`}
+                        />
+                        <span className="text-xs text-white font-medium">{color.name}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
-              {errors.purchaseDate && <p className="text-xs text-red-300 mt-1">{errors.purchaseDate}</p>}
-            </div>
+            ))}
           </div>
 
-          {/* Material Color */}
-          <div className="mb-4">
-            <label className="block text-xs text-white/90 mb-2">Material Color</label>
-            <div className="flex items-center gap-3">
-              {colorOptions.map((color) => (
-                <label
-                  key={color.value}
-                  className="flex items-center gap-2 cursor-pointer bg-teal-700/40 px-3 py-2 rounded-full border border-teal-600/50"
-                >
-                  <input
-                    type="radio"
-                    name="materialColor"
-                    value={color.value}
-                    checked={selectedMaterialColor === color.value}
-                    onChange={() => setSelectedMaterialColor(color.value)}
-                    className="sr-only"
-                  />
-                  <div
-                    className={`w-6 h-6 rounded-full ${color.color} border-2 ${selectedMaterialColor === color.value ? "ring-2 ring-white ring-offset-2 ring-offset-teal-700" : "border-white/30"}`}
-                  />
-                  <span className="text-xs text-white font-medium">{color.name}</span>
-                </label>
-              ))}
+          {/* Shared Purchase Fields */}
+          <div className="mt-6 pt-6 border-t border-teal-600/30">
+            <h4 className="text-md font-semibold text-white mb-4">Purchase Details (Applied to all materials)</h4>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className="block text-xs text-white/90 mb-1.5">Vendor</label>
+                <input
+                  type="text"
+                  name="vendor"
+                  placeholder="e.g Acme Lnc."
+                  value={formData.vendor}
+                  onChange={handleInputChange}
+                  className={`w-full bg-teal-700/50 border ${errors.vendor ? "border-red-400" : "border-teal-600/50"} rounded-md px-3 py-2.5 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-teal-400`}
+                />
+                {errors.vendor && <p className="text-xs text-red-300 mt-1">{errors.vendor}</p>}
+              </div>
+              <div>
+                <label className="block text-xs text-white/90 mb-1.5">Total Price (Rupees)</label>
+                <input
+                  type="number"
+                  name="price"
+                  min="0"
+                  step="0.01"
+                  placeholder="e.g 10,000"
+                  value={formData.price}
+                  onChange={handleInputChange}
+                  className={`w-full bg-teal-700/50 border ${errors.price ? "border-red-400" : "border-teal-600/50"} rounded-md px-3 py-2.5 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-teal-400`}
+                />
+                {errors.price && <p className="text-xs text-red-300 mt-1">{errors.price}</p>}
+              </div>
+              <div>
+                <label className="block text-xs text-white/90 mb-1.5">Purchase Date & Time</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <div 
+                      className="relative cursor-pointer select-none touch-manipulation"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setShowPurchaseCalendar(prev => !prev)
+                        setShowPurchaseTimePicker(false)
+                        setShowYearDropdown(false)
+                      }}
+                    >
+                      <input
+                        type="text"
+                        readOnly
+                        placeholder="dd/mm/yyyy"
+                        value={formData.purchaseDate}
+                        className={`w-full bg-teal-700/50 border ${errors.purchaseDate ? "border-red-400" : "border-teal-600/50"} rounded-md px-3 py-2.5 pr-10 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer select-none`}
+                      />
+                      <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60 pointer-events-none" />
+                    </div>
+                    {renderCalendar('purchase')}
+                  </div>
+                  <div className="relative flex-1">
+                    <div 
+                      className="relative cursor-pointer select-none touch-manipulation"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setShowPurchaseTimePicker(prev => !prev)
+                        setShowPurchaseCalendar(false)
+                        setShowYearDropdown(false)
+                      }}
+                    >
+                      <input
+                        type="text"
+                        readOnly
+                        placeholder="-- : --"
+                        value={formData.purchaseTime}
+                        className="w-full bg-teal-700/50 border border-teal-600/50 rounded-md px-3 py-2.5 pr-10 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer select-none"
+                      />
+                      <Clock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60 pointer-events-none" />
+                    </div>
+                    {renderTimePicker('purchase')}
+                  </div>
+                </div>
+                {errors.purchaseDate && <p className="text-xs text-red-300 mt-1">{errors.purchaseDate}</p>}
+              </div>
             </div>
           </div>
         </div>

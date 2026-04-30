@@ -8,7 +8,7 @@ const hpp = require("hpp")
 const compression = require("compression")
 
 const { corsMiddleware } = require("./middleware/cors")
-const errorHandler = require("./middleware/errorHandler")
+const { notFound, errorHandler } = require("./middleware/errorHandler")
 const logger = require("./config/logger")
 const { RATE_LIMITS } = require("./middleware/constants")
 
@@ -62,12 +62,8 @@ if (process.env.NODE_ENV === "development") {
 app.use("/api/v1", apiRoutes)
 
 // 404 handler
-app.all("*", (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: `Route ${req.originalUrl} not found`,
-  })
-})
+const { notFound, errorHandler } = require("./middleware/errorHandler")
+app.use(notFound)
 
 // Global error handler
 app.use(errorHandler)

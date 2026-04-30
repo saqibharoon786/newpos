@@ -138,6 +138,7 @@ const addSale = async (req, res) => {
       materialColor: bodyMaterialColor,
       actualPrice: bodyActualPrice,
       unit: requestUnit,
+      code: bodyCode,
     } = req.body;
 
     if (!customerName || !sellingPrice || !sellingWeight || !invoiceNo) {
@@ -213,6 +214,7 @@ const addSale = async (req, res) => {
         materialName,
         supplierName,
         quality,
+        code: bodyCode || production.code || "",
         invoiceNo,
         weight: sellingWeight.toString(),
         unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : "0",
@@ -297,6 +299,7 @@ const addSale = async (req, res) => {
         materialName,
         supplierName,
         quality,
+        code: bodyCode || "",
         invoiceNo,
         weight: sellingWeight.toString(),
         unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : "0",
@@ -363,6 +366,7 @@ const addSale = async (req, res) => {
         materialName,
         supplierName,
         quality,
+        code: bodyCode || purchase.code || "",
         invoiceNo,
         weight: sellingWeight.toString(),
         unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : (purchase.unit || "0"),
@@ -517,6 +521,8 @@ const updateSale = async (req, res) => {
       updateData.buyerEmail = updateData.customerEmail;
       delete updateData.customerEmail;
     }
+    
+    // code uses what is sent in updateData.code
 
     // Add-sale sends saleDate (ISO); Sale model stores purchaseDate (YYYY-MM-DD) + purchaseTime
     if (updateData.saleDate !== undefined && String(updateData.saleDate).trim() !== "") {

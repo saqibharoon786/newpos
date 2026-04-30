@@ -15,13 +15,17 @@ const getProcessingMaterials = async (req, res) => {
       const existingMaterial = await ProcessingMaterial.findOne({ purchaseId: purchase._id });
       
       if (existingMaterial) {
+        if (!existingMaterial.code && purchase.code) {
+          existingMaterial.code = purchase.code;
+          await existingMaterial.save();
+        }
         return existingMaterial;
       }
 
-      // Create new processing material from purchase
       const newMaterial = new ProcessingMaterial({
         purchaseId: purchase._id,
         receiptNo: purchase.receiptNo || "N/A",
+        code: purchase.code || "",
         materialName: purchase.materialName || "Unknown",
         quality: purchase.quality || "Unknown",
         color: purchase.materialColor || "#FFFFFF",
@@ -76,6 +80,7 @@ const updateMaterialStatus = async (req, res) => {
       material = await ProcessingMaterial.create({
         purchaseId: purchase._id,
         receiptNo: purchase.receiptNo || "N/A",
+        code: purchase.code || "",
         materialName: purchase.materialName || "Unknown",
         quality: purchase.quality || "Unknown",
         color: purchase.materialColor || "#FFFFFF",
@@ -191,6 +196,7 @@ const createProductionRecord = async (req, res) => {
     const record = new ProductionData({
       ...productionData,
       batchNo,
+      code: productionData.code || "",
       productionDate: productionDateValue,
       availableWeight: productionData.availableWeight ?? totalWeight,
       weightUsedFromPOP: weightUsedFromPOP || 0,
@@ -247,6 +253,7 @@ const createProductionFromBatch = async (req, res) => {
     const totalWeight = batch.inputWeight ?? 0;
     const record = new ProductionData({
       batchNo,
+      code: batch.code || "",
       materialName: batch.materialName,
       quality: batch.quality,
       color: batch.color,
@@ -349,6 +356,7 @@ const getProductionData = async (req, res) => {
         _id: doc._id,
         batchId: doc._id,
         batchNo: doc.batchNo,
+        code: doc.code || "",
         materialName: doc.materialName,
         quality: doc.quality,
         color: doc.color,
@@ -645,13 +653,14 @@ const getProductionForPOS = async (req, res) => {
 
     // Group by materialName + quality + color; sum availableWeight; keep productionIds in FIFO order
     const groupKey = (d) =>
-      `${d.materialName || ""}|${d.quality || "Standard"}|${(d.color || "#FFFFFF").toString().trim()}`;
+      `${d.code || ""}|${d.materialName || ""}|${d.quality || "Standard"}|${(d.color || "#FFFFFF").toString().trim()}`;
     const groups = new Map();
     for (const doc of withAvailable) {
       const key = groupKey(doc);
       const avail = doc.availableWeight ?? doc.totalWeight ?? 0;
       if (!groups.has(key)) {
         groups.set(key, {
+          code: doc.code || "",
           materialName: doc.materialName,
           quality: doc.quality || "Standard",
           color: doc.color || "#FFFFFF",
@@ -665,6 +674,7 @@ const getProductionForPOS = async (req, res) => {
     }
 
     const data = Array.from(groups.values()).map((g) => ({
+      code: g.code,
       materialName: g.materialName,
       quality: g.quality,
       color: g.color,

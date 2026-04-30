@@ -10,6 +10,9 @@ const processingMaterialSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  code: {
+    type: String,
+  },
   materialName: {
     type: String,
     required: true
@@ -57,6 +60,9 @@ const productionDataSchema = new mongoose.Schema(
     batchNo: {
       type: String,
       required: true,
+    },
+    code: {
+      type: String,
     },
     materialName: {
       type: String,

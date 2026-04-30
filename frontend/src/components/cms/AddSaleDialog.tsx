@@ -59,6 +59,7 @@ interface Purchase {
 
 interface Sale {
   _id: string;
+  code?: string;
   materialName: string;
   supplierName: string;
   invoiceNo: string;
@@ -109,6 +110,13 @@ const colorOptions = [
   { name: "Black", color: "bg-black", value: "#000000" },
 ];
 
+// Code to quality mapping
+const codeQualityMapping: Record<string, string[]> = {
+  "100": ["HD Paip", "HD Rangdara", "HD Black", "LLD"],
+  "105": ["Natural", "Dodya"],
+  "110": ["PP750", "PP1000"],
+};
+
 const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf'];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -142,6 +150,7 @@ export function AddSaleDialog({
 
   // Form states
   const [formData, setFormData] = useState({
+    code: "",
     materialName: "",
     supplierName: "",
     invoiceNo: "",
@@ -180,6 +189,7 @@ export function AddSaleDialog({
     totalWeight: number;
     availableWeight: number;
     soldWeight: number;
+    code?: string;
     purchaseId?: string;
     productionId?: string;
     vendor: string;
@@ -292,6 +302,7 @@ export function AddSaleDialog({
     }
 
     setFormData({
+      code: editData.code || "",
       materialName: editData.materialName || "",
       supplierName: editData.supplierName || "",
       invoiceNo: editData.invoiceNo || "",
@@ -324,6 +335,7 @@ export function AddSaleDialog({
       totalWeight: 0,
       availableWeight: 0,
       soldWeight: 0,
+      code: editData.code || "",
       vendor: editData.supplierName || "",
       price: editData.actualPrice || "0",
       quality: editData.quality || "Standard",
@@ -351,12 +363,14 @@ export function AddSaleDialog({
       }
       const processedMaterials = materialsData.map((item: any) => {
         const materialName = item.materialName || "Unknown";
+        const code = item.code || "";
         const quality = item.quality || "Standard";
         const color = (item.color || "#FFFFFF").toString().trim();
-        const compositeId = `${materialName}|${quality}|${color}`;
+        const compositeId = `${code}|${materialName}|${quality}|${color}`;
         const totalAvailable = item.totalAvailableWeight ?? 0;
         return {
           _id: compositeId,
+          code,
           materialName,
           vendor: "Production",
           price: "0",
@@ -443,6 +457,17 @@ export function AddSaleDialog({
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
     
+    // Auto-select material and qualities based on code
+    if (name === "code" && codeQualityMapping[value]) {
+      const newQualities = codeQualityMapping[value];
+      // Find first material that matches this code
+      const materialForCode = materials.find(m => m.code === value);
+      if (materialForCode) {
+        handleMaterialSelect(materialForCode._id);
+        setFormData(prev => ({ ...prev, quality: newQualities.join(", ") }));
+      }
+    }
+    
     // Validate weight when changed
     if (name === 'weight' && selectedMaterialInfo) {
       const saleWeight = parseFloat(value);
@@ -473,6 +498,7 @@ export function AddSaleDialog({
     const name = selectedMaterial.materialName;
     setFormData(prev => ({
       ...prev,
+      code: selectedMaterial.code || prev.code,
       materialName: name,
       supplierName: selectedMaterial.vendor || prev.supplierName,
       actualPrice: selectedMaterial.price || prev.actualPrice,
@@ -486,6 +512,7 @@ export function AddSaleDialog({
       totalWeight,
       availableWeight,
       soldWeight: selectedMaterial.soldWeight || 0,
+      code: (selectedMaterial as any).code || "",
       productionId: isAggregated ? undefined : selectedMaterial._id,
       vendor: selectedMaterial.vendor,
       price: selectedMaterial.price,
@@ -595,6 +622,7 @@ export function AddSaleDialog({
     }
     return {
       ...formData,
+      code: formData.code || editData.code || "",
       materialName: formData.materialName.trim() || editData.materialName || "",
       supplierName: formData.supplierName.trim() || editData.supplierName || "-",
       invoiceNo: formData.invoiceNo.trim() || editData.invoiceNo || "",
@@ -741,6 +769,7 @@ export function AddSaleDialog({
       formDataToSend.append('notes', fd.notes);
 
       // Additional fields
+      formDataToSend.append('code', fd.code);
       formDataToSend.append('materialName', fd.materialName);
       formDataToSend.append('supplierName', fd.supplierName);
       formDataToSend.append('quality', qualityValue);
@@ -1110,73 +1139,34 @@ export function AddSaleDialog({
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Material Name *</label>
-              <div className="relative">
-                <select
-                  name="materialName"
-                  value={selectedMaterialInfo ? (selectedMaterialInfo.productionId ?? (formData.materialName && selectedMaterialInfo.quality != null && selectedColor ? `${formData.materialName}|${selectedMaterialInfo.quality}|${selectedColor}` : "")) : ""}
-                  onChange={(e) => handleMaterialSelect(e.target.value)}
-                  className={`w-full bg-cms-input-bg border ${errors.materialName ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary`}
-                  disabled={loadingMaterials}
-                >
-                  <option value="">{loadingMaterials ? "Loading production list..." : "Select Material (Production List)"}</option>
-                  {!loadingMaterials && materials.length === 0 ? (
-                    <option value="" disabled>
-                      {apiError || "No production stock. Use Start Process in Factory Processing first."}
-                    </option>
-                  ) : (
-                    materials.map((material) => (
-                      <option key={material._id} value={material._id} style={{ color: "#000" }}>
-                        {material.materialName} {material.quality ? `(${material.quality})` : ""} — {material.availableWeight} kg total
-                      </option>
-                    ))
-                  )}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                {loadingMaterials && (
-                  <div className="absolute right-8 top-1/2 -translate-y-1/2">
-                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                  </div>
-                )}
-              </div>
-              {errors.materialName && (
-                <p className="text-xs text-red-500 mt-1">{errors.materialName}</p>
-              )}
+              <label className="block text-xs text-muted-foreground mb-1.5">Code *</label>
+              <select
+                name="code"
+                value={formData.code}
+                onChange={handleInputChange}
+                className={`w-full bg-cms-input-bg border ${errors.code ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+              >
+                <option value="">Select Code</option>
+                <option value="100">100</option>
+                <option value="105">105</option>
+                <option value="110">110</option>
+              </select>
+              {errors.code && <p className="text-xs text-red-500 mt-1">{errors.code}</p>}
             </div>
 
-            {selectedMaterialInfo && (
+            {selectedMaterialInfo && formData.code && (
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Quality (from selected material only)</label>
-                <select
-                  value={selectedMaterialInfo.quality || ""}
-                  onChange={(e) => setSelectedMaterialInfo(prev => prev ? { ...prev, quality: e.target.value } : null)}
-                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  <option value={selectedMaterialInfo.quality || "Standard"}>
-                    {selectedMaterialInfo.quality || "Standard"}
-                  </option>
-                </select>
-                <p className="text-xs text-muted-foreground mt-1">Only the quality of the selected production item is shown (e.g. 1 item = 1 quality).</p>
+                <label className="block text-xs text-muted-foreground mb-1.5">Available Weight for Code {formData.code}</label>
+                <div className="w-full bg-blue-50 border border-blue-200 rounded-md px-3 py-2.5 text-sm text-blue-800 font-semibold">
+                  {selectedMaterialInfo.availableWeight} kg
+                </div>
               </div>
             )}
+          </div>
 
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Supplier Name *</label>
-              <input
-                type="text"
-                name="supplierName"
-                placeholder="e.g Acme Inc."
-                value={formData.supplierName}
-                onChange={handleInputChange}
-                className={`w-full bg-cms-input-bg border ${errors.supplierName ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-              />
-              {errors.supplierName && (
-                <p className="text-xs text-red-500 mt-1">{errors.supplierName}</p>
-              )}
-            </div>
-
+          <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Invoice No. *</label>
               <input

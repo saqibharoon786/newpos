@@ -11,7 +11,7 @@ const {
   updateProduction,
   deleteProduction,
   exportProductionData,
-} = require("../controllers/process.controller.js");
+} = require("../controllers/process.controller");
 
 const router = express.Router();
 

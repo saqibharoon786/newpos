@@ -5,6 +5,14 @@ import { toast } from "@/hooks/use-toast";
 import axios from "axios";
 import { exportAsCsv, exportAsExcelTable, exportAsWordTable, inDateRange, toYmd } from "@/lib/exportUtils";
 
+interface MaterialItem {
+  id: string;
+  materialName: string;
+  weight: string;
+  qualities: string[];
+  materialColor: string;
+}
+
 // Configure axios with environment variable
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
@@ -206,7 +214,18 @@ const initialQualityOptions = [
   { value: "Natural", label: "Natural" },
   { value: "Dodya", label: "Dodya" },
   { value: "Pipe", label: "Pipe" },
+  { value: "HD Paip", label: "HD Paip" },
+  { value: "HD Rangdara", label: "HD Rangdara" },
+  { value: "HD Black", label: "HD Black" },
+  { value: "LLD", label: "LLD" },
 ];
+
+// Code to quality mapping
+const codeQualityMapping: Record<string, string[]> = {
+  "100": ["HD Paip", "HD Rangdara", "HD Black", "LLD"],
+  "105": ["Natural", "Dodya"],
+  "110": ["PP750", "PP1000"],
+};
 
 const PaymentStatusBadge = ({ status }: { status: 'none' | 'partial' | 'paid' }) => {
   const getStatusConfig = (status: string) => {
@@ -2529,6 +2548,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     deliveryDate: "",
     deliveryTime: "",
     receiptNo: "",
+    code: "",
     advancePayment: "",
     amountPaid: "",
     paymentMethod: "cash",
@@ -2544,6 +2564,11 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   const [qualityOptions, setQualityOptions] = useState(initialQualityOptions);
   const [showCustomQualityInput, setShowCustomQualityInput] = useState(false);
   const [customQuality, setCustomQuality] = useState("");
+
+  const [materials, setMaterials] = useState<MaterialItem[]>([
+    { id: Date.now().toString(), materialName: "", weight: "", qualities: [], materialColor: "#FFFFFF" }
+  ]);
+  const [customQualityInput, setCustomQualityInput] = useState<{ [key: string]: string }>({});
 
   const [balances, setBalances] = useState({
     drawer: 0,
@@ -2696,11 +2721,23 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           deliveryDate: deliveryDateStr,
           deliveryTime: deliveryTimeStr,
           receiptNo: editData.receiptNo || "",
+          code: editData.code || "",
           advancePayment: editData.advancePayment?.toString() || "",
           amountPaid: editData.amountPaid?.toString() || "",
           paymentMethod: "cash",
           vehicleImage: null,
         });
+
+        // Initialize materials array with the item being edited
+        setMaterials([
+          {
+            id: Date.now().toString(),
+            materialName: editData.materialName || "",
+            weight: editData.weight || "",
+            qualities: editData.quality ? editData.quality.split(',').map((q: string) => q.trim()) : [],
+            materialColor: editData.materialColor || "#FFFFFF"
+          }
+        ]);
         
         setSelectedMaterialColor(editData.materialColor || "#FFFFFF");
         
@@ -2876,11 +2913,15 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     
-    if (!formData.materialName.trim()) newErrors.materialName = "Material name is required";
+    materials.forEach((mat, index) => {
+      if (!mat.materialName.trim()) newErrors[`materialName_${index}`] = "Material name is required";
+      if (!mat.weight || parseFloat(mat.weight) <= 0) newErrors[`weight_${index}`] = "Valid weight is required";
+      if (mat.qualities.length === 0) newErrors[`quality_${index}`] = "At least one quality is required";
+    });
+
     if (!formData.vendor.trim()) newErrors.vendor = "Vendor is required";
     if (!formData.price || parseFloat(formData.price) <= 0) newErrors.price = "Valid price is required";
-    if (!formData.weight || parseFloat(formData.weight) <= 0) newErrors.weight = "Valid weight is required";
-    if (!formData.quality) newErrors.quality = "Quality is required";
+    if (!formData.code.trim()) newErrors.code = "Code is required";
     if (!formData.purchaseDate) newErrors.purchaseDate = "Purchase date is required";
     if (!formData.purchaseTime) newErrors.purchaseTime = "Purchase time is required";
     if (!formData.vehicleName.trim()) newErrors.vehicleName = "Vehicle name is required";
@@ -2909,6 +2950,15 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     setFormData(prev => ({ ...prev, [name]: value }));
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
+    }
+    
+    // Auto-select qualities based on code
+    if (name === "code" && codeQualityMapping[value]) {
+      const newQualities = codeQualityMapping[value];
+      setMaterials(prev => prev.map(mat => ({
+        ...mat,
+        qualities: newQualities
+      })));
     }
   };
 
@@ -2946,6 +2996,36 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       const previewUrl = URL.createObjectURL(file);
       setImagePreview(previewUrl);
     }
+  };
+
+  const handleMaterialChange = (id: string, field: keyof MaterialItem, value: any) => {
+    setMaterials(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m));
+    const index = materials.findIndex(m => m.id === id);
+    if (index !== -1 && errors[`${field}_${index}`]) {
+      setErrors(prev => ({ ...prev, [`${field}_${index}`]: "" }));
+    }
+  };
+
+  const addQualityToMaterial = (id: string, quality: string) => {
+    const q = quality.trim();
+    if (!q) return;
+    setMaterials(prev => prev.map(m => {
+      if (m.id === id && !m.qualities.includes(q)) {
+        return { ...m, qualities: [...m.qualities, q] };
+      }
+      return m;
+    }));
+    setCustomQualityInput(prev => ({ ...prev, [id]: "" }));
+    const index = materials.findIndex(m => m.id === id);
+    if (index !== -1 && errors[`quality_${index}`]) {
+      setErrors(prev => ({ ...prev, [`quality_${index}`]: "" }));
+    }
+  };
+
+  const removeQualityFromMaterial = (id: string, qualityToRemove: string) => {
+    setMaterials(prev => prev.map(m => 
+      m.id === id ? { ...m, qualities: m.qualities.filter(q => q !== qualityToRemove) } : m
+    ));
   };
 
   const fetchBalances = async () => {
@@ -3008,14 +3088,10 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         paidAmount = 'partial';
       }
 
-      const fields = {
-        materialName: formData.materialName,
+      const fields: any = {
         vendor: formData.vendor,
         price: priceNum,
-        weight: formData.weight,
-        quality: formData.quality,
         purchaseDate: purchaseDateTime,
-        materialColor: selectedMaterialColor,
         vehicleName: formData.vehicleName,
         vehicleType: formData.vehicleType,
         vehicleNumber: formData.vehicleNumber,
@@ -3023,13 +3099,22 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         vehicleColor: formData.vehicleColor,
         deliveryDate: deliveryDateTime,
         receiptNo: formData.receiptNo,
+        code: formData.code,
         advancePayment: advancePaymentNum,
         amountPaid: totalAmountPaid,
         paidAmount: paidAmount,
         remainingAmount: remainingAmount > 0 ? remainingAmount : 0,
-        soldWeight: 0,
         status: 'available'
       };
+
+      if (isEdit) {
+        fields.materialName = materials[0].materialName;
+        fields.weight = materials[0].weight;
+        fields.quality = materials[0].qualities.join(', ');
+        fields.materialColor = materials[0].materialColor;
+      } else {
+        fields.materials = JSON.stringify(materials);
+      }
 
       Object.entries(fields).forEach(([key, value]) => {
         if (value !== null && value !== undefined) {
@@ -3194,11 +3279,15 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       deliveryDate: "",
       deliveryTime: "09:00 AM",
       receiptNo: "",
+      code: "",
       advancePayment: "",
       amountPaid: "",
       paymentMethod: "cash",
       vehicleImage: null,
     });
+    
+    setMaterials([{ id: Date.now().toString(), materialName: "", weight: "", qualities: [], materialColor: "#FFFFFF" }]);
+    setCustomQualityInput({});
     
     setSelectedMaterialColor("#FFFFFF");
     setSelectedPurchaseDate(now);
@@ -3467,21 +3556,171 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           </div>
 
           <div className="mb-6">
-            <h3 className="text-base font-semibold text-foreground mb-4">Product Details</h3>
-            <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold text-foreground">Product Details</h3>
+              {!isEdit && (
+                <button
+                  type="button"
+                  onClick={() => setMaterials(prev => [...prev, { id: Date.now().toString(), materialName: "", weight: "", qualities: [], materialColor: "#FFFFFF" }])}
+                  className="px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded text-sm font-medium flex items-center gap-1 transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> Add Material
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-6">
+              {materials.map((mat, index) => (
+                <div key={mat.id} className="p-4 bg-cms-card border border-border rounded-lg relative">
+                  {!isEdit && materials.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setMaterials(prev => prev.filter(m => m.id !== mat.id))}
+                      className="absolute top-2 right-2 p-1.5 bg-destructive/10 hover:bg-destructive/20 text-destructive rounded transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                  
+                  <h4 className="text-sm font-medium text-foreground mb-3">Material {index + 1}</h4>
+                  
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1.5">Material Name *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g Steel Beams"
+                        value={mat.materialName}
+                        onChange={(e) => handleMaterialChange(mat.id, "materialName", e.target.value)}
+                        className={`w-full bg-background border ${errors[`materialName_${index}`] ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                      />
+                      {errors[`materialName_${index}`] && <p className="text-xs text-red-500 mt-1">{errors[`materialName_${index}`]}</p>}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1.5">Weight (kg) *</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        placeholder="e.g 500"
+                        value={mat.weight}
+                        onChange={(e) => handleMaterialChange(mat.id, "weight", e.target.value)}
+                        className={`w-full bg-background border ${errors[`weight_${index}`] ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                      />
+                      {errors[`weight_${index}`] && <p className="text-xs text-red-500 mt-1">{errors[`weight_${index}`]}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1.5">Qualities *</label>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex flex-wrap gap-1.5 mb-1">
+                          {["PP750", "PP1000", "HD", "Natural", "Dodya", "Pipe", ...mat.qualities.filter(q => !["PP750", "PP1000", "HD", "Natural", "Dodya", "Pipe"].includes(q))].map((q) => {
+                            const isSelected = mat.qualities.includes(q);
+                            return (
+                              <button
+                                key={q}
+                                type="button"
+                                onClick={() => {
+                                  if (isSelected) removeQualityFromMaterial(mat.id, q);
+                                  else addQualityToMaterial(mat.id, q);
+                                }}
+                                className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors flex items-center gap-1 ${
+                                  isSelected 
+                                    ? 'bg-primary text-primary-foreground border-primary' 
+                                    : 'bg-background text-muted-foreground border-border hover:border-primary/50'
+                                }`}
+                              >
+                                {q}
+                                {isSelected && !["PP750", "PP1000", "HD", "Natural", "Dodya", "Pipe"].includes(q) && (
+                                  <X className="w-3 h-3 ml-1" onClick={(e) => { e.stopPropagation(); removeQualityFromMaterial(mat.id, q); }} />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Type custom quality..."
+                            value={customQualityInput[mat.id] || ""}
+                            onChange={(e) => setCustomQualityInput(prev => ({ ...prev, [mat.id]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                addQualityToMaterial(mat.id, e.currentTarget.value);
+                              }
+                            }}
+                            className={`flex-1 bg-background border ${errors[`quality_${index}`] ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => addQualityToMaterial(mat.id, customQualityInput[mat.id] || "")}
+                            className="px-3 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm transition-colors"
+                          >
+                            Add
+                          </button>
+                        </div>
+                        {errors[`quality_${index}`] && <p className="text-xs text-red-500 mt-1">{errors[`quality_${index}`]}</p>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mb-2">
+                    <label className="block text-xs text-muted-foreground mb-2">Material Color</label>
+                    <div className="flex items-center gap-3">
+                      {[
+                        { name: "White", color: "bg-white", value: "#FFFFFF" },
+                        { name: "Yellow", color: "bg-yellow-400", value: "#FACC15" },
+                        { name: "Red", color: "bg-red-500", value: "#EF4444" },
+                        { name: "Orange", color: "bg-orange-500", value: "#F97316" },
+                        { name: "Green", color: "bg-green-500", value: "#22C55E" },
+                      ].map((color) => (
+                        <label
+                          key={color.value}
+                          className="flex items-center gap-2 cursor-pointer bg-background px-3 py-2 rounded-full border border-border"
+                        >
+                          <input
+                            type="radio"
+                            name={`materialColor_${mat.id}`}
+                            value={color.value}
+                            checked={mat.materialColor === color.value}
+                            onChange={() => handleMaterialChange(mat.id, "materialColor", color.value)}
+                            className="sr-only"
+                          />
+                          <div
+                            className={`w-5 h-5 rounded-full border border-gray-300 ${color.color} ${mat.materialColor === color.value ? "ring-2 ring-primary ring-offset-2 ring-offset-cms-card" : ""}`}
+                          />
+                          <span className={`text-xs ${mat.materialColor === color.value ? "font-medium text-foreground" : "text-muted-foreground"}`}>
+                            {color.name}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Shared Purchase Fields */}
+          <div className="mt-6 pt-6 border-t border-border">
+            <h4 className="text-md font-semibold text-foreground mb-4">Purchase Details (Applied to all materials)</h4>
+            <div className="grid grid-cols-4 gap-4 mb-4">
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Material Name *</label>
-                <input
-                  type="text"
-                  name="materialName"
-                  placeholder="e.g Steel Beams"
-                  value={formData.materialName}
+                <label className="block text-xs text-muted-foreground mb-1.5">Code</label>
+                <select
+                  name="code"
+                  value={formData.code}
                   onChange={handleInputChange}
-                  className={`w-full bg-cms-card border ${errors.materialName ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-                />
-                {errors.materialName && (
-                  <p className="text-xs text-red-500 mt-1">{errors.materialName}</p>
-                )}
+                  className={`w-full bg-cms-card border ${errors.code ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                >
+                  <option value="">Select Code</option>
+                  <option value="100">100</option>
+                  <option value="105">105</option>
+                  <option value="110">110</option>
+                </select>
+                {errors.code && <p className="text-xs text-red-500 mt-1">{errors.code}</p>}
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Vendor *</label>
@@ -3493,12 +3732,10 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                   onChange={handleInputChange}
                   className={`w-full bg-cms-card border ${errors.vendor ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
                 />
-                {errors.vendor && (
-                  <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>
-                )}
+                {errors.vendor && <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>}
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Price *</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Total Price *</label>
                 <input
                   type="number"
                   name="price"
@@ -3509,99 +3746,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                   onChange={handleInputChange}
                   className={`w-full bg-cms-card border ${errors.price ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
                 />
-                {errors.price && (
-                  <p className="text-xs text-red-500 mt-1">{errors.price}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4 mb-4">
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Weight (kg) *</label>
-                <input
-                  type="number"
-                  name="weight"
-                  min="0"
-                  step="0.1"
-                  placeholder="e.g 500"
-                  value={formData.weight}
-                  onChange={handleInputChange}
-                  className={`w-full bg-cms-card border ${errors.weight ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-                />
-                {errors.weight && (
-                  <p className="text-xs text-red-500 mt-1">{errors.weight}</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Quality *</label>
-                <div className="space-y-2">
-                  <div className="grid grid-cols-3 gap-2">
-                    {qualityOptions.map((option) => (
-                      <label 
-                        key={option.value} 
-                        className="flex items-center gap-2 text-sm text-foreground cursor-pointer hover:bg-cms-card-hover px-2 py-1 rounded transition-colors"
-                      >
-                        <input
-                          type="radio"
-                          name="quality"
-                          value={option.value}
-                          checked={formData.quality === option.value}
-                          onChange={() => handleQualityChange(option.value)}
-                          className="sr-only"
-                        />
-                        <div className="w-4 h-4 border border-border bg-cms-card rounded flex items-center justify-center">
-                          {formData.quality === option.value && (
-                            <div className="w-2 h-2 bg-primary rounded-sm" />
-                          )}
-                        </div>
-                        {option.label}
-                      </label>
-                    ))}
-                  </div>
-                  
-                  <div className="mt-2">
-                    {!showCustomQualityInput ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowCustomQualityInput(true)}
-                        className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
-                      >
-                        <Plus className="w-3 h-3" />
-                        Add Custom Quality
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={customQuality}
-                          onChange={(e) => setCustomQuality(e.target.value)}
-                          placeholder="Enter custom quality"
-                          className="flex-1 bg-cms-card border border-border rounded-md px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddCustomQuality}
-                          className="px-2 py-1 bg-primary text-primary-foreground rounded-md text-xs"
-                        >
-                          Add
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowCustomQualityInput(false);
-                            setCustomQuality("");
-                          }}
-                          className="px-2 py-1 bg-cms-card border border-border text-foreground rounded-md text-xs"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {errors.quality && (
-                  <p className="text-xs text-red-500 mt-1">{errors.quality}</p>
-                )}
+                {errors.price && <p className="text-xs text-red-500 mt-1">{errors.price}</p>}
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Purchase Date & Time *</label>
@@ -3660,33 +3805,6 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
             </div>
 
             <div className="grid grid-cols-3 gap-4 mb-4">
-              <div className="col-span-2">
-                <label className="block text-xs text-muted-foreground mb-2">Material Color *</label>
-                <div className="flex flex-wrap items-center gap-3">
-                  {colorOptions.map((color) => (
-                    <label key={color.value} className="flex items-center gap-1.5 cursor-pointer">
-                      <div className="relative flex items-center">
-                        <input
-                          type="radio"
-                          name="materialColor"
-                          value={color.value}
-                          checked={selectedMaterialColor === color.value}
-                          onChange={() => setSelectedMaterialColor(color.value)}
-                          className="sr-only"
-                        />
-                        <div 
-                          className={`w-5 h-5 rounded-full ${color.color} border-2 ${
-                            selectedMaterialColor === color.value 
-                              ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' 
-                              : 'border-border'
-                          }`} 
-                        />
-                      </div>
-                      <span className="text-xs text-foreground">{color.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Payment Method</label>
                 <select
@@ -4623,6 +4741,7 @@ export function POPView() {
               <thead>
                 <tr className="bg-cms-table-header">
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Receipt No.</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Code</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material Name</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Quality</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Price</th>
@@ -4653,6 +4772,9 @@ export function POPView() {
                           />
                           <span className="text-sm font-medium text-foreground">{purchase.receiptNo || 'N/A'}</span>
                         </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-foreground">
+                        {purchase.code || 'N/A'}
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground">
                         <div className="font-medium">{purchase.materialName || 'N/A'}</div>

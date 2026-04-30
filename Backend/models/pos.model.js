@@ -9,6 +9,7 @@ const saleSchema = new mongoose.Schema(
 
     weight: { type: String, required: true }, // 30KG / 40KG
     unit: { type: String, required: true },
+    code: { type: String },
 
     purchaseDate: { type: String },
     purchaseTime: { type: String },

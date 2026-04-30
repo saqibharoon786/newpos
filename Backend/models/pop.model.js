@@ -41,6 +41,7 @@ const purchaseSchema = new mongoose.Schema(
     deliveryDate: { type: String, required: false },
     
     receiptNo: { type: String, required: false },
+    code: { type: String, required: false },
     vehicleImage: { type: String, required: false },
   },
   { timestamps: true }
