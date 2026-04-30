@@ -49,7 +49,7 @@ export function DashboardView() {
         }
       }
       const qs = params.toString();
-      const url = `${API_BASE_URL/dashboard/stats${qs ? `?${qs}` : ""}`;
+      const url = `${API_BASE_URL}/dashboard/stats${qs ? `?${qs}` : ""}`;
       const response = await axios.get(url);
       if (response.data.success) {
         const data = response.data.data;
