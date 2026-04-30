@@ -2,6 +2,7 @@ const Employee = require('../models/employee.model');
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
+const { asyncHandler } = require("../utils/asyncHandler");
 
 // Helper function to delete file
 const deleteFile = (filePath) => {
@@ -51,143 +52,125 @@ const getFileUrl = (req, filePath) => {
 // @desc    Get all employees
 // @route   GET /api/employees
 // @access  Private
-const getEmployees = async (req, res) => {
-    try {
-        const { search, department, title } = req.query;
-        
-        let query = {};
-        
-        // Search functionality
-        if (search) {
-            query.$or = [
-                { name: { $regex: search, $options: 'i' } },
-                { email: { $regex: search, $options: 'i' } },
-                { employeeId: { $regex: search, $options: 'i' } },
-                { phone: { $regex: search, $options: 'i' } }
-            ];
-        }
-        
-        // Filter by department
-        if (department) {
-            query.department = department;
-        }
-        
-        // Filter by title
-        if (title) {
-            query.title = title;
-        }
-        
-        const employees = await Employee.find(query).sort({ createdAt: -1 });
-        
-        // Default avatar URL
-        const defaultAvatar = 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face';
-        
-        // Map to match frontend structure
-        const formattedEmployees = employees.map(emp => {
-            const avatarUrl = getFileUrl(req, emp.avatar) || defaultAvatar; 
-            
-            return {
-                _id: emp._id,
-                id: emp.employeeId,
-                name: emp.name,
-                title: emp.title,
-                cnicFrontImage: emp.cnicFrontImage,
-                cnicBackImage: emp.cnicBackImage,
-                department: emp.department,
-                email: emp.email,
-                phone: emp.phone,
-                schedule: emp.schedule, // Virtual property
-                salary: `Rs. ${emp.salary?.toLocaleString() || '0'}`,
-                avatar: avatarUrl,
-                address: emp.address || '',
-                cnic: emp.cnic || '',
-                dob: emp.dob ? emp.dob.toISOString().split('T')[0] : '',
-                emergencyContact: emp.emergencyContact || '',
-                reportingManager: emp.reportingManager || '',
-                hireDate: emp.hireDate ? emp.hireDate.toISOString().split('T')[0] : '',
-                responsibilities: emp.responsibilities || '',
-                advancePayment: emp.advancePayment || 0, // ADDED THIS LINE
-                isActive: emp.isActive !== undefined ? emp.isActive : true
-            };
-        });
-        
-        res.json({
-            success: true,
-            count: formattedEmployees.length,
-            data: formattedEmployees
-        });
-    } catch (error) {
-        console.error('Error fetching employees:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server Error',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+const getEmployees = asyncHandler(async (req, res) => {
+    const { search, department, title } = req.query;
+    
+    let query = {};
+    
+    // Search functionality
+    if (search) {
+        query.$or = [
+            { name: { $regex: search, $options: 'i' } },
+            { email: { $regex: search, $options: 'i' } },
+            { employeeId: { $regex: search, $options: 'i' } },
+            { phone: { $regex: search, $options: 'i' } }
+        ];
     }
-};
+    
+    // Filter by department
+    if (department) {
+        query.department = department;
+    }
+    
+    // Filter by title
+    if (title) {
+        query.title = title;
+    }
+    
+    const employees = await Employee.find(query).sort({ createdAt: -1 });
+    
+    // Default avatar URL
+    const defaultAvatar = 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face';
+    
+    // Map to match frontend structure
+    const formattedEmployees = employees.map(emp => {
+        const avatarUrl = getFileUrl(req, emp.avatar) || defaultAvatar; 
+        
+        return {
+            _id: emp._id,
+            id: emp.employeeId,
+            name: emp.name,
+            title: emp.title,
+            cnicFrontImage: emp.cnicFrontImage,
+            cnicBackImage: emp.cnicBackImage,
+            department: emp.department,
+            email: emp.email,
+            phone: emp.phone,
+            schedule: emp.schedule, // Virtual property
+            salary: `Rs. ${emp.salary?.toLocaleString() || '0'}`,
+            avatar: avatarUrl,
+            address: emp.address || '',
+            cnic: emp.cnic || '',
+            dob: emp.dob ? emp.dob.toISOString().split('T')[0] : '',
+            emergencyContact: emp.emergencyContact || '',
+            reportingManager: emp.reportingManager || '',
+            hireDate: emp.hireDate ? emp.hireDate.toISOString().split('T')[0] : '',
+            responsibilities: emp.responsibilities || '',
+            advancePayment: emp.advancePayment || 0, // ADDED THIS LINE
+            isActive: emp.isActive !== undefined ? emp.isActive : true
+        };
+    });
+    
+    res.json({
+        success: true,
+        count: formattedEmployees.length,
+        data: formattedEmployees
+    });
+});
 
 // @desc    Get single employee
 // @route   GET /api/employees/:id
 // @access  Private
-const getEmployeeById = async (req, res) => {
-    try {
-        const employee = await Employee.findOne({ employeeId: req.params.id });
-        
-        if (!employee) {
-            return res.status(404).json({
-                success: false,
-                message: 'Employee not found'
-            });
-        }
-        
-        // Default avatar URL
-        const defaultAvatar = 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face';
-        const avatarUrl = getFileUrl(req, employee.avatar) || defaultAvatar;
-        
-        // Format employee data
-        const formattedEmployee = {
-            id: employee.employeeId,
-            name: employee.name,
-            title: employee.title,
-            department: employee.department,
-            email: employee.email,
-            phone: employee.phone,
-            schedule: employee.schedule,
-            salary: `Rs. ${employee.salary?.toLocaleString() || '0'}`,
-            avatar: avatarUrl,
-            address: employee.address || '',
-            cnic: employee.cnic || '',
-            dob: employee.dob ? employee.dob.toISOString().split('T')[0] : '',
-            emergencyContact: employee.emergencyContact || '',
-            reportingManager: employee.reportingManager || '',
-            hireDate: employee.hireDate ? employee.hireDate.toISOString().split('T')[0] : '',
-            responsibilities: employee.responsibilities || '',
-            startTime: employee.startTime || '',
-            endTime: employee.endTime || '',
-            advancePayment: employee.advancePayment || 0, // ADDED THIS LINE
-            isActive: employee.isActive !== undefined ? employee.isActive : true,
-            createdAt: employee.createdAt,
-            updatedAt: employee.updatedAt
-        };
-        
-        res.json({
-            success: true,
-            data: formattedEmployee
-        });
-    } catch (error) {
-        console.error('Error fetching employee:', error);
-        res.status(500).json({
+const getEmployeeById = asyncHandler(async (req, res) => {
+    const employee = await Employee.findOne({ employeeId: req.params.id });
+    
+    if (!employee) {
+        return res.status(404).json({
             success: false,
-            message: 'Server Error',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            message: 'Employee not found'
         });
     }
-};
+    
+    // Default avatar URL
+    const defaultAvatar = 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face';
+    const avatarUrl = getFileUrl(req, employee.avatar) || defaultAvatar;
+    
+    // Format employee data
+    const formattedEmployee = {
+        id: employee.employeeId,
+        name: employee.name,
+        title: employee.title,
+        department: employee.department,
+        email: employee.email,
+        phone: employee.phone,
+        schedule: employee.schedule,
+        salary: `Rs. ${employee.salary?.toLocaleString() || '0'}`,
+        avatar: avatarUrl,
+        address: employee.address || '',
+        cnic: employee.cnic || '',
+        dob: employee.dob ? employee.dob.toISOString().split('T')[0] : '',
+        emergencyContact: employee.emergencyContact || '',
+        reportingManager: employee.reportingManager || '',
+        hireDate: employee.hireDate ? employee.hireDate.toISOString().split('T')[0] : '',
+        responsibilities: employee.responsibilities || '',
+        startTime: employee.startTime || '',
+        endTime: employee.endTime || '',
+        advancePayment: employee.advancePayment || 0, // ADDED THIS LINE
+        isActive: employee.isActive !== undefined ? employee.isActive : true,
+        createdAt: employee.createdAt,
+        updatedAt: employee.updatedAt
+    };
+    
+    res.json({
+        success: true,
+        data: formattedEmployee
+    });
+});
 
 // @desc    Create new employee
 // @route   POST /api/employees
 // @access  Private
-const createEmployee = async (req, res) => {
+const createEmployee = asyncHandler(async (req, res) => {
     try {
         // Validate required fields
         const requiredFields = ['employeeId', 'name', 'email', 'phone', 'salary'];
@@ -415,32 +398,14 @@ const createEmployee = async (req, res) => {
                 }
             });
         }
-        
-        console.error('Error creating employee:', error);
-        
-        let errorMessage = 'Error creating employee';
-        
-        if (error.name === 'ValidationError') {
-            // Handle mongoose validation errors
-            const errors = Object.values(error.errors).map(err => err.message);
-            errorMessage = `Validation error: ${errors.join(', ')}`;
-        } else if (error.code === 11000) {
-            // Handle duplicate key errors
-            errorMessage = 'Duplicate entry found. Employee ID, Email or CNIC already exists.';
-        }
-        
-        res.status(500).json({
-            success: false,
-            message: errorMessage,
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+        throw error; // Let asyncHandler and global error handler handle it
     }
-};
+});
 
 // @desc    Update employee
 // @route   PUT /api/employees/:id
 // @access  Private
-const updateEmployee = async (req, res) => {
+const updateEmployee = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -695,8 +660,6 @@ const updateEmployee = async (req, res) => {
       data: formattedEmployee,
     });
   } catch (error) {
-    console.error("Error updating employee:", error);
-
     // Delete uploaded files if error occurs
     if (req.files) {
       Object.values(req.files).forEach(fileArray => {
@@ -705,38 +668,11 @@ const updateEmployee = async (req, res) => {
         }
       });
     }
-
-    if (error.name === "ValidationError") {
-      return res.status(400).json({
-        success: false,
-        message: "Validation error",
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined,
-      });
-    }
-
-    // Handle duplicate key errors
-    if (error.code === 11000) {
-      let field = Object.keys(error.keyPattern)[0];
-      let fieldName = field === 'employeeId' ? 'Employee ID' : 
-                     field === 'email' ? 'Email' : 
-                     field === 'cnic' ? 'CNIC' : field;
-      
-      return res.status(400).json({
-        success: false,
-        message: `${fieldName} already exists`,
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: "Server error while updating employee",
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
-    });
+    throw error;
   }
-};
+});
 
-const deleteEmployee = async (req, res) => {
-  try {
+const deleteEmployee = asyncHandler(async (req, res) => {
     const { id } = req.params;
 
     // Validate MongoDB ObjectId
@@ -765,102 +701,75 @@ const deleteEmployee = async (req, res) => {
       success: true,
       message: "Employee deleted successfully",
     });
-  } catch (error) {
-    console.error("Error deleting employee:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Server error while deleting employee",
-      error: error.message,
-    });
-  }
-};
+});
 
 // @desc    Get employee stats
 // @route   GET /api/employees/stats
 // @access  Private
-const getEmployeeStats = async (req, res) => {
-    try {
-        const totalEmployees = await Employee.countDocuments();
-        const activeEmployees = await Employee.countDocuments({ isActive: true });
-        const departments = await Employee.distinct('department');
-        
-        // Get department-wise count
-        const departmentStats = await Employee.aggregate([
-            { $group: { _id: '$department', count: { $sum: 1 } } },
-            { $sort: { count: -1 } }
-        ]);
-        
-        // Get recent hires (last 30 days)
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        
-        const recentHires = await Employee.countDocuments({
-            hireDate: { $gte: thirtyDaysAgo }
-        });
-        
-        res.json({
-            success: true,
-            data: {
-                totalEmployees,
-                activeEmployees,
-                inactiveEmployees: totalEmployees - activeEmployees,
-                activeDepartments: departments.length,
-                recentHires,
-                departmentStats,
-                pendingInterviews: 2 // This can be dynamic based on your interview model
-            }
-        });
-    } catch (error) {
-        console.error('Error fetching stats:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error fetching statistics',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-};
+const getEmployeeStats = asyncHandler(async (req, res) => {
+    const totalEmployees = await Employee.countDocuments();
+    const activeEmployees = await Employee.countDocuments({ isActive: true });
+    const departments = await Employee.distinct('department');
+    
+    // Get department-wise count
+    const departmentStats = await Employee.aggregate([
+        { $group: { _id: '$department', count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+    ]);
+    
+    // Get recent hires (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const recentHires = await Employee.countDocuments({
+        hireDate: { $gte: thirtyDaysAgo }
+    });
+    
+    res.json({
+        success: true,
+        data: {
+            totalEmployees,
+            activeEmployees,
+            inactiveEmployees: totalEmployees - activeEmployees,
+            activeDepartments: departments.length,
+            recentHires,
+            departmentStats,
+            pendingInterviews: 2 // This can be dynamic based on your interview model
+        }
+    });
+});
 
 // @desc    Bulk update employees status
 // @route   PATCH /api/employees/bulk-status
 // @access  Private
-const bulkUpdateStatus = async (req, res) => {
-    try {
-        const { employeeIds, isActive } = req.body;
-        
-        if (!employeeIds || !Array.isArray(employeeIds) || employeeIds.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Employee IDs are required'
-            });
-        }
-        
-        if (isActive === undefined) {
-            return res.status(400).json({
-                success: false,
-                message: 'Status is required'
-            });
-        }
-        
-        const result = await Employee.updateMany(
-            { employeeId: { $in: employeeIds } },
-            { isActive: isActive === 'true' || isActive === true }
-        );
-        
-        res.json({
-            success: true,
-            message: `Successfully updated ${result.modifiedCount} employees`,
-            data: result
-        });
-    } catch (error) {
-        console.error('Error in bulk update:', error);
-        res.status(500).json({
+const bulkUpdateStatus = asyncHandler(async (req, res) => {
+    const { employeeIds, isActive } = req.body;
+    
+    if (!employeeIds || !Array.isArray(employeeIds) || employeeIds.length === 0) {
+        return res.status(400).json({
             success: false,
-            message: 'Error updating employees',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            message: 'Employee IDs are required'
         });
     }
-};
+    
+    if (isActive === undefined) {
+        return res.status(400).json({
+            success: false,
+            message: 'Status is required'
+        });
+    }
+    
+    const result = await Employee.updateMany(
+        { employeeId: { $in: employeeIds } },
+        { isActive: isActive === 'true' || isActive === true }
+    );
+    
+    res.json({
+        success: true,
+        message: `Successfully updated ${result.modifiedCount} employees`,
+        data: result
+    });
+});
 
 module.exports = {
     getEmployees,

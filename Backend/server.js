@@ -4,7 +4,11 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const path = require("path");
 const fs = require("fs");
-const router = express.Router();
+const rateLimit = require("express-rate-limit");
+const mongoSanitize = require("express-mongo-sanitize");
+const xss = require("xss-clean");
+const hpp = require("hpp");
+const compression = require("compression");
 
 // Database & logger
 const connectDB = require("./loaders/connectionDB");
@@ -16,6 +20,7 @@ const { startCronJobs } = require("./utils/cron");
 // Middleware
 const { notFound, errorHandler } = require("./middleware/errorHandler");
 const { cacheMiddleware, clearCache } = require("./middleware/cacheMiddleware");
+const { RATE_LIMITS } = require("./middleware/constants");
 
 // Routes
 const authRoutes = require("./routes/auth.routes");
@@ -34,7 +39,7 @@ const processRoutes = require("./routes/process.route");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const HOST = "0.0.0.0"; // ✅ IMPORTANT
+const HOST = "0.0.0.0";
 
 // ================= DATABASE =================
 connectDB();
@@ -50,10 +55,18 @@ const receiptsDir = path.join(__dirname, "receipts");
   }
 });
 
+// ================= SECURITY & CONFIG =================
+app.set("trust proxy", 1);
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+}));
+
 // ================= CORS =================
 const allowedOrigins = [
   "http://localhost:8081",
   "http://localhost:8082",
+  "http://localhost:3000",
+  "http://localhost:3001",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
@@ -67,15 +80,33 @@ app.use(
       }
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization", "Cache-Control", "Pragma"],
   })
 );
 
-// ================= SECURITY =================
-app.use(
-  helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-  })
-);
+// ================= RATE LIMITING =================
+const limiter = rateLimit({
+  windowMs: RATE_LIMITS.GENERAL.windowMs,
+  max: RATE_LIMITS.GENERAL.max,
+  message: {
+    success: false,
+    message: "Too many requests from this IP, please try again later.",
+  },
+});
+app.use("/api/", limiter);
+
+// ================= BODY PARSER =================
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// ================= SANITIZATION =================
+app.use(mongoSanitize());
+app.use(xss());
+app.use(hpp());
+
+// ================= COMPRESSION =================
+app.use(compression());
 
 // ================= LOGGING =================
 app.use(
@@ -83,10 +114,6 @@ app.use(
     stream: { write: (msg) => logger.info(msg.trim()) },
   })
 );
-
-// ================= BODY PARSER =================
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
 
 // ================= STATIC FILES =================
 app.use("/uploads", express.static(uploadsDir));

@@ -1,7 +1,7 @@
 const Member = require("../models/member.model")
 const AttendanceDevice = require("../models/attendanceDevice.model")
 const AttendanceLog = require("../models/attendanceLog.model")
-const logger = require("../config/logger")
+const logger = require("../loaders/logger")
 
 class DoorService {
   // Verify member access

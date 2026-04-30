@@ -1,5 +1,6 @@
 const httpStatus = require("http-status");
-const logger  = require("../loaders/logger");
+const logger = require("../loaders/logger");
+const { createResponse } = require("../utils/response");
 
 // Define fallback status codes in case http-status returns undefined
 const STATUS_CODES = {
@@ -17,23 +18,27 @@ const getStatusCode = (statusKey) => {
   return httpStatus[statusKey] || STATUS_CODES[statusKey] || 500;
 };
 
-const notFound = (req, res) => {
-  res.status(getStatusCode('NOT_FOUND')).json({ 
-    success: false,
-    message: `Route ${req.originalUrl} not found` 
-  });
+const notFound = (req, res, next) => {
+  const error = new Error(`Route ${req.originalUrl} not found`);
+  error.statusCode = getStatusCode('NOT_FOUND');
+  next(error);
 };
 
 const errorHandler = (err, req, res, next) => {
-  let status = err.status || err.statusCode;
+  let status = err.statusCode || err.status || 500;
   let message = err.message || "Something went wrong";
+  let details = null;
   
   // Handle various error types
   switch (true) {
     // Mongoose validation error
     case err.name === 'ValidationError':
       status = getStatusCode('BAD_REQUEST');
-      message = Object.values(err.errors).map(val => val.message).join(', ');
+      message = "Validation failed";
+      details = Object.values(err.errors).map(val => ({
+        field: val.path,
+        message: val.message
+      }));
       break;
     
     // Mongoose duplicate key error
@@ -82,11 +87,6 @@ const errorHandler = (err, req, res, next) => {
       status = getStatusCode('BAD_REQUEST');
       message = 'Malformed JSON';
       break;
-    
-    // Default to internal server error
-    default:
-      status = status || getStatusCode('INTERNAL_SERVER_ERROR');
-      message = message || 'Internal server error';
   }
   
   // Final status determination with fallback - ensure it's a number
@@ -107,7 +107,7 @@ const errorHandler = (err, req, res, next) => {
       body: req.body,
       query: req.query,
       params: req.params,
-      user: req.user || 'Unauthenticated'
+      user: req.user ? (req.user._id || req.user.id) : 'Unauthenticated'
     }, 'Server Error');
   } else {
     // Log client errors at warning level
@@ -116,19 +116,17 @@ const errorHandler = (err, req, res, next) => {
       url: req.originalUrl,
       method: req.method,
       status: status,
-      user: req.user || 'Unauthenticated'
+      user: req.user ? (req.user._id || req.user.id) : 'Unauthenticated'
     }, 'Client Error');
   }
 
-  // Response - ensure status is a valid integer
-  res.status(status).json({
-    success: false,
-    message: message,
-    ...(process.env.NODE_ENV === 'development' && { 
-      stack: err.stack,
-      error: err 
-    })
-  });
+  // Use createResponse for consistent response structure
+  res.status(status).json(createResponse(
+    false, 
+    message, 
+    process.env.NODE_ENV === 'development' ? { stack: err.stack, error: err } : null,
+    details || err.errors
+  ));
 };
 
 module.exports = { notFound, errorHandler };
