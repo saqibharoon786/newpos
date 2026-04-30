@@ -1,6 +1,4 @@
 const express = require("express");
-const cors = require("cors");
-const helmet = require("helmet");
 const path = require("path");
 const fs = require("fs");
 
@@ -26,40 +24,23 @@ const financeRoutes = require("./routes/finance.route");
 const processRoutes = require("./routes/process.route");
 
 const app = express();
+const PORT = process.env.PORT || 5000;
+const HOST = "0.0.0.0";
 
 connectDB();
-
-app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
-
-const allowedOrigins = [
-  "http://localhost:8081",
-  "http://localhost:8082",
-  "http://localhost:3000",
-  "http://localhost:3001",
-];
-
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("CORS blocked: " + origin));
-      }
-    },
-    credentials: true,
-  })
-);
-
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 const uploadsDir = path.join(__dirname, "uploads");
 const receiptsDir = path.join(__dirname, "receipts");
 
 [uploadsDir, receiptsDir].forEach((dir) => {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    logger.info(`Created directory: ${dir}`);
+  }
 });
+
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 app.use("/uploads", express.static(uploadsDir));
 app.use("/receipts", express.static(receiptsDir));
@@ -80,7 +61,10 @@ app.use("/api/process", processRoutes);
 app.use("/api/processing", processRoutes);
 
 app.get("/api/health", (req, res) => {
-  res.json({ status: "OK", time: new Date().toISOString() });
+  res.status(200).json({
+    status: "OK",
+    time: new Date().toISOString(),
+  });
 });
 
 app.get("/", (req, res) => {
@@ -92,8 +76,9 @@ app.use(errorHandler);
 
 startCronJobs();
 
-const PORT = process.env.PORT;
-
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  logger.info(`Server running on http://${HOST}:${PORT}`);
+  console.log(`Server running on http://${HOST}:${PORT}`);
 });
+
+module.exports = app;

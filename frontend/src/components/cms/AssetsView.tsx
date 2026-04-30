@@ -27,7 +27,7 @@ interface AssetItem {
 
 // ✅ Use environment variable for API base URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-const ASSETS_API_URL = `${API_BASE_URL}/api/assets`;
+const ASSETS_API_URL = `${API_BASE_URL}/assets`;
 
 // Helper function to format date as "22 Jan 2026"
 const formatDateWithMonthName = (dateString: string): string => {

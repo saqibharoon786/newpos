@@ -203,7 +203,7 @@ export function CustomerDetailView({ customer, onBack, onDelete, onUpdate }: Cus
 
       // Make PUT request to update customer
       const response = await api.put(
-        `/api/customers/${customer.id}`,
+        `/customers/${customer.id}`,
         formDataToSend,
         {
           headers: {

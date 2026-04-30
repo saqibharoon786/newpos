@@ -15,7 +15,7 @@ const api = axios.create({
 });
 
 // API endpoints
-const EXPENSES_API_URL = `${API_BASE_URL}/api/expenses`;
+const EXPENSES_API_URL = `${API_BASE_URL}/expenses`;
 
 /** YYYY-MM-DD in local calendar (toISOString shifts dates in non-UTC zones). */
 function formatLocalYmd(d: Date): string {

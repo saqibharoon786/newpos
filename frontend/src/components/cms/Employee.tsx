@@ -43,8 +43,8 @@ const createAPI = () => {
 
   instance.interceptors.request.use(
     (config) => {
-      if (config.url && !config.url.startsWith('/api/')) {
-        config.url = `/api${config.url.startsWith('/') ? '' : '/'}${config.url}`;
+      if (config.url && !config.url.startsWith('/')) {
+        config.url = `${config.url.startsWith('/') ? '' : '/'}${config.url}`;
       }
       
       if (config.data instanceof FormData) {
@@ -684,7 +684,7 @@ const Employee = () => {
       console.log("Sending employee data...");
       
       const response = await axios.post(
-        `${API_BASE_URL}/api/employees/create-employee`,
+        `${API_BASE_URL}/employees/create-employee`,
         formDataToSend,
         {
           headers: {

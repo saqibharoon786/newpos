@@ -34,9 +34,9 @@ export interface CustomerFormData {
   updatedAt?: string;
 }
 
-// Get base URL from environment and append /api/customers
+// Get base URL from environment and append /customers
 const BACKEND_URL = import.meta.env.VITE_API_BASE_URL;
-const API_BASE_URL = `${BACKEND_URL}/api/customers`;
+const API_BASE_URL = `${BACKEND_URL}/customers`;
 
 // Helper function to format date as DD-MM-YYYY for display
 const formatDateToDDMMYYYY = (date: Date | string): string => {
@@ -227,7 +227,7 @@ export function AddCustomerDialog({
 
   const checkBackendConnection = async () => {
     try {
-      const response = await axios.get(`${BACKEND_URL}/api/health`);
+      const response = await axios.get(`${BACKEND_URL}/health`);
       if (response.data.status === "OK") {
         setBackendStatus("connected");
       } else {
