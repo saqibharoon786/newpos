@@ -2963,9 +2963,9 @@ export function ProcessingModule() {
       }
 
       // Fetch materials from POP: remaining for processing = weight - productionConsumedWeight
-      const purchasesResponse = await axios.get(`${API_BASE_URL}/purchases/get-all`);
+      const purchasesResponse = await axios.get(`${API_BASE_URL}/purchases/get-all`);     
       if (purchasesResponse.data.success) {
-        const purchases = purchasesResponse.data.data || [];
+        const purchases = purchasesResponse.data.data || []; 
         const processingMaterials: ProcessingMaterial[] = purchases
           .map((purchase: any) => {
             const originalWeight = parseFloat(purchase.weight) || 0;
