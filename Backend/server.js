@@ -4,6 +4,7 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const path = require("path");
 const fs = require("fs");
+const router = express.Router();
 
 // Database & logger
 const connectDB = require("./loaders/connectionDB");

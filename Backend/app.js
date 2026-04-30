@@ -62,7 +62,6 @@ if (process.env.NODE_ENV === "development") {
 app.use("/api/v1", apiRoutes)
 
 // 404 handler
-const { notFound, errorHandler } = require("./middleware/errorHandler")
 app.use(notFound)
 
 // Global error handler
