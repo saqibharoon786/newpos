@@ -11,7 +11,7 @@ const api = axios.create({
 });
 
 // Update the purchases endpoint
-const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
+const PURCHASES_API_URL = `${API_BASE_URL}/purchases`;
 
 interface Purchase {
   _id: string;

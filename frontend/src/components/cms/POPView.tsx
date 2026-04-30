@@ -23,8 +23,8 @@ const api = axios.create({
 });
 
 // API endpoints
-const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
-const FINANCE_API_URL = `${API_BASE_URL}/api/finance`;
+const PURCHASES_API_URL = `${API_BASE_URL}/purchases`;
+const FINANCE_API_URL = `${API_BASE_URL}/finance`;
 
 // Finance API functions with all payment methods
 const financeApi = {

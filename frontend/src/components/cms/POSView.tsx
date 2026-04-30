@@ -17,9 +17,9 @@ const api = axios.create({
 });
 
 // Define endpoints using environment variable
-const SALES_API_URL = `${API_BASE_URL}/api/sales`;
-const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
-const FINANCE_DEPOSIT_URL = `${API_BASE_URL}/api/finance/deposit`;
+const SALES_API_URL = `${API_BASE_URL}/sales`;
+const PURCHASES_API_URL = `${API_BASE_URL}/purchases`;
+const FINANCE_DEPOSIT_URL = `${API_BASE_URL}/finance/deposit`;
 
 interface Sale {
   _id: string;
@@ -1405,7 +1405,7 @@ export function POSView() {
       
       // Then fetch production data
       try {
-        const processingApiUrl = `${API_BASE_URL}/api/processing`;
+        const processingApiUrl = `${API_BASE_URL}/processing`;
         const productionResponse = await api.get(`${processingApiUrl}/production`);
         
         if (productionResponse.data.success) {

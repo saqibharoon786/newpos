@@ -13,8 +13,8 @@ const api = axios.create({
 });
 
 // Define endpoints using environment variable
-const SALES_API_URL = `${API_BASE_URL}/api/sales`;
-const PURCHASE_API_URL = `${API_BASE_URL}/api/purchases`;
+const SALES_API_URL = `${API_BASE_URL}/sales`;
+const PURCHASE_API_URL = `${API_BASE_URL}/purchases`;
 
 interface Sale {
   _id: string;
@@ -22,7 +22,7 @@ interface Sale {
   supplierName: string;
   invoiceNo: string;
   code?: string;
-  weight: string;
+  weight: string;    
   unit: string;
   purchaseDate: string;
   branch: string;

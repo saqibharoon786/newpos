@@ -27,11 +27,11 @@ const api = axios.create({
 
 // Define API endpoints
 const API_ENDPOINTS = {
-  PURCHASES_GET_ALL: `${API_BASE_URL}/api/purchases/get-all`,
-  PRODUCTION_FOR_POS: `${API_BASE_URL}/api/processing/production/for-pos`,
-  SALES_ADD: `${API_BASE_URL}/api/sales/add-sale`,
-  SALES_UPDATE: (id: string) => `${API_BASE_URL}/api/sales/${id}`,
-  SALES_GET_ALL: `${API_BASE_URL}/api/sales`,
+  PURCHASES_GET_ALL: `${API_BASE_URL}/purchases/get-all`,
+  PRODUCTION_FOR_POS: `${API_BASE_URL}/processing/production/for-pos`,
+  SALES_ADD: `${API_BASE_URL}/sales/add-sale`,
+  SALES_UPDATE: (id: string) => `${API_BASE_URL}/sales/${id}`,
+  SALES_GET_ALL: `${API_BASE_URL}/sales`,
 };
 
 interface Purchase {

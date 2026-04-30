@@ -7,7 +7,7 @@ import axios from "axios"
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000"
 
 // Use the environment variable to construct API endpoints
-const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`
+const PURCHASES_API_URL = `${API_BASE_URL}/purchases`
 const API_ENDPOINTS = {
   ADD: `${PURCHASES_API_URL}/add`,
 }

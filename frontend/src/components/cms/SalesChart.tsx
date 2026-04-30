@@ -12,9 +12,9 @@ export function SalesChart() {
     const fetchChartData = async () => {
       try {
         setLoading(true);
-        console.log('Fetching chart data from /api/dashboard/chart-data');
+        console.log('Fetching chart data from /dashboard/chart-data');
         
-        const response = await axios.get('http://localhost:5000/api/dashboard/chart-data');
+        const response = await axios.get('http://localhost:5000/dashboard/chart-data');
         console.log('Chart API Response:', response.data);
         
         if (response.data.success) {

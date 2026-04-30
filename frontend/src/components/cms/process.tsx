@@ -50,8 +50,8 @@ const api = axios.create({
 });
 
 // API endpoints
-const PROCESSING_API_URL = `${API_BASE_URL}/api/processing`;
-const EMPLOYEE_API_URL = `${API_BASE_URL}/api/employees`;
+const PROCESSING_API_URL = `${API_BASE_URL}/processing`;
+const EMPLOYEE_API_URL = `${API_BASE_URL}/employees`;
 
 // Local date as YYYY-MM-DD (avoids timezone shifting e.g. 13 Feb becoming 12 Feb)
 const getLocalDateString = () => {
@@ -2940,7 +2940,7 @@ export function ProcessingModule() {
         let productionData = productionResponse.data.data || [];
         
         // Also fetch purchases to map codes to production records
-        const purchasesResponse = await axios.get(`${API_BASE_URL}/api/purchases/get-all`);
+        const purchasesResponse = await axios.get(`${API_BASE_URL}/purchases/get-all`);
         if (purchasesResponse.data.success) {
           const purchases = purchasesResponse.data.data || [];
           
@@ -2963,7 +2963,7 @@ export function ProcessingModule() {
       }
 
       // Fetch materials from POP: remaining for processing = weight - productionConsumedWeight
-      const purchasesResponse = await axios.get(`${API_BASE_URL}/api/purchases/get-all`);
+      const purchasesResponse = await axios.get(`${API_BASE_URL}/purchases/get-all`);
       if (purchasesResponse.data.success) {
         const purchases = purchasesResponse.data.data || [];
         const processingMaterials: ProcessingMaterial[] = purchases
