@@ -20,18 +20,18 @@ const createAPI = () => {
     timeout: 30000,
   });
 
-  instance.interceptors.request.use(
-    (config) => {
-      if (config.url && !config.url.startsWith('/api/')) {
-        config.url = `/api${config.url.startsWith('/') ? '' : '/'}${config.url}`;
-      }
+  // instance.interceptors.request.use(      
+  //   (config) => {
+  //     if (config.url && !config.url.startsWith('/api/')) {    
+  //       config.url = `/api${config.url.startsWith('/') ? '' : '/'}${config.url} ;
+  //     }
       
-      return config;
-    },
-    (error) => {
-      return Promise.reject(error);
-    }
-  );
+  //     return config;
+  //   },
+  //   (error) => {
+  //     return Promise.reject(error);
+  //   }
+  // );
 
   return instance;
 };
