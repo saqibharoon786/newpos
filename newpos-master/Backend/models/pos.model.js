@@ -5,7 +5,19 @@ const saleSchema = new mongoose.Schema(
     // Product Details
     materialName: { type: String, required: true },
     supplierName: { type: String, required: true },
-    invoiceNo: { type: String, required: true },
+    invoiceNo: { type: String, required: true, unique: true },
+    customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
+    paymentMethod: {
+      type: String,
+      enum: ['cash', 'credit', 'advance', 'bank', 'easypaisa', 'jazzcash', 'drawer'],
+      default: 'cash',
+    },
+    approvalStatus: {
+      type: String,
+      enum: ['draft', 'pending', 'approved', 'rejected'],
+      default: 'pending',
+    },
+    costPerKg: { type: Number, default: 0 },
 
     weight: { type: String, required: true }, // 30KG / 40KG
     unit: { type: String, required: true },

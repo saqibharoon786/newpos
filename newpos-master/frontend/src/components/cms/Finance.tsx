@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from "sonner";
 import axios from 'axios';
+import api from '@/lib/api';
 
 // ==================== API CONFIGURATION ====================
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
@@ -97,6 +98,11 @@ export default function FinanceModule() {
     export: false,
     initial: true
   });
+  const [plReport, setPlReport] = useState<any>(null);
+
+  useEffect(() => {
+    api.get('/api/reports/profit-loss').then((r) => setPlReport(r.data.data)).catch(() => {});
+  }, []);
 
   // State for form inputs
   const [depositData, setDepositData] = useState({
@@ -829,6 +835,18 @@ export default function FinanceModule() {
           </div>
         </div>
       </div>
+
+      {plReport && (
+        <div className="px-3 sm:px-4 md:px-6 py-4 border-b border-border bg-muted/30">
+          <div className="max-w-screen-2xl mx-auto grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+            <div><span className="text-muted-foreground">Revenue</span><p className="font-semibold">Rs. {plReport.totalRevenue?.toLocaleString()}</p></div>
+            <div><span className="text-muted-foreground">Material Cost</span><p className="font-semibold">Rs. {plReport.totalMaterialCost?.toLocaleString()}</p></div>
+            <div><span className="text-muted-foreground">Gross Profit</span><p className="font-semibold text-green-600">Rs. {plReport.grossProfit?.toLocaleString()}</p></div>
+            <div><span className="text-muted-foreground">Kharcha</span><p className="font-semibold">Rs. {plReport.totalExpenses?.toLocaleString()}</p></div>
+            <div><span className="text-muted-foreground">Net Profit</span><p className="font-bold text-primary">Rs. {plReport.netProfit?.toLocaleString()}</p></div>
+          </div>
+        </div>
+      )}
 
       <div className="px-3 sm:px-4 md:px-6 py-4 sm:py-6 overflow-x-hidden">
         <div className="max-w-screen-2xl mx-auto space-y-4 sm:space-y-6">

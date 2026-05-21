@@ -6,6 +6,9 @@ const Payment = require("../models/payment.model");
 const Attendance = require("../models/attendence.model");
 const logger = require("../loaders/logger");
 const { sendSMS, sendEmail } = require("./notifications");
+const { runDailyBackup } = require("./backupService");
+const Purchase = require("../models/pop.model");
+const notificationController = require("../controllers/notification.controller");
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -283,6 +286,37 @@ const startCronJobs = () => {
 
   // Daily attendance report: 08:00
   cron.schedule("0 8 * * *", generateDailyAttendanceReport, { timezone: TZ });
+
+  // Daily database backup: 11:30 PM
+  cron.schedule("30 23 * * *", async () => {
+    try {
+      await runDailyBackup();
+    } catch (err) {
+      logger.error("Daily backup failed:", err);
+    }
+  }, { timezone: TZ });
+
+  // Low stock check: every 6 hours
+  cron.schedule("0 */6 * * *", async () => {
+    try {
+      const lowStock = await Purchase.find({
+        $expr: { $lte: [{ $subtract: [{ $toDouble: '$weight' }, { $ifNull: ['$productionConsumedWeight', 0] }] }, 100] },
+      }).limit(20);
+      for (const p of lowStock) {
+        await notificationController.createNotification({
+          title: 'Low Stock Alert',
+          message: `${p.materialName} from ${p.vendor} is running low`,
+          type: 'low_stock',
+          targetRoles: ['owner', 'accountant1', 'accountant2'],
+          module: 'POP',
+          recordId: String(p._id),
+          priority: 'medium',
+        });
+      }
+    } catch (err) {
+      logger.error("Low stock check failed:", err);
+    }
+  }, { timezone: TZ });
 
   logger.info(`All cron jobs started successfully (Timezone: ${TZ})`);
 };

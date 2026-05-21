@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 export function SalesChart() {
@@ -14,7 +14,7 @@ export function SalesChart() {
         setLoading(true);
         console.log('Fetching chart data from /api/dashboard/chart-data');
         
-        const response = await axios.get('http://localhost:5000/api/dashboard/chart-data');
+        const response = await api.get('/api/dashboard/chart-data');
         console.log('Chart API Response:', response.data);
         
         if (response.data.success) {

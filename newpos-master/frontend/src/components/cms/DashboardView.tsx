@@ -4,7 +4,8 @@ import { SalesChart } from "./SalesChart";
 import { RoznamchaWidget } from "./RoznamchaWidget";
 import { RecentActivity } from "./RecentActivity";
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "@/lib/api";
+import { NotificationsPanel } from "./NotificationsPanel";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 const PERIODS = [
@@ -49,8 +50,7 @@ export function DashboardView() {
         }
       }
       const qs = params.toString();
-      const url = `${API_BASE_URL}/api/dashboard/stats${qs ? `?${qs}` : ""}`;
-      const response = await axios.get(url);
+      const response = await api.get(`/api/dashboard/stats${qs ? `?${qs}` : ""}`);
       if (response.data.success) {
         const data = response.data.data;
         if (response.data.periodLabel) setPeriodLabel(response.data.periodLabel);
@@ -90,8 +90,13 @@ export function DashboardView() {
         setError("Backend returned success: false");
       }
     } catch (err: any) {
-      const errorMessage = err.response?.data?.message || err.message;
-      setError(`Failed to load dashboard data: ${errorMessage}`);
+      if (err.response?.status === 401) {
+        setError('Session expired. Please logout and login again.');
+      } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
+        setError('Cannot reach server. Start Backend: cd Backend && npm run dev');
+      } else {
+        setError(`Failed to load dashboard data: ${err.response?.data?.message || err.message}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -142,6 +147,7 @@ export function DashboardView() {
 
   return (
     <div className="flex-1 min-w-0 p-3 sm:p-4 md:p-6 overflow-auto animate-fade-in">
+      <NotificationsPanel />
       {/* Header + Period selector + Month/Year calendar */}
       <div className="flex flex-col gap-3 sm:gap-4 mb-4 sm:mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">

@@ -48,6 +48,12 @@ router.post("/add", vehicleUpload.single("vehicleImage"), popController.addPurch
 // Get all purchases
 router.get("/get-all", popController.getPurchases);
 
+// Vendor balance/ledger by name
+router.get("/vendor/:name/balance", popController.getVendorBalance);
+
+// Owner approve purchase
+router.patch("/:id/approve", popController.approvePurchase);
+
 // Get purchase statistics
 router.get("/statistics", popController.getPurchaseStatistics);
 
@@ -63,7 +69,8 @@ router.get("/:id/with-remaining", popController.getPurchaseWithRemainingWeight);
 // Update purchase with vehicle image
 router.put("/:id", vehicleUpload.single("vehicleImage"), popController.updatePurchase);
 
-// Delete purchase
-router.delete("/:id", popController.deletePurchase);
+// Delete purchase (owner only)
+const { requireOwner, blockAccountantDelete } = require("../middleware/cmsAuth");
+router.delete("/:id", blockAccountantDelete, requireOwner, popController.deletePurchase);
 
 module.exports = router;

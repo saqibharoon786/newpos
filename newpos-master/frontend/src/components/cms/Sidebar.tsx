@@ -1,5 +1,8 @@
-import { LayoutDashboard, ShoppingCart, Store, BookOpen, Package, Users, UserCog, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { LayoutDashboard, ShoppingCart, Store, BookOpen, Package, Users, UserCog, X, Settings, FileBarChart, ScrollText, Shield } from "lucide-react";
+import { getCurrentUser, canApprove } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { fetchCompanySettings, getLogoUrl } from "@/lib/companySettings";
 
 interface SidebarProps {
   activeTab: string;
@@ -10,7 +13,7 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
-const menuItems = [
+const baseMenuItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "pop", label: "POP", icon: ShoppingCart },
   { id: "process", label: "Process", icon: ShoppingCart },
@@ -20,9 +23,28 @@ const menuItems = [
   { id: "customers", label: "Customers", icon: Users },
   { id: "employees", label: "Employee", icon: UserCog },
   { id: "Finance", label: "Finance", icon: UserCog },
+  { id: "reports", label: "Reports", icon: FileBarChart },
+];
+
+const ownerMenuItems = [
+  { id: "settings", label: "Settings", icon: Settings },
+  { id: "users", label: "Users", icon: Shield },
+  { id: "activity", label: "Activity Log", icon: ScrollText },
 ];
 
 export function Sidebar({ activeTab, onTabChange, isOpen = true, onClose }: SidebarProps) {
+  const [companyName, setCompanyName] = useState("Mara Ha International Plastic");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchCompanySettings().then((s) => {
+      setCompanyName(s.companyName);
+      setLogoUrl(getLogoUrl(s.logo));
+    });
+  }, []);
+
+  const role = getCurrentUser().role;
+  const menuItems = canApprove(role) ? [...baseMenuItems, ...ownerMenuItems] : baseMenuItems;
   const isMobileDrawer = typeof onClose === "function";
   const handleTab = (tab: string) => {
     onTabChange(tab);
@@ -33,10 +55,14 @@ export function Sidebar({ activeTab, onTabChange, isOpen = true, onClose }: Side
     <div className="p-4 flex flex-col h-full min-h-screen">
       <div className={cn("flex items-center justify-between px-2 pt-2 flex-shrink-0", showCloseButton ? "mb-6" : "mb-10")}>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-primary to-cms-success rounded-full flex items-center justify-center flex-shrink-0">
-            <Package className="w-5 h-5 text-primary-foreground" />
-          </div>
-          <span className="text-xl font-bold text-foreground tracking-wide">CMS</span>
+          {logoUrl ? (
+            <img src={logoUrl} alt={companyName} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+          ) : (
+            <div className="w-10 h-10 bg-gradient-to-br from-primary to-cms-success rounded-full flex items-center justify-center flex-shrink-0">
+              <Package className="w-5 h-5 text-primary-foreground" />
+            </div>
+          )}
+          <span className="text-sm font-bold text-foreground tracking-wide leading-tight">{companyName}</span>
         </div>
         {showCloseButton && (
           <button

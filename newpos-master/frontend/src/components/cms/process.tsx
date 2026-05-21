@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Factory, 
   Package, 
@@ -36,21 +36,15 @@ import {
   Trash2
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import axios from "axios";
+import api from "@/lib/api";
 import { exportAsCsv, exportAsWordTable, inDateRange, toYmd } from "@/lib/exportUtils";
+import { PRODUCT_CODES } from "@/lib/productCodes";
+import { computeProductionCosts, getProductionDisplayCost } from "@/lib/productionCost";
 
-// Configure axios with environment variable
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-
-// Create axios instance with base URL
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-});
-
-// API endpoints
-const PROCESSING_API_URL = `${API_BASE_URL}/api/processing`;
-const EMPLOYEE_API_URL = `${API_BASE_URL}/api/employees`;
+// Relative paths — api client uses Vite proxy + CMS auth headers
+const PROCESSING_API_URL = "/api/processing";
+const PURCHASES_API_URL = "/api/purchases";
+const EMPLOYEE_API_URL = "/api/employees";
 
 // Local date as YYYY-MM-DD (avoids timezone shifting e.g. 13 Feb becoming 12 Feb)
 const getLocalDateString = () => {
@@ -96,6 +90,7 @@ interface ProcessingMaterial {
   availableWeight: number;
   vendor: string;
   purchaseDate: string;
+  purchasePrice?: number;
   status: 'pending' | 'in_progress' | 'processed' | 'on_hold';
   batchNo?: string;
 }
@@ -170,6 +165,15 @@ interface ProductionData {
   totalBags?: number;
   bagWeight?: number;
   weightUsedFromPOP?: number;
+  productCode?: string;
+  wasteCost?: number;
+  laborCostPerKg?: number;
+  materialCost?: number;
+  totalProductionCost?: number;
+  purchasePrice?: number;
+  purchaseWeight?: number;
+  vendor?: string;
+  receiptNo?: string;
 }
 
 // Stage configuration
@@ -674,8 +678,12 @@ const ProcessingQueue = ({
                     title={colorName}
                   />
                   <div>
-                    <div className="text-sm font-semibold text-foreground">
+                    <div className="text-base font-bold text-foreground">
+                      {[...new Set(items.map((m) => m.materialName))].join(" · ")}
+                    </div>
+                    <div className="text-sm text-muted-foreground mt-0.5">
                       Quality: {quality} • {colorName} color
+                      {items[0]?.vendor ? ` • ${items[0].vendor}` : ""}
                     </div>
                     <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
@@ -997,9 +1005,10 @@ const StartProcessingModal = ({
         setNotes("");
       }
     } catch (error: any) {
+      const msg = error.response?.data?.message || error.message || "Failed to start processing";
       toast({
         title: "Error",
-        description: error.response?.data?.message || "Failed to start processing",
+        description: msg,
         variant: "destructive",
       });
     } finally {
@@ -1352,6 +1361,10 @@ const StartProcessFormModal = ({
     quality?: string;
     popAvailableWeight?: number;
     color?: string;
+    receiptNo?: string;
+    vendor?: string;
+    purchasePrice?: number;
+    purchaseWeight?: number;
     materialOptions?: { materialName: string; purchaseId: string }[];
   } | null;
   purchaseId?: string | null;
@@ -1371,8 +1384,40 @@ const StartProcessFormModal = ({
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [productCode, setProductCode] = useState(PRODUCT_CODES[0]?.code || "");
+  const [wasteWeight, setWasteWeight] = useState("");
+  const [wasteCost, setWasteCost] = useState("");
+  const [laborCostPerKg, setLaborCostPerKg] = useState("");
   const popAvailableWeight = initialMaterial?.popAvailableWeight ?? 0;
   const isFromQueue = !!(purchaseId && popAvailableWeight > 0);
+  const purchasePrice = initialMaterial?.purchasePrice ?? 0;
+  const purchaseWeight = initialMaterial?.purchaseWeight ?? 0;
+
+  const estimatedCosts = useMemo(() => {
+    const usedPop = parseFloat(String(weightUsedFromPOP).trim().replace(",", ".")) || 0;
+    const output = isFromQueue
+      ? parseFloat(String(machineOutputWeight).trim().replace(",", ".")) || parseFloat(String(totalWeight).trim().replace(",", ".")) || 0
+      : parseFloat(String(totalWeight).trim().replace(",", ".")) || 0;
+    return computeProductionCosts({
+      purchasePrice,
+      purchaseWeight,
+      weightUsedFromPOP: usedPop,
+      outputWeight: output,
+      wasteWeight: parseFloat(String(wasteWeight).trim().replace(",", ".")) || 0,
+      wasteCost: parseFloat(String(wasteCost).trim().replace(",", ".")) || 0,
+      laborCostPerKg: parseFloat(String(laborCostPerKg).trim().replace(",", ".")) || 0,
+    });
+  }, [
+    purchasePrice,
+    purchaseWeight,
+    weightUsedFromPOP,
+    machineOutputWeight,
+    totalWeight,
+    wasteWeight,
+    wasteCost,
+    laborCostPerKg,
+    isFromQueue,
+  ]);
 
   const fetchEmployees = async () => {
     try {
@@ -1414,6 +1459,10 @@ const StartProcessFormModal = ({
       setSelectedColor(initialMaterial?.color || "#FFFFFF");
       setSelectedShift("morning");
       setSelectedEmployees([]);
+      setProductCode(PRODUCT_CODES[0]?.code || "");
+      setWasteWeight("");
+      setWasteCost("");
+      setLaborCostPerKg("");
       fetchEmployees();
     }
   }, [open, initialMaterial?.materialName, initialMaterial?.quality, initialMaterial?.popAvailableWeight, initialMaterial?.color, initialMaterial?.materialOptions]);
@@ -1488,6 +1537,10 @@ const StartProcessFormModal = ({
         shift: selectedShift,
         employees: employeesPayload,
         status: "completed",
+        productCode: productCode || undefined,
+        wasteWeight: parseFloat(String(wasteWeight).trim().replace(",", ".")) || 0,
+        wasteCost: parseFloat(String(wasteCost).trim().replace(",", ".")) || 0,
+        laborCostPerKg: parseFloat(String(laborCostPerKg).trim().replace(",", ".")) || 0,
       };
       const effectivePurchaseId = (initialMaterial?.materialOptions && materialName.trim())
       ? initialMaterial.materialOptions.find(o => o.materialName.trim() === materialName.trim())?.purchaseId
@@ -1508,9 +1561,10 @@ const StartProcessFormModal = ({
         throw new Error(response.data.message || "Failed to save");
       }
     } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || "Failed to save production";
       toast({
-        title: "Error",
-        description: err.response?.data?.message || err.message || "Failed to save production",
+        title: "Process failed",
+        description: msg === "Please login to continue" ? "Please login again — session expired" : msg,
         variant: "destructive",
       });
     } finally {
@@ -1534,7 +1588,48 @@ const StartProcessFormModal = ({
         <div className="p-6">
           <div className="mb-6">
             <h2 className="text-xl font-bold text-foreground">Start New Process</h2>
-            <p className="text-sm text-muted-foreground">Add production with custom weight. Material and details same as before.</p>
+            {isFromQueue && materialName.trim() ? (
+              <div className="mt-3 p-4 rounded-lg border-2 border-primary bg-primary/5">
+                <p className="text-xs font-medium text-primary uppercase tracking-wide">Processing this material</p>
+                <p className="text-xl font-bold text-foreground mt-1">{materialName}</p>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                  <span>Quality: <strong className="text-foreground">{quality}</strong></span>
+                  {initialMaterial?.vendor && (
+                    <span>Vendor: <strong className="text-foreground">{initialMaterial.vendor}</strong></span>
+                  )}
+                  {initialMaterial?.receiptNo && (
+                    <span>Receipt: <strong className="text-foreground">{initialMaterial.receiptNo}</strong></span>
+                  )}
+                  <span>POP available: <strong className="text-foreground">{popAvailableWeight} kg</strong></span>
+                  {purchasePrice > 0 && purchaseWeight > 0 && (
+                    <span>POP cost: <strong className="text-foreground">Rs. {purchasePrice.toLocaleString()}</strong> ({purchaseWeight} kg)</span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground mt-1">Enter material details and production output below.</p>
+            )}
+          </div>
+          <div className="mb-4 p-3 rounded-lg border border-border bg-cms-card/50">
+            <p className="text-xs font-medium text-muted-foreground mb-2">Estimated total cost (auto-calculated)</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+              <div>
+                <span className="text-muted-foreground">Material</span>
+                <p className="font-semibold">Rs. {estimatedCosts.materialCost.toLocaleString()}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Waste</span>
+                <p className="font-semibold">Rs. {estimatedCosts.wasteCost.toLocaleString()}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Labor</span>
+                <p className="font-semibold">Rs. {estimatedCosts.laborCost.toLocaleString()}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Total</span>
+                <p className="font-bold text-primary">Rs. {estimatedCosts.totalProductionCost.toLocaleString()}</p>
+              </div>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-6 mb-6">
             {/* Left Column - Material Information (same as POP / old form) */}
@@ -1638,6 +1733,51 @@ const StartProcessFormModal = ({
                     <p className="text-xs text-muted-foreground mt-1">Custom weight only — not from POP. Any value (e.g. 8000) is saved to Production List.</p>
                   </div>
                 )}
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Product Code</label>
+                  <select
+                    value={productCode}
+                    onChange={(e) => setProductCode(e.target.value)}
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    {PRODUCT_CODES.map((p) => (
+                      <option key={p.code} value={p.code}>{p.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Waste Weight (kg)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={wasteWeight}
+                    onChange={(e) => setWasteWeight(e.target.value)}
+                    placeholder="e.g. 50"
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Waste Cost (Rs.)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={wasteCost}
+                    onChange={(e) => setWasteCost(e.target.value)}
+                    placeholder="e.g. 5000"
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Labor Cost per Kg (Rs.)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={laborCostPerKg}
+                    onChange={(e) => setLaborCostPerKg(e.target.value)}
+                    placeholder="e.g. 15"
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1.5">Production Date *</label>
                   <input
@@ -2489,6 +2629,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining (kg)</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Bags</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Efficiency</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total Cost</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Shift</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Status</th>
@@ -2512,7 +2653,11 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
                         <div>{prod.materialName}</div>
                         <div className="text-xs text-muted-foreground">
                           {prod.quality}
+                          {prod.vendor ? ` · ${prod.vendor}` : ""}
                         </div>
+                        {prod.receiptNo && (
+                          <div className="text-xs text-muted-foreground">Receipt: {prod.receiptNo}</div>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -2549,6 +2694,34 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
                         />
                       </div>
                     </div>
+                  </td>
+                  <td className="px-4 py-3 text-sm font-semibold text-foreground">
+                    {(() => {
+                      const total = getProductionDisplayCost({
+                        totalProductionCost: prod.totalProductionCost,
+                        materialCost: prod.materialCost,
+                        wasteCost: prod.wasteCost,
+                        laborCostPerKg: prod.laborCostPerKg,
+                        outputWeight: prod.outputWeight,
+                        weightUsedFromPOP: prod.weightUsedFromPOP,
+                        wasteWeight: prod.wasteWeight,
+                        purchasePrice: prod.purchasePrice,
+                        purchaseWeight: prod.purchaseWeight,
+                      });
+                      return total > 0 ? (
+                        <div>
+                          <div>Rs. {total.toLocaleString()}</div>
+                          {prod.materialCost != null && prod.materialCost > 0 && (
+                            <div className="text-xs font-normal text-muted-foreground">
+                              Mat. Rs. {(prod.materialCost || 0).toLocaleString()}
+                              {(prod.wasteCost || 0) > 0 && ` + Waste Rs. ${(prod.wasteCost || 0).toLocaleString()}`}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        "—"
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-3 text-sm text-foreground capitalize">
                     {prod.shift}
@@ -2845,7 +3018,7 @@ export function ProcessingModule() {
     setLoading(true);
     try {
       // Fetch all production records for client-side pagination (backend defaults to limit=10, so request high limit)
-      const productionResponse = await axios.get(`${PROCESSING_API_URL}/production`, {
+      const productionResponse = await api.get(`${PROCESSING_API_URL}/production`, {
         params: { page: 1, limit: 10000 },
       });
       if (productionResponse.data.success) {
@@ -2853,7 +3026,7 @@ export function ProcessingModule() {
       }
 
       // Fetch materials from POP: remaining for processing = weight - productionConsumedWeight
-      const purchasesResponse = await axios.get(`${API_BASE_URL}/api/purchases/get-all`);
+      const purchasesResponse = await api.get(`${PURCHASES_API_URL}/get-all`);
       if (purchasesResponse.data.success) {
         const purchases = purchasesResponse.data.data || [];
         const processingMaterials: ProcessingMaterial[] = purchases
@@ -2875,21 +3048,23 @@ export function ProcessingModule() {
             availableWeight: availableForProcessing,
             vendor: purchase.vendor || 'Unknown',
             purchaseDate: purchase.purchaseDate || purchase.createdAt,
+            purchasePrice: parseFloat(purchase.price) || 0,
             status: 'pending',
           }));
         setMaterials(processingMaterials);
       }
       
       // Fetch active batches for dashboard
-      const batchesResponse = await axios.get(`${PROCESSING_API_URL}/batches`);
+      const batchesResponse = await api.get(`${PROCESSING_API_URL}/batches`);
       if (batchesResponse.data.success) {
         setBatches(batchesResponse.data.data || []);
       }
       
-    } catch (error) {
+    } catch (error: any) {
+      const msg = error.response?.data?.message || error.message || "Failed to load processing data";
       toast({
         title: "Error",
-        description: "Failed to load processing data",
+        description: msg === "Please login to continue" ? "Please login again — session expired" : msg,
         variant: "destructive",
       });
     } finally {
@@ -3076,6 +3251,10 @@ export function ProcessingModule() {
                 quality: materialForStartProcess.quality,
                 popAvailableWeight: groupTotalWeight ?? materialForStartProcess.availableWeight,
                 color: materialForStartProcess.color,
+                receiptNo: materialForStartProcess.receiptNo,
+                vendor: materialForStartProcess.vendor,
+                purchasePrice: materialForStartProcess.purchasePrice,
+                purchaseWeight: materialForStartProcess.originalWeight,
                 materialOptions: groupMaterials && groupMaterials.length > 0
                   ? (() => {
                       const seen = new Set<string>();

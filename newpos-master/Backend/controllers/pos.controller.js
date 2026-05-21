@@ -1,7 +1,9 @@
 const mongoose = require("mongoose");
 const Sale = require("../models/pos.model");
 const Purchase = require("../models/pop.model");
+const Transaction = require("../models/transaction.model");
 const { ProductionData } = require("../models/process.model.js");
+const { generateSaleInvoiceNo } = require("../utils/invoiceGenerator");
 const path = require("path");
 const fs = require("fs");
 
@@ -140,10 +142,19 @@ const addSale = async (req, res) => {
       unit: requestUnit,
     } = req.body;
 
-    if (!customerName || !sellingPrice || !sellingWeight || !invoiceNo) {
+    if (!customerName || !sellingPrice || !sellingWeight) {
       return res.status(400).json({
         success: false,
-        message: "Required fields missing: customerName, sellingPrice, sellingWeight, invoiceNo"
+        message: "Required fields missing: customerName, sellingPrice, sellingWeight"
+      });
+    }
+
+    const finalInvoiceNo = invoiceNo || (await generateSaleInvoiceNo());
+    const dup = await Sale.findOne({ invoiceNo: finalInvoiceNo });
+    if (dup) {
+      return res.status(409).json({
+        success: false,
+        message: `Duplicate invoice number: ${finalInvoiceNo}`,
       });
     }
     if (productionId && purchaseId) {
@@ -213,7 +224,7 @@ const addSale = async (req, res) => {
         materialName,
         supplierName,
         quality,
-        invoiceNo,
+        invoiceNo: finalInvoiceNo,
         weight: sellingWeight.toString(),
         unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : "0",
         purchaseDate: saleDate ? (typeof saleDate === 'string' && saleDate.includes('T') ? saleDate.split('T')[0] : saleDate) : new Date().toISOString().split('T')[0],
@@ -221,7 +232,8 @@ const addSale = async (req, res) => {
         branch: "Main",
         materialColor,
         actualPrice,
-        productionCost: "0",
+        productionCost: String(production.totalProductionCost || production.materialCost || 0),
+        costPerKg: weightToSell > 0 ? (production.totalProductionCost || 0) / weightToSell : 0,
         sellingPrice: sellingPrice.toString(),
         discount: "0",
         finalAmount: sellingPrice.toString(),
@@ -297,7 +309,7 @@ const addSale = async (req, res) => {
         materialName,
         supplierName,
         quality,
-        invoiceNo,
+        invoiceNo: finalInvoiceNo,
         weight: sellingWeight.toString(),
         unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : "0",
         purchaseDate: saleDate ? (typeof saleDate === 'string' && saleDate.includes('T') ? saleDate.split('T')[0] : saleDate) : new Date().toISOString().split('T')[0],
@@ -363,7 +375,7 @@ const addSale = async (req, res) => {
         materialName,
         supplierName,
         quality,
-        invoiceNo,
+        invoiceNo: finalInvoiceNo,
         weight: sellingWeight.toString(),
         unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : (purchase.unit || "0"),
         purchaseDate: saleDate ? (typeof saleDate === 'string' && saleDate.includes('T') ? saleDate.split('T')[0] : saleDate) : new Date().toISOString().split('T')[0],
@@ -391,6 +403,25 @@ const addSale = async (req, res) => {
       };
     }
 
+    salePayload.invoiceNo = finalInvoiceNo;
+    salePayload.paymentMethod = paymentMethod || 'cash';
+    salePayload.customerId = req.body.customerId;
+    salePayload.approvalStatus = 'pending';
+    salePayload.createdBy = req.user?.username || req.body.createdBy || 'system';
+
+    if (paidAmount > 0 && ['drawer', 'cash', 'easypaisa', 'jazzcash', 'bank'].includes(paymentMethod || 'cash')) {
+      const method = paymentMethod === 'cash' ? 'drawer' : paymentMethod;
+      await Transaction.create({
+        type: 'deposit',
+        method,
+        amount: paidAmount,
+        net: paidAmount,
+        description: `POS sale ${finalInvoiceNo} - ${customerName}`,
+        reference: finalInvoiceNo,
+        status: 'completed',
+      });
+    }
+
     const sale = await Sale.create(salePayload);
 
     res.status(201).json({
@@ -407,6 +438,9 @@ const addSale = async (req, res) => {
     });
   } catch (error) {
     console.error('Sale error:', error);
+    if (error.code === 11000) {
+      return res.status(409).json({ success: false, message: 'Duplicate invoice number' });
+    }
     res.status(500).json({
       success: false,
       message: error.message || "Internal server error"
@@ -835,6 +869,18 @@ const getSalesStatistics = async (req, res) => {
   }
 };
 
+const approveSale = async (req, res) => {
+  try {
+    const sale = await Sale.findById(req.params.id);
+    if (!sale) return res.status(404).json({ success: false, message: 'Not found' });
+    sale.approvalStatus = 'approved';
+    await sale.save();
+    res.json({ success: true, data: sale });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   addSale,
   getSales,
@@ -844,4 +890,5 @@ module.exports = {
   getSalesByMaterial,
   getTotalSoldWeightByMaterial,
   getSalesStatistics,
+  approveSale,
 };

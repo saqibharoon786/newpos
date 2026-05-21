@@ -696,10 +696,10 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
   const formatCurrency = (amount: string) => {
     try {
       const numAmount = parseFloat(amount);
-      if (isNaN(numAmount)) return '₹0';
-      return `₹${numAmount.toLocaleString('en-IN')}`;
+      if (isNaN(numAmount)) return 'Rs. 0';
+      return `Rs. ${numAmount.toLocaleString('en-PK')}`;
     } catch (error) {
-      return `₹${amount}`;
+      return `Rs. ${amount}`;
     }
   };
 

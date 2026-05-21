@@ -32,6 +32,16 @@ const dashboardRoutes = require("./routes/dashboard.route");
 const employeeRoutes = require("./routes/employee.route");
 const financeRoutes = require("./routes/finance.route");
 const processRoutes = require("./routes/process.route");
+const settingsRoutes = require("./routes/settings.route");
+const activityLogRoutes = require("./routes/activityLog.route");
+const notificationRoutes = require("./routes/notification.route");
+const vendorRoutes = require("./routes/vendor.route");
+const investmentRoutes = require("./routes/investment.route");
+const reportRoutes = require("./routes/report.route");
+const materialCatalogRoutes = require("./routes/materialCatalog.route");
+const expenseCategoryRoutes = require("./routes/expenseCategory.route");
+const cmsUsersRoutes = require("./routes/cmsUsers.route");
+const { cmsProtect } = require("./middleware/cmsAuth");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -152,17 +162,26 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/members", cacheMiddleware(300), memberRoutes);
 app.use("/api/payments", paymentRoutes);
-app.use("/api/purchases", popRoutes);
-app.use("/api/sales", posRoutes);
-app.use("/api/expenses", expenseRoutes);
-app.use("/api/assets", assetRoutes);
-app.use("/api/customers", customerRoutes);
-app.use("/api/dashboard", cacheMiddleware(30), dashboardRoutes);
-app.use("/api/employees", employeeRoutes);
-app.use("/api/finance", financeRoutes);
-app.use("/api/process", processRoutes);
+app.use("/api/purchases", cmsProtect, popRoutes);
+app.use("/api/sales", cmsProtect, posRoutes);
+app.use("/api/expenses", cmsProtect, expenseRoutes);
+app.use("/api/assets", cmsProtect, assetRoutes);
+app.use("/api/customers", cmsProtect, customerRoutes);
+app.use("/api/dashboard", cmsProtect, cacheMiddleware(30), dashboardRoutes);
+app.use("/api/employees", cmsProtect, employeeRoutes);
+app.use("/api/finance", cmsProtect, financeRoutes);
+app.use("/api/process", cmsProtect, processRoutes);
+app.use("/api/materials", materialCatalogRoutes);
+app.use("/api/expense-categories", expenseCategoryRoutes);
+app.use("/api/cms-users", cmsUsersRoutes);
 // Alias for legacy frontend expecting /api/processing
-app.use("/api/processing", processRoutes);
+app.use("/api/processing", cmsProtect, processRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/activity-logs", cmsProtect, activityLogRoutes);
+app.use("/api/notifications", cmsProtect, notificationRoutes);
+app.use("/api/vendors", cmsProtect, vendorRoutes);
+app.use("/api/investment", cmsProtect, investmentRoutes);
+app.use("/api/reports", cmsProtect, reportRoutes);
 
 // Test endpoints
 app.get("/api/test-upload/:filename", (req, res) => {
@@ -234,7 +253,7 @@ if (process.env.NODE_ENV === "development") {
 // Welcome
 app.get("/", (req, res) => {
   res.json({
-    message: "Gym Management System API",
+    message: "Mara Ha International Plastic - CMS API",
     version: "1.0.0",
     note: "Rate limiting disabled",
   });

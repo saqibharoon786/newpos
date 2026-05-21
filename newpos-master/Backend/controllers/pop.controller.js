@@ -1,6 +1,15 @@
 const Purchase = require("../models/pop.model");
 const Sale = require("../models/pos.model");
-const { computePurchasePayment, withComputedPayment } = require("../utils/purchasePayment");
+const Transaction = require("../models/transaction.model");
+const {
+  computePurchasePayment,
+  withComputedPayment,
+  validatePurchasePaymentLimits,
+} = require("../utils/purchasePayment");
+const { generatePurchaseInvoiceNo } = require("../utils/invoiceGenerator");
+const vendorController = require("./vendor.controller");
+const { logActivity } = require("../utils/activityLogger");
+const notificationController = require("./notification.controller");
 
 // Add Purchase
 const addPurchase = async (req, res) => {
@@ -52,11 +61,24 @@ const addPurchase = async (req, res) => {
       amountPaidNum = parseFloat(amountPaid) || 0;
     }
 
-    const payment = computePurchasePayment({
+    const paymentCheck = validatePurchasePaymentLimits({
       price: priceNum,
       advancePayment: advancePaymentNum,
       amountPaid: amountPaidNum,
     });
+    if (!paymentCheck.ok) {
+      return res.status(400).json({ success: false, message: paymentCheck.message });
+    }
+
+    const payment = paymentCheck.payment;
+
+    const invoiceNo = await generatePurchaseInvoiceNo(new Date(purchaseDate));
+    let vendorDoc = null;
+    try {
+      vendorDoc = await vendorController.getVendorByName(vendor);
+    } catch (e) {
+      console.error('Vendor lookup:', e.message);
+    }
 
     console.log("Payment calculations:");
     console.log("Total Price:", priceNum);
@@ -71,8 +93,11 @@ const addPurchase = async (req, res) => {
 
     // Create purchase
     const purchase = await Purchase.create({
+      invoiceNo,
+      billNo: req.body.billNo || receiptNo || '',
       materialName,
       vendor,
+      vendorId: vendorDoc?._id,
       price,
       weight,
       quality,
@@ -84,13 +109,87 @@ const addPurchase = async (req, res) => {
       driverName,
       vehicleColor,
       deliveryDate,
-      receiptNo,
+      receiptNo: receiptNo || invoiceNo,
       advancePayment: advancePaymentNum,
       amountPaid: amountPaidNum,
       totalPaid: payment.totalPaid,
       paidAmount: payment.paidAmount,
       remainingAmount: payment.remainingAmount,
+      paymentMethod: req.body.paymentMethod || 'cash',
+      approvalStatus: 'pending',
+      createdBy: req.body.createdBy || req.user?.username || 'system',
       vehicleImage,
+      materials: req.body.materials ? JSON.parse(req.body.materials) : undefined,
+    });
+
+    if (vendorDoc) {
+      await vendorController.updateVendorLedger(vendor, {
+        type: 'purchase',
+        purchaseId: purchase._id,
+        description: `Purchase ${invoiceNo} - ${materialName}`,
+        debit: priceNum,
+        credit: 0,
+      });
+      if (amountPaidNum > 0) {
+        await vendorController.updateVendorLedger(vendor, {
+          type: 'payment',
+          purchaseId: purchase._id,
+          description: `Payment on ${invoiceNo}`,
+          debit: 0,
+          credit: amountPaidNum,
+        });
+      }
+      if (advancePaymentNum > 0) {
+        await vendorController.updateVendorLedger(vendor, {
+          type: 'advance',
+          purchaseId: purchase._id,
+          description: `Advance applied on ${invoiceNo}`,
+          debit: 0,
+          credit: Math.min(advancePaymentNum, priceNum),
+        });
+      }
+    }
+
+    const payMethod = req.body.paymentMethod || 'drawer';
+    const cashPaid = amountPaidNum;
+    if (cashPaid > 0 && ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(payMethod)) {
+      const balances = await Transaction.getBalances();
+      if ((balances[payMethod] || 0) < cashPaid) {
+        await Purchase.findByIdAndDelete(purchase._id);
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient balance in ${payMethod}. Available: Rs. ${balances[payMethod] || 0}`,
+        });
+      }
+      await Transaction.create({
+        type: 'withdraw',
+        method: payMethod,
+        amount: cashPaid,
+        net: cashPaid,
+        description: `POP payment ${invoiceNo} - ${vendor}`,
+        reference: invoiceNo,
+        status: 'completed',
+      });
+    }
+
+    await notificationController.createNotification({
+      title: 'Purchase Pending Approval',
+      message: `Purchase ${invoiceNo} from ${vendor} requires owner approval`,
+      type: 'pending_approval',
+      targetRoles: ['owner', 'admin'],
+      module: 'POP',
+      recordId: String(purchase._id),
+      priority: 'high',
+    });
+
+    await logActivity({
+      userId: req.user?._id || req.body.createdBy,
+      userName: req.user?.username || req.body.createdBy || 'system',
+      action: 'Create',
+      module: 'POP',
+      recordId: purchase._id,
+      afterValues: purchase.toObject(),
+      req,
     });
 
     console.log('Purchase created with payment summary:');
@@ -188,7 +287,11 @@ const updatePurchase = async (req, res) => {
     }
 
     const merged = { ...existing, ...updatedData };
-    const payment = computePurchasePayment(merged);
+    const paymentCheck = validatePurchasePaymentLimits(merged);
+    if (!paymentCheck.ok) {
+      return res.status(400).json({ success: false, message: paymentCheck.message });
+    }
+    const payment = paymentCheck.payment;
     updatedData.totalPaid = payment.totalPaid;
     updatedData.paidAmount = payment.paidAmount;
     updatedData.remainingAmount = payment.remainingAmount;
@@ -393,6 +496,47 @@ const getPurchaseStatistics = async (req, res) => {
   }
 };
 
+const approvePurchase = async (req, res) => {
+  try {
+    const purchase = await Purchase.findById(req.params.id);
+    if (!purchase) return res.status(404).json({ success: false, message: 'Not Found' });
+    purchase.approvalStatus = 'approved';
+    purchase.approvedBy = req.user?.username || req.body.approvedBy || 'owner';
+    purchase.approvedAt = new Date();
+    await purchase.save();
+    await logActivity({
+      userId: req.user?._id,
+      userName: req.user?.username || 'owner',
+      action: 'Approve',
+      module: 'POP',
+      recordId: purchase._id,
+      afterValues: purchase.toObject(),
+      req,
+    });
+    res.json({ success: true, data: withComputedPayment(purchase.toObject()) });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getVendorBalance = async (req, res) => {
+  try {
+    const vendor = await vendorController.getVendorByName(req.params.name);
+    res.json({
+      success: true,
+      data: {
+        name: vendor.name,
+        advanceBalance: vendor.advanceBalance,
+        payableBalance: vendor.payableBalance,
+        netBalance: vendor.payableBalance - vendor.advanceBalance,
+        ledger: vendor.ledger,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   addPurchase,
   getPurchases,
@@ -402,4 +546,6 @@ module.exports = {
   getPurchaseWithRemainingWeight,
   getAllPurchasesWithRemainingWeight,
   getPurchaseStatistics,
+  approvePurchase,
+  getVendorBalance,
 };

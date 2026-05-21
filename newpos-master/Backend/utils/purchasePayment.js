@@ -1,7 +1,8 @@
 /**
- * Compute purchase payment totals.
- * amountPaid = extra payment at purchase (not including advance).
- * totalPaid = source of truth when set (e.g. after Record Payment).
+ * Purchase payment fields:
+ * - advancePayment: prior advance paid to vendor (not cash at this invoice)
+ * - amountPaid: cash/extra payment at purchase time only
+ * - totalPaid: authoritative cumulative total (set on record-payment)
  */
 function computePurchasePayment(purchase) {
   const priceNum = parseFloat(purchase.price) || 0;
@@ -9,41 +10,30 @@ function computePurchasePayment(purchase) {
   const amountPaidNum = Number(purchase.amountPaid) || 0;
 
   let totalPaid;
+  const storedTotal = Number(purchase.totalPaid);
   const hasExplicitTotal =
     purchase.totalPaid !== undefined &&
     purchase.totalPaid !== null &&
-    purchase.totalPaid !== "";
+    purchase.totalPaid !== '' &&
+    !Number.isNaN(storedTotal);
 
-  const storedTotal = hasExplicitTotal ? Number(purchase.totalPaid) || 0 : 0;
-
-  if (hasExplicitTotal && storedTotal > 0) {
+  if (hasExplicitTotal) {
     totalPaid = storedTotal;
-  } else if (amountPaidNum > advancePaymentNum) {
-    // Legacy: amountPaid stored as cumulative total
-    totalPaid = amountPaidNum;
-  } else if (
-    advancePaymentNum > 0 &&
-    amountPaidNum === advancePaymentNum &&
-    amountPaidNum > 0 &&
-    amountPaidNum < priceNum
-  ) {
-    // Legacy duplicate on create (advance copied into amountPaid)
-    totalPaid = advancePaymentNum;
   } else {
     totalPaid = advancePaymentNum + amountPaidNum;
   }
 
-  let paidAmount = "none";
+  let paidAmount = 'none';
   let remainingAmount = priceNum;
 
   if (totalPaid <= 0) {
-    paidAmount = "none";
+    paidAmount = 'none';
     remainingAmount = priceNum;
   } else if (totalPaid >= priceNum) {
-    paidAmount = "paid";
+    paidAmount = 'paid';
     remainingAmount = 0;
   } else {
-    paidAmount = "partial";
+    paidAmount = 'partial';
     remainingAmount = priceNum - totalPaid;
   }
 
@@ -63,8 +53,38 @@ function withComputedPayment(purchase) {
     totalPaid: payment.totalPaid,
     paidAmount: payment.paidAmount,
     remainingAmount: payment.remainingAmount,
-    amountPaidDisplay: payment.totalPaid,
+    amountPaidAtPurchase: payment.amountPaid,
   };
 }
 
-module.exports = { computePurchasePayment, withComputedPayment };
+/** Reject overpayment: advance + amountPaid (or totalPaid) must not exceed price */
+function validatePurchasePaymentLimits(purchase) {
+  const priceNum = parseFloat(purchase.price) || 0;
+  if (priceNum <= 0) {
+    return { ok: false, message: "Purchase price must be greater than zero" };
+  }
+
+  const advancePaymentNum = Number(purchase.advancePayment) || 0;
+  const amountPaidNum = Number(purchase.amountPaid) || 0;
+
+  if (advancePaymentNum < 0 || amountPaidNum < 0) {
+    return { ok: false, message: "Payment amounts cannot be negative" };
+  }
+
+  const payment = computePurchasePayment(purchase);
+
+  if (payment.totalPaid > priceNum) {
+    return {
+      ok: false,
+      message: `Total payment (Rs. ${payment.totalPaid.toLocaleString()}) cannot exceed purchase price (Rs. ${priceNum.toLocaleString()})`,
+    };
+  }
+
+  return { ok: true, payment };
+}
+
+module.exports = {
+  computePurchasePayment,
+  withComputedPayment,
+  validatePurchasePaymentLimits,
+};

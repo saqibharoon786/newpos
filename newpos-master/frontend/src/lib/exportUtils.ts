@@ -133,6 +133,36 @@ export const toYmd = (input?: string | Date | null): string => {
   return `${y}-${m}-${day}`;
 };
 
+/** Opens printable HTML — user can Save as PDF from browser print dialog */
+export const exportAsPdf = (
+  title: string,
+  htmlBody: string,
+  companyName = 'Mara Ha International Plastic',
+  logoUrl?: string | null
+) => {
+  const win = window.open('', '_blank');
+  if (!win) return;
+  win.document.write(`<!doctype html><html><head><title>${title}</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
+  .header { display: flex; align-items: center; gap: 16px; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
+  .header img { max-height: 64px; }
+  h1 { margin: 0; font-size: 22px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+  th { background: #f5f5f5; }
+  @media print { body { padding: 0; } }
+</style></head><body>
+<div class="header">
+  ${logoUrl ? `<img src="${logoUrl}" alt="logo" />` : ''}
+  <div><h1>${companyName}</h1><p>${title}</p></div>
+</div>
+${htmlBody}
+<script>window.onload = () => { window.print(); }</script>
+</body></html>`);
+  win.document.close();
+};
+
 export const inDateRange = (value: string | Date, startDate?: string, endDate?: string): boolean => {
   const current = toYmd(value);
   if (!current) return false;

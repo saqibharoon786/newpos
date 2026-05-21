@@ -1,4 +1,5 @@
 const Expense = require("../models/expense.model");
+const Transaction = require("../models/transaction.model");
 const mongoose = require("mongoose");
 
 // Normalize date to YYYY-MM-DD so date range filters (Daily/Weekly/Monthly) work
@@ -260,6 +261,8 @@ exports.createExpense = async (req, res) => {
       usage,
       date,
       time,
+      paymentMethod,
+      category,
     } = req.body;
 
     // Validation
@@ -271,15 +274,39 @@ exports.createExpense = async (req, res) => {
     }
 
     // Create expense object (date normalized to YYYY-MM-DD so Daily/Weekly/Monthly filters work)
+    const priceNum = parseFloat(String(price).replace(/[^\d.]/g, '')) || 0;
+    const method = paymentMethod || 'drawer';
+
+    if (priceNum > 0 && ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(method)) {
+      const balances = await Transaction.getBalances();
+      if ((balances[method] || 0) < priceNum) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient balance in ${method}. Available: Rs. ${balances[method] || 0}`,
+        });
+      }
+      await Transaction.create({
+        type: 'withdraw',
+        method,
+        amount: priceNum,
+        net: priceNum,
+        description: `Expense: ${subject}`,
+        reference: `EXP-${Date.now()}`,
+        status: 'completed',
+      });
+    }
+
     const expenseData = {
       subject,
       description,
-      purpose: purpose || "Car",
+      purpose: purpose || "Office",
       price,
       personResponsible: personResponsible || "HR",
-      usage: usage || "Personal",
+      usage: usage || "Company",
       date: toNormalizedDate(date),
       time,
+      paymentMethod: method,
+      category: category || purpose || "General",
     };
 
     const expense = await Expense.create(expenseData);

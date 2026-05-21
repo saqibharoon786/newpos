@@ -14,10 +14,15 @@ const expenseSchema = new mongoose.Schema(
     },
     purpose: {
       type: String,
-      enum: ["Car", "Office", "Travel", "Equipment"],
-      default: "Car",
+      default: "Office",
       required: true,
     },
+    paymentMethod: {
+      type: String,
+      enum: ["drawer", "bank", "easypaisa", "jazzcash", "cash"],
+      default: "drawer",
+    },
+    category: { type: String, default: "General" },
     price: {
       type: String,
       required: [true, "Price is required"],
