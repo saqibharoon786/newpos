@@ -11,28 +11,24 @@ import {
   Loader2 
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import axios from "axios";
+import api, { API_BASE_URL } from "@/lib/api";
+import { getCurrentUser, canApprove } from "@/lib/auth";
 
-// Configure axios with environment variable
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+type PaymentType = "cash" | "credit" | "advance";
 
-// Create axios instance
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Define API endpoints
-const API_ENDPOINTS = {
-  PURCHASES_GET_ALL: `${API_BASE_URL}/api/purchases/get-all`,
-  PRODUCTION_FOR_POS: `${API_BASE_URL}/api/processing/production/for-pos`,
-  SALES_ADD: `${API_BASE_URL}/api/sales/add-sale`,
-  SALES_UPDATE: (id: string) => `${API_BASE_URL}/api/sales/${id}`,
-  SALES_GET_ALL: `${API_BASE_URL}/api/sales`,
-};
+interface Customer {
+  _id: string;
+  customerName: string;
+  customerId?: string;
+  phoneNo: string;
+  email?: string;
+  cnicNo?: string;
+  address?: string;
+  city?: string;
+  province?: string;
+  amount: number;
+  amountPaid: number;
+}
 
 interface Purchase {
   _id: string;
@@ -162,7 +158,8 @@ export function AddSaleDialog({
     buyerEmail: "",
     buyerCnic: "",
     buyerCompany: "",
-    paymentMethod: "Cash",
+    paymentMethod: "cash",
+    customerId: "",
     paymentStatus: "none",
     amountPaid: "0",
     transportationCost: "0",
@@ -186,7 +183,13 @@ export function AddSaleDialog({
     price: string;
     quality: string;
     materialColor: string;
+    productionCost?: string | number;
+    weight?: number;
   } | null>(null);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [paymentType, setPaymentType] = useState<PaymentType>("cash");
   const [weightError, setWeightError] = useState<string>("");
   const [paymentStatusError, setPaymentStatusError] = useState<string>("");
   const [apiError, setApiError] = useState<string>("");
@@ -231,10 +234,26 @@ export function AddSaleDialog({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Fetch materials when dialog opens
+  const selectedCustomer = customers.find((c) => c._id === selectedCustomerId);
+  const customerBalance = selectedCustomer
+    ? Math.max(0, (selectedCustomer.amount || 0) - (selectedCustomer.amountPaid || 0))
+    : 0;
+  const costPerKg =
+    selectedMaterialInfo?.productionCost != null &&
+    selectedMaterialInfo?.weight != null &&
+    selectedMaterialInfo.weight > 0
+      ? (
+          parseFloat(String(selectedMaterialInfo.productionCost)) /
+          selectedMaterialInfo.weight
+        ).toFixed(2)
+      : null;
+  const currentUser = getCurrentUser();
+
+  // Fetch materials and customers when dialog opens
   useEffect(() => {
     if (open) {
       fetchMaterials();
+      fetchCustomers();
       
       if (isEdit && editData) {
         // Populate form for editing
@@ -254,6 +273,21 @@ export function AddSaleDialog({
       }
     }
   }, [open, isEdit, editData]);
+
+  useEffect(() => {
+    if (!isEdit || !editData || customers.length === 0) return;
+    const cid = (editData as Sale & { customerId?: string }).customerId;
+    if (cid && customers.some((c) => c._id === cid)) {
+      setSelectedCustomerId(cid);
+      return;
+    }
+    const match = customers.find(
+      (c) =>
+        c.customerName === editData.buyerName ||
+        c.phoneNo === editData.buyerPhone
+    );
+    if (match) setSelectedCustomerId(match._id);
+  }, [customers, isEdit, editData]);
 
   // Populate form for editing
   const populateEditForm = () => {
@@ -312,23 +346,38 @@ export function AddSaleDialog({
       buyerEmail: editData.buyerEmail || "",
       buyerCnic: editData.buyerCnic || "",
       buyerCompany: editData.buyerCompany || "",
-      paymentMethod: "Cash",
+      paymentMethod: (editData as Sale & { paymentMethod?: string }).paymentMethod?.toLowerCase() || "cash",
+      customerId: (editData as Sale & { customerId?: string }).customerId || "",
       paymentStatus: editData.paymentStatus || "none",
       amountPaid: editData.amountPaid?.toString() || "0",
       transportationCost: editData.transportationCost != null ? String(editData.transportationCost) : "0",
       notes: editData.notes || "",
     });
+
+    const pm = ((editData as Sale & { paymentMethod?: string }).paymentMethod || "cash").toLowerCase();
+    setPaymentType(
+      pm === "credit" || pm === "advance" || pm === "cash" ? (pm as PaymentType) : "cash"
+    );
+    const editCustomerId = (editData as Sale & { customerId?: string }).customerId;
+    if (editCustomerId) setSelectedCustomerId(editCustomerId);
     
     setSelectedColor(editData.materialColor || "#FFFFFF");
+    const editWeight = parseFloat(editData.weight) || 0;
+    const editProdCost = parseFloat(editData.productionCost) || 0;
     setSelectedMaterialInfo({
-      totalWeight: 0,
+      totalWeight: editWeight,
       availableWeight: 0,
       soldWeight: 0,
       vendor: editData.supplierName || "",
       price: editData.actualPrice || "0",
       quality: editData.quality || "Standard",
       materialColor: editData.materialColor || "#FFFFFF",
+      productionCost: editData.productionCost || undefined,
+      weight: editWeight > 0 ? editWeight : undefined,
     });
+    if (editProdCost > 0 && editWeight > 0) {
+      setFormData((prev) => ({ ...prev, productionCost: String(editProdCost) }));
+    }
     if (saleDateParsed) {
       setSelectedDate(saleDateParsed);
       setCurrentMonth(saleDateParsed.getMonth());
@@ -339,12 +388,70 @@ export function AddSaleDialog({
     }
   };
 
+  const fetchCustomers = async () => {
+    try {
+      setLoadingCustomers(true);
+      let response;
+      try {
+        response = await api.get("/api/customers");
+      } catch {
+        response = await api.get("/api/customers/getall-customers", { params: { limit: 500 } });
+      }
+      const list = response.data?.data || response.data?.customers || [];
+      setCustomers(Array.isArray(list) ? list : []);
+    } catch (error: any) {
+      console.error("Error fetching customers:", error);
+      setCustomers([]);
+    } finally {
+      setLoadingCustomers(false);
+    }
+  };
+
+  const handleCustomerSelect = (customerId: string) => {
+    setSelectedCustomerId(customerId);
+    const customer = customers.find((c) => c._id === customerId);
+    if (!customer) {
+      setFormData((prev) => ({
+        ...prev,
+        customerId: "",
+        buyerName: "",
+        buyerPhone: "",
+        buyerEmail: "",
+        buyerAddress: "",
+        buyerCnic: "",
+        buyerCompany: "",
+      }));
+      return;
+    }
+    setFormData((prev) => ({
+      ...prev,
+      customerId: customer._id,
+      buyerName: customer.customerName,
+      buyerPhone: customer.phoneNo || "",
+      buyerEmail: customer.email || "",
+      buyerAddress: customer.address || "",
+      buyerCnic: customer.cnicNo || "",
+      buyerCompany: customer.city || customer.province || "",
+    }));
+    if (errors.buyerName) setErrors((prev) => ({ ...prev, buyerName: "" }));
+  };
+
+  const handlePaymentTypeChange = (type: PaymentType) => {
+    setPaymentType(type);
+    setFormData((prev) => ({
+      ...prev,
+      paymentMethod: type,
+      amountPaid: type === "credit" ? "0" : prev.amountPaid,
+    }));
+    setPaymentStatusError("");
+  };
+
   // Fetch materials from Production List – aggregated by material+quality+color (total weight per option)
   const fetchMaterials = async () => {
     try {
       setLoadingMaterials(true);
       setApiError("");
-      const response = await api.get(API_ENDPOINTS.PRODUCTION_FOR_POS);
+      const response = await api.get("/api/processing/production/for-pos");
       let materialsData: any[] = [];
       if (response.data && response.data.success && Array.isArray(response.data.data)) {
         materialsData = response.data.data;
@@ -459,7 +566,7 @@ export function AddSaleDialog({
       const amountPaid = parseFloat(value) || 0;
       
       if (amountPaid > sellingPrice) {
-        setPaymentStatusError(`Warning: Amount paid (${amountPaid}) exceeds selling price (${sellingPrice})`);
+        setPaymentStatusError(`Warning: Received amount (${amountPaid}) exceeds selling price (${sellingPrice})`);
       } else {
         setPaymentStatusError("");
       }
@@ -482,6 +589,8 @@ export function AddSaleDialog({
     const totalWeight = parseFloat(selectedMaterial.weight) || 0;
     const availableWeight = selectedMaterial.availableWeight ?? totalWeight;
     const isAggregated = (selectedMaterial as { isAggregated?: boolean }).isAggregated === true;
+    const productionCost = (selectedMaterial as { totalProductionCost?: number; productionCost?: string }).totalProductionCost
+      ?? (selectedMaterial as { productionCost?: string }).productionCost;
     setSelectedMaterialInfo({
       totalWeight,
       availableWeight,
@@ -491,7 +600,15 @@ export function AddSaleDialog({
       price: selectedMaterial.price,
       quality: (selectedMaterial as { quality?: string }).quality || "Standard",
       materialColor: selectedMaterial.materialColor,
+      productionCost: productionCost ?? formData.productionCost,
+      weight: totalWeight > 0 ? totalWeight : undefined,
     });
+    if (productionCost != null) {
+      setFormData((prev) => ({
+        ...prev,
+        productionCost: String(productionCost),
+      }));
+    }
     setFormData(prev => ({ ...prev, weight: "" }));
     setWeightError("");
   };
@@ -648,9 +765,12 @@ export function AddSaleDialog({
     const amountPaid = parseFloat(fd.amountPaid) || 0;
     const sellingPrice = parseFloat(fd.sellingPrice.replace(/,/g, "")) || 0;
     if (amountPaid < 0) {
-      newErrors.amountPaid = "Amount paid cannot be negative";
+      newErrors.amountPaid = "Received amount cannot be negative";
     } else if (amountPaid > sellingPrice) {
-      newErrors.amountPaid = "Amount paid cannot exceed selling price";
+      newErrors.amountPaid = "Received amount cannot exceed selling price";
+    } else if (paymentType === "advance") {
+      const advance = parseFloat(fd.advancePayment) || 0;
+      if (advance < 0) newErrors.advancePayment = "Advance amount cannot be negative";
     }
 
     if (!fd.buyerName.trim()) newErrors.buyerName = "Customer name is required";
@@ -686,7 +806,12 @@ export function AddSaleDialog({
     const sellingPrice = parseFloat(fd.sellingPrice.replace(/,/g, "")) || 0;
 
     if (amountPaid > sellingPrice) {
-      alert(`Amount paid (${amountPaid}) cannot exceed selling price (${sellingPrice})`);
+      alert(`Received amount (${amountPaid}) cannot exceed selling price (${sellingPrice})`);
+      return;
+    }
+
+    if (paymentType === "credit" && !canApprove(currentUser.role) && amountPaid > 0) {
+      alert("Only Owner or Admin can record payment on credit sales.");
       return;
     }
 
@@ -734,8 +859,11 @@ export function AddSaleDialog({
       formDataToSend.append('sellingPrice', fd.sellingPrice);
       formDataToSend.append('sellingWeight', fd.weight);
       formDataToSend.append('saleDate', dateTime);
-      formDataToSend.append('paymentMethod', fd.paymentMethod);
+      formDataToSend.append('paymentMethod', fd.paymentMethod || paymentType);
       formDataToSend.append('amountPaid', fd.amountPaid);
+      if (fd.customerId) {
+        formDataToSend.append('customerId', fd.customerId);
+      }
       formDataToSend.append('invoiceNo', fd.invoiceNo);
       formDataToSend.append('transportationCost', fd.transportationCost);
       formDataToSend.append('notes', fd.notes);
@@ -763,21 +891,13 @@ export function AddSaleDialog({
 
       let response;
       if (isEdit && editData && editData._id) {
-        response = await axios.put(
-          API_ENDPOINTS.SALES_UPDATE(editData._id),
-          formDataToSend,
-          {
-            headers: { 'Content-Type': 'multipart/form-data' },
-          }
-        );
+        response = await api.put(`/api/sales/${editData._id}`, formDataToSend, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
       } else {
-        response = await axios.post(
-          API_ENDPOINTS.SALES_ADD,
-          formDataToSend,
-          {
-            headers: { 'Content-Type': 'multipart/form-data' },
-          }
-        );
+        response = await api.post('/api/sales/add-sale', formDataToSend, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
       }
       
       if (response.data.success) {
@@ -823,7 +943,8 @@ export function AddSaleDialog({
       buyerEmail: "",
       buyerCnic: "",
       buyerCompany: "",
-      paymentMethod: "Cash",
+      paymentMethod: "cash",
+      customerId: "",
       paymentStatus: "none",
       amountPaid: "0",
       transportationCost: "0",
@@ -833,6 +954,8 @@ export function AddSaleDialog({
     setSelectedColor("#FFFFFF");
     setSelectedDate(new Date());
     setSelectedMaterialInfo(null);
+    setSelectedCustomerId("");
+    setPaymentType("cash");
     setReceiptFile(null);
     setReceiptPreview(null);
     setWeightError("");
@@ -1093,7 +1216,7 @@ export function AddSaleDialog({
                 <Package className="w-4 h-4 text-blue-600" />
                 <h4 className="text-sm font-medium text-blue-800">Material Stock Information</h4>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className={`grid gap-3 ${costPerKg ? 'grid-cols-4' : 'grid-cols-3'}`}>
                 <div className="text-center p-2 bg-white rounded border">
                   <p className="text-xs text-gray-600">Total Weight</p>
                   <p className="text-lg font-bold text-gray-800">{selectedMaterialInfo.totalWeight} kg</p>
@@ -1106,6 +1229,12 @@ export function AddSaleDialog({
                   <p className="text-xs text-gray-600">Available for Sale</p>
                   <p className="text-lg font-bold text-green-600">{selectedMaterialInfo.availableWeight} kg</p>
                 </div>
+                {costPerKg && (
+                  <div className="text-center p-2 bg-white rounded border">
+                    <p className="text-xs text-gray-600">Cost per kg</p>
+                    <p className="text-lg font-bold text-indigo-700">Rs. {costPerKg}</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1329,29 +1458,35 @@ export function AddSaleDialog({
             </div>
           </div>
 
+          <div className="mb-4">
+            <label className="block text-xs text-muted-foreground mb-1.5">Payment Type</label>
+            <div className="flex rounded-md border border-border overflow-hidden w-fit">
+              {(["cash", "credit", "advance"] as PaymentType[]).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => handlePaymentTypeChange(type)}
+                  className={`px-4 py-2 text-sm font-medium capitalize transition-colors ${
+                    paymentType === type
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-cms-input-bg text-foreground hover:bg-muted"
+                  }`}
+                >
+                  {type === "cash" ? "Cash" : type === "credit" ? "Credit" : "Advance"}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Payment Method</label>
-              <select
-                name="paymentMethod"
-                value={formData.paymentMethod}
-                onChange={handleInputChange}
-                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="Cash">Cash</option>
-                <option value="Bank Transfer">Bank Transfer</option>
-                <option value="Credit Card">Credit Card</option>
-                <option value="Check">Check</option>
-                <option value="Online Payment">Online Payment</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Amount Paid *</label>
+              <label className="block text-xs text-muted-foreground mb-1.5">
+                Received {paymentType === "credit" ? "" : "*"}
+              </label>
               <input
                 type="number"
                 name="amountPaid"
-                placeholder="e.g 5000"
+                placeholder={paymentType === "credit" ? "0 for full credit" : "e.g 5000"}
                 value={formData.amountPaid}
                 onChange={handleInputChange}
                 min="0"
@@ -1361,7 +1496,32 @@ export function AddSaleDialog({
               {errors.amountPaid && (
                 <p className="text-xs text-red-500 mt-1">{errors.amountPaid}</p>
               )}
+              {paymentStatusError && (
+                <p className="text-xs text-amber-600 mt-1">{paymentStatusError}</p>
+              )}
+              {paymentType === "credit" && (
+                <p className="text-xs text-muted-foreground mt-1">Credit sales may have Rs. 0 received.</p>
+              )}
             </div>
+
+            {paymentType === "advance" && (
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Advance Amount</label>
+                <input
+                  type="number"
+                  name="advancePayment"
+                  placeholder="e.g 5000"
+                  value={formData.advancePayment}
+                  onChange={handleInputChange}
+                  min="0"
+                  step="0.01"
+                  className={`w-full bg-cms-input-bg border ${errors.advancePayment ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                />
+                {errors.advancePayment && (
+                  <p className="text-xs text-red-500 mt-1">{errors.advancePayment}</p>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Transportation Cost</label>
@@ -1395,22 +1555,6 @@ export function AddSaleDialog({
         <div className="mb-6">
           <h3 className="text-base font-semibold text-foreground mb-4">Price Details</h3>
           
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Advance Payment</label>
-              <input
-                type="number"
-                name="advancePayment"
-                placeholder="e.g 5000"
-                value={formData.advancePayment}
-                onChange={handleInputChange}
-                min="0"
-                step="0.01"
-                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-          </div>
-
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Selling Price *</label>
@@ -1447,7 +1591,7 @@ export function AddSaleDialog({
           {/* Payment Summary */}
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div className="bg-green-50 border border-green-200 rounded-md p-3">
-              <p className="text-xs text-green-700 mb-1">Amount Paid</p>
+              <p className="text-xs text-green-700 mb-1">Received</p>
               <p className="text-lg font-bold text-green-800">Rs. {parseFloat(formData.amountPaid || "0").toFixed(2)}</p>
             </div>
             <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
@@ -1567,17 +1711,36 @@ export function AddSaleDialog({
         {/* Customer Details Section */}
         <div className="mb-6">
           <h3 className="text-base font-semibold text-foreground mb-4">Customer Details</h3>
+          {selectedCustomer && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+              <p className="text-xs text-amber-800 mb-1">Customer Balance (outstanding)</p>
+              <p className="text-lg font-bold text-amber-900">
+                Rs. {customerBalance.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+              <p className="text-xs text-amber-700 mt-1">
+                Total: Rs. {(selectedCustomer.amount || 0).toLocaleString()} · Paid: Rs. {(selectedCustomer.amountPaid || 0).toLocaleString()}
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Customer Name *</label>
-              <input
-                type="text"
-                name="buyerName"
-                placeholder="e.g John Smith"
-                value={formData.buyerName}
-                onChange={handleInputChange}
-                className={`w-full bg-cms-input-bg border ${errors.buyerName ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-              />
+              <label className="block text-xs text-muted-foreground mb-1.5">Customer *</label>
+              <div className="relative">
+                <select
+                  value={selectedCustomerId}
+                  onChange={(e) => handleCustomerSelect(e.target.value)}
+                  className={`w-full bg-cms-input-bg border ${errors.buyerName ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary`}
+                  disabled={loadingCustomers}
+                >
+                  <option value="">{loadingCustomers ? "Loading customers..." : "Select customer"}</option>
+                  {customers.map((c) => (
+                    <option key={c._id} value={c._id}>
+                      {c.customerName} {c.phoneNo ? `— ${c.phoneNo}` : ""}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              </div>
               {errors.buyerName && (
                 <p className="text-xs text-red-500 mt-1">{errors.buyerName}</p>
               )}

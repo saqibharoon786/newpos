@@ -6,6 +6,7 @@ const Sale = require("../models/pos.model");
 const Employee = require("../models/employee.model");
 const Expense = require("../models/expense.model");
 const Asset = require('../models/assets.model');
+const { ProductionData } = require('../models/process.model');
 
 class DashboardController {
   // Get date range for period (daily, weekly, monthly, yearly). Optional year, month for custom month.
@@ -65,7 +66,9 @@ class DashboardController {
         allAssets,
         totalSalesRevenue,
         totalPurchaseCost,
-        totalExpensesAmount
+        totalExpensesAmount,
+        productionCostAgg,
+        wasteCostAgg
       ] = await Promise.all([
         // 1. Count purchases (in period)
         Purchase.countDocuments(purchaseMatch),
@@ -110,6 +113,12 @@ class DashboardController {
               total: { $sum: { $toDouble: '$price' } }
             }
           }
+        ]),
+        ProductionData.aggregate([
+          { $group: { _id: null, total: { $sum: { $ifNull: ['$totalProductionCost', 0] } } } }
+        ]),
+        ProductionData.aggregate([
+          { $group: { _id: null, total: { $sum: { $ifNull: ['$wasteCost', 0] } } } }
         ])
       ]);
 
@@ -130,19 +139,23 @@ class DashboardController {
       // Extract values from aggregation results
       const salesRevenue = totalSalesRevenue[0]?.total || 0;
       const purchaseCost = totalPurchaseCost[0]?.total || 0;
+      const productionCost = productionCostAgg[0]?.total || 0;
+      const wasteCost = wasteCostAgg[0]?.total || 0;
       const expensesAmount = totalExpensesAmount[0]?.total || 0;
+      const totalMaterialCost = purchaseCost + productionCost + wasteCost;
       
-      // CALCULATE PROFIT PROPERLY:
-      // Gross Profit = Sales Revenue - Purchase Cost
-      // Net Profit = Gross Profit - Expenses
-      const grossProfit = salesRevenue - purchaseCost;
+      // Gross Profit = Sales Revenue - (Raw Materials + Production + Wastage)
+      // Net Profit = Gross Profit - Kharcha Expenses
+      const grossProfit = salesRevenue - totalMaterialCost;
       const netProfit = grossProfit - expensesAmount;
 
       console.log('\n=== FINAL CALCULATIONS ===');
       console.log('Total Sales Revenue:', salesRevenue);
       console.log('Total Purchase Cost:', purchaseCost);
+      console.log('Production Cost:', productionCost);
+      console.log('Waste Cost:', wasteCost);
       console.log('Total Expenses:', expensesAmount);
-      console.log('Gross Profit (Sales - Cost):', grossProfit);
+      console.log('Gross Profit (Sales - Material/Production/Waste):', grossProfit);
       console.log('Net Profit (Gross - Expenses):', netProfit);
       console.log('Total Assets Value:', totalAssetValue);
 
@@ -198,11 +211,25 @@ class DashboardController {
           color: "green"
         },
         purchaseCost: {
-          title: "Purchase Cost",
-          value: purchaseCost,
-          formatted: `Rs. ${purchaseCost.toLocaleString()}`,
+          title: "Material Cost",
+          value: totalMaterialCost,
+          formatted: `Rs. ${totalMaterialCost.toLocaleString()}`,
           icon: "credit-card",
           color: "blue"
+        },
+        productionCost: {
+          title: "Production Cost",
+          value: productionCost,
+          formatted: `Rs. ${productionCost.toLocaleString()}`,
+          icon: "package",
+          color: "orange"
+        },
+        wasteCost: {
+          title: "Wastage Cost",
+          value: wasteCost,
+          formatted: `Rs. ${wasteCost.toLocaleString()}`,
+          icon: "trending-down",
+          color: "red"
         },
         expensesAmount: {
           title: "Expenses",
@@ -217,7 +244,7 @@ class DashboardController {
           formatted: `Rs. ${grossProfit.toLocaleString()}`,
           icon: "trending-up",
           color: "green",
-          calculation: "Sales - Cost"
+          calculation: "Sales - Material/Production/Wastage"
         },
         totalProfit: {
           title: "Net Profit",

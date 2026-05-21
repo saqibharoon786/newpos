@@ -118,6 +118,13 @@ const productionDataSchema = new mongoose.Schema(
       },
     ],
     notes: String,
+    productCode: { type: String },
+    bagSize: { type: Number },
+    wasteWeight: { type: Number, default: 0, min: 0 },
+    wasteCost: { type: Number, default: 0, min: 0 },
+    laborCostPerKg: { type: Number, default: 0, min: 0 },
+    materialCost: { type: Number, default: 0, min: 0 },
+    totalProductionCost: { type: Number, default: 0, min: 0 },
     weightUsedFromPOP: {
       type: Number,
       required: false,

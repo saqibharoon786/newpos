@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Printer, Circle, Scale, Palette, Building2, Award, IndianRupee, Calendar, Truck, Settings, User, CreditCard, ArrowLeft, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
+import { fetchCompanySettings, getLogoUrl } from "@/lib/companySettings";
 
 // Configure axios using environment variable
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
@@ -225,7 +226,9 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
     setImageLoading(false);
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    const settings = await fetchCompanySettings();
+    const logo = getLogoUrl(settings.logo);
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
     
@@ -396,8 +399,9 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
       <body>
         <div class="print-container">
           <div class="print-header">
-            <h1>Purchase Record Details</h1>
-            <div class="subtitle">Full details for the selected purchase transaction</div>
+            ${logo ? `<img src="${logo}" style="max-height:60px;margin-bottom:8px;" />` : ''}
+            <h1>${settings.companyName}</h1>
+            <div class="subtitle">Purchase Invoice — ${purchase?.invoiceNo || purchase?.receiptNo || 'N/A'}</div>
             <div class="print-badges">
               <span class="print-badge">ID: ${purchase?._id.substring(0, 8)}...</span>
               <span class="print-badge">Purchase Date: ${formatDate(purchase?.purchaseDate || '')}</span>
@@ -560,10 +564,10 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
   const formatCurrency = (amount: string) => {
     try {
       const numAmount = parseFloat(amount);
-      if (isNaN(numAmount)) return '₹0';
-      return `₹${numAmount.toLocaleString('en-IN')}`;
+      if (isNaN(numAmount)) return 'Rs. 0';
+      return `Rs. ${numAmount.toLocaleString('en-PK')}`;
     } catch (error) {
-      return `₹${amount}`;
+      return `Rs. ${amount}`;
     }
   };
 

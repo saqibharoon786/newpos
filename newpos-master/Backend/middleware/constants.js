@@ -17,6 +17,9 @@ const HTTP_STATUS = {
 const USER_ROLES = {
   ADMIN: "admin",
   RECEPTION: "reception",
+  ACCOUNTANT1: "accountant1",
+  ACCOUNTANT2: "accountant2",
+  OWNER: "owner",
 }
 
 // Member Status

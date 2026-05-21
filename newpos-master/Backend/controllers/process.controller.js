@@ -2,21 +2,58 @@ const mongoose = require("mongoose");
 const { ProcessingMaterial, ProductionData } = require("../models/process.model.js");
 const Purchase = require("../models/pop.model.js");
 const Employee = require("../models/employee.model.js");
+const { computeProductionCosts } = require("../utils/productionCost");
+
+function parsePurchaseDate(purchase) {
+  const d = purchase.purchaseDate;
+  if (!d) return purchase.createdAt || new Date();
+  if (d instanceof Date && !Number.isNaN(d.getTime())) return d;
+  if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}/.test(d)) {
+    const [y, m, day] = d.split(/[-T]/).map(Number);
+    return new Date(y, m - 1, day);
+  }
+  if (typeof d === "string" && /^\d{1,2}\/\d{1,2}\/\d{4}/.test(d)) {
+    const [dd, mm, yyyy] = d.split("/").map(Number);
+    return new Date(yyyy, mm - 1, dd);
+  }
+  const parsed = new Date(d);
+  return Number.isNaN(parsed.getTime()) ? purchase.createdAt || new Date() : parsed;
+}
+
+function formatProcessError(error) {
+  if (error.name === "ValidationError") {
+    return Object.values(error.errors)
+      .map((e) => e.message)
+      .join("; ");
+  }
+  if (error.name === "CastError") {
+    return `Invalid ${error.path}: ${error.value}`;
+  }
+  return error.message || "Failed to process";
+}
 
 // Get all processing materials from purchases
 const getProcessingMaterials = async (req, res) => {
   try {
-    const purchases = await Purchase.find({
-      status: "available",
-      remainingWeight: { $gt: 0 }
-    }).sort({ purchaseDate: -1 });
+    const purchases = await Purchase.find().sort({ createdAt: -1 });
+    const eligiblePurchases = purchases.filter((purchase) => {
+      const originalWeight = parseFloat(purchase.weight) || 0;
+      const sold = parseFloat(purchase.soldWeight) || 0;
+      const consumed = parseFloat(purchase.productionConsumedWeight) || 0;
+      return originalWeight - sold - consumed > 0;
+    });
 
-    const processingMaterials = await Promise.all(purchases.map(async (purchase) => {
+    const processingMaterials = await Promise.all(eligiblePurchases.map(async (purchase) => {
       const existingMaterial = await ProcessingMaterial.findOne({ purchaseId: purchase._id });
       
       if (existingMaterial) {
         return existingMaterial;
       }
+
+      const originalWeight = parseFloat(purchase.weight) || 0;
+      const sold = parseFloat(purchase.soldWeight) || 0;
+      const consumed = parseFloat(purchase.productionConsumedWeight) || 0;
+      const availableForProcessing = Math.max(0, originalWeight - sold - consumed);
 
       // Create new processing material from purchase
       const newMaterial = new ProcessingMaterial({
@@ -25,10 +62,10 @@ const getProcessingMaterials = async (req, res) => {
         materialName: purchase.materialName || "Unknown",
         quality: purchase.quality || "Unknown",
         color: purchase.materialColor || "#FFFFFF",
-        originalWeight: parseFloat(purchase.weight) || 0,
-        availableWeight: purchase.remainingWeight || parseFloat(purchase.weight) || 0,
+        originalWeight,
+        availableWeight: availableForProcessing,
         vendor: purchase.vendor || "Unknown",
-        purchaseDate: purchase.purchaseDate || purchase.createdAt,
+        purchaseDate: parsePurchaseDate(purchase),
         status: "pending",
       });
 
@@ -73,17 +110,19 @@ const updateMaterialStatus = async (req, res) => {
         });
       }
 
+      const originalWeight = parseFloat(purchase.weight) || 0;
+      const sold = parseFloat(purchase.soldWeight) || 0;
+      const consumed = parseFloat(purchase.productionConsumedWeight) || 0;
       material = await ProcessingMaterial.create({
         purchaseId: purchase._id,
         receiptNo: purchase.receiptNo || "N/A",
         materialName: purchase.materialName || "Unknown",
         quality: purchase.quality || "Unknown",
         color: purchase.materialColor || "#FFFFFF",
-        originalWeight: parseFloat(purchase.weight) || 0,
-        availableWeight:
-          purchase.remainingWeight || parseFloat(purchase.weight) || 0,
+        originalWeight,
+        availableWeight: Math.max(0, originalWeight - sold - consumed),
         vendor: purchase.vendor || "Unknown",
-        purchaseDate: purchase.purchaseDate || purchase.createdAt,
+        purchaseDate: parsePurchaseDate(purchase),
         status: "pending",
       });
     }
@@ -125,7 +164,48 @@ const updateMaterialStatus = async (req, res) => {
 // Create production record (used by /production)
 const createProductionRecord = async (req, res) => {
   try {
-    const productionData = req.body;
+    const productionData = { ...req.body };
+    const totalWeight = parseFloat(
+      productionData.totalWeight ?? productionData.outputWeight ?? productionData.machineOutputWeight
+    );
+    const totalBags = parseInt(productionData.totalBags, 10);
+
+    if (!productionData.materialName?.trim()) {
+      return res.status(400).json({ success: false, message: "Material name is required" });
+    }
+    if (!productionData.color?.trim()) {
+      productionData.color = "#FFFFFF";
+    }
+    if (!productionData.quality?.trim()) {
+      productionData.quality = "Standard";
+    }
+    if (!productionData.machine || !["machine_1", "machine_2", "machine_3", "machine_4", "machine_5"].includes(productionData.machine)) {
+      return res.status(400).json({ success: false, message: "Please select a valid machine" });
+    }
+    if (!["morning", "evening", "night"].includes(productionData.shift)) {
+      return res.status(400).json({ success: false, message: "Please select a valid shift" });
+    }
+    if (!totalWeight || totalWeight <= 0) {
+      return res.status(400).json({ success: false, message: "Machine output weight must be greater than 0" });
+    }
+    if (!totalBags || totalBags < 1) {
+      return res.status(400).json({ success: false, message: "Number of bags must be at least 1" });
+    }
+    if (!Array.isArray(productionData.employees) || productionData.employees.length === 0) {
+      return res.status(400).json({ success: false, message: "Please select at least one employee" });
+    }
+
+    productionData.employees = productionData.employees
+      .filter((e) => e?.employeeId && mongoose.Types.ObjectId.isValid(e.employeeId))
+      .map((e) => ({
+        employeeId: e.employeeId,
+        name: e.name || "",
+        department: e.department || "",
+      }));
+
+    if (productionData.employees.length === 0) {
+      return res.status(400).json({ success: false, message: "Invalid employee selection — please re-select employees" });
+    }
     const purchaseId = productionData.purchaseId;
     const weightUsedFromPOP = productionData.weightUsedFromPOP != null ? parseFloat(productionData.weightUsedFromPOP) : null;
     const groupPurchases = productionData.groupPurchases || null; // [{ purchaseId, availableWeight }, ...] for allocating across receipts
@@ -173,7 +253,6 @@ const createProductionRecord = async (req, res) => {
       }
     }
 
-    const totalWeight = productionData.totalWeight ?? productionData.outputWeight ?? productionData.machineOutputWeight ?? 0;
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, "0");
@@ -188,6 +267,29 @@ const createProductionRecord = async (req, res) => {
       productionDateValue = new Date(y, m - 1, d);
     }
 
+    const wasteWeight = parseFloat(productionData.wasteWeight) || 0;
+    const laborCostPerKg = parseFloat(productionData.laborCostPerKg) || 0;
+    let purchasePrice = 0;
+    let purchaseWeight = 0;
+    if (purchaseId) {
+      const pop = await Purchase.findById(purchaseId).lean();
+      if (pop) {
+        purchasePrice = parseFloat(pop.price) || 0;
+        purchaseWeight = parseFloat(pop.weight) || 0;
+      }
+    }
+    const costs = computeProductionCosts({
+      purchasePrice,
+      purchaseWeight,
+      weightUsedFromPOP: weightUsedFromPOP || 0,
+      outputWeight: totalWeight,
+      wasteWeight,
+      wasteCost: productionData.wasteCost,
+      laborCostPerKg,
+      materialCost: productionData.materialCost,
+    });
+    const { materialCost, wasteCost, totalProductionCost } = costs;
+
     const record = new ProductionData({
       ...productionData,
       batchNo,
@@ -195,6 +297,11 @@ const createProductionRecord = async (req, res) => {
       availableWeight: productionData.availableWeight ?? totalWeight,
       weightUsedFromPOP: weightUsedFromPOP || 0,
       purchaseId: purchaseId || undefined,
+      wasteWeight,
+      wasteCost,
+      laborCostPerKg,
+      materialCost,
+      totalProductionCost,
     });
 
     await record.save();
@@ -210,9 +317,10 @@ const createProductionRecord = async (req, res) => {
       data: populatedRecord,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("createProductionRecord error:", error);
+    res.status(error.name === "ValidationError" || error.name === "CastError" ? 400 : 500).json({
       success: false,
-      message: "Failed to create production record",
+      message: formatProcessError(error),
       error: error.message,
     });
   }
@@ -275,9 +383,10 @@ const createProductionFromBatch = async (req, res) => {
       data: populatedRecord,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("createProductionFromBatch error:", error);
+    res.status(error.name === "ValidationError" || error.name === "CastError" ? 400 : 500).json({
       success: false,
-      message: "Failed to create production record from batch",
+      message: formatProcessError(error),
       error: error.message,
     });
   }
@@ -327,6 +436,18 @@ const getProductionData = async (req, res) => {
       .limit(parseInt(limit))
       .skip((parseInt(page) - 1) * parseInt(limit));
 
+    const purchaseIds = [
+      ...new Set(
+        productionDocs
+          .filter((d) => d.purchaseId && (!d.totalProductionCost || d.totalProductionCost <= 0))
+          .map((d) => String(d.purchaseId))
+      ),
+    ];
+    const purchaseDocs = purchaseIds.length
+      ? await Purchase.find({ _id: { $in: purchaseIds } }).lean()
+      : [];
+    const purchaseById = Object.fromEntries(purchaseDocs.map((p) => [String(p._id), p]));
+
     const total = await ProductionData.countDocuments(query);
 
     // Calculate summary metrics
@@ -345,6 +466,37 @@ const getProductionData = async (req, res) => {
     // Map to shape expected by frontend ProductionHistory table
     const data = productionDocs.map((doc) => {
       const avail = doc.availableWeight ?? doc.totalWeight ?? 0;
+      const pop = doc.purchaseId ? purchaseById[String(doc.purchaseId)] : null;
+      let materialCost = doc.materialCost || 0;
+      let wasteCost = doc.wasteCost || 0;
+      let totalProductionCost = doc.totalProductionCost || 0;
+      if (!totalProductionCost && pop) {
+        const computed = computeProductionCosts({
+          purchasePrice: parseFloat(pop.price) || 0,
+          purchaseWeight: parseFloat(pop.weight) || 0,
+          weightUsedFromPOP: doc.weightUsedFromPOP || 0,
+          outputWeight: doc.totalWeight || 0,
+          wasteWeight: doc.wasteWeight || 0,
+          wasteCost: doc.wasteCost,
+          laborCostPerKg: doc.laborCostPerKg || 0,
+          materialCost: doc.materialCost,
+        });
+        materialCost = computed.materialCost;
+        wasteCost = computed.wasteCost;
+        totalProductionCost = computed.totalProductionCost;
+      } else if (!totalProductionCost) {
+        const computed = computeProductionCosts({
+          outputWeight: doc.totalWeight || 0,
+          weightUsedFromPOP: doc.weightUsedFromPOP || 0,
+          wasteWeight: doc.wasteWeight || 0,
+          wasteCost: doc.wasteCost,
+          laborCostPerKg: doc.laborCostPerKg || 0,
+          materialCost: doc.materialCost,
+        });
+        materialCost = computed.materialCost;
+        wasteCost = computed.wasteCost;
+        totalProductionCost = computed.totalProductionCost;
+      }
       return {
         _id: doc._id,
         batchId: doc._id,
@@ -355,8 +507,18 @@ const getProductionData = async (req, res) => {
         outputWeight: doc.totalWeight,
         availableWeight: avail,
         weightUsedFromPOP: doc.weightUsedFromPOP || 0,
-        wasteWeight: 0,
-        efficiency: 0,
+        wasteWeight: doc.wasteWeight || 0,
+        wasteCost,
+        laborCostPerKg: doc.laborCostPerKg || 0,
+        materialCost,
+        totalProductionCost,
+        purchasePrice: pop ? parseFloat(pop.price) || 0 : undefined,
+        purchaseWeight: pop ? parseFloat(pop.weight) || 0 : undefined,
+        vendor: pop?.vendor,
+        receiptNo: pop?.receiptNo || pop?.invoiceNo,
+        efficiency: doc.totalWeight
+          ? Math.round(((doc.totalWeight - (doc.wasteWeight || 0)) / doc.totalWeight) * 100)
+          : 0,
         productionDate: doc.productionDate,
         purchaseId: doc.purchaseId || null,
         operator:

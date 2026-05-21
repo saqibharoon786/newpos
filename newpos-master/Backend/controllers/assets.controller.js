@@ -1,5 +1,7 @@
 const multer = require('multer');
 const Asset = require('../models/assets.model');
+const Transaction = require('../models/transaction.model');
+const Employee = require('../models/employee.model');
 
 // @desc    Create a new asset
 // @route   POST /api/assets
@@ -28,7 +30,11 @@ exports.createAsset = async (req, res) => {
       purchaseFrom,
       invoiceNo,
       purchaseDate,  // ✅ Changed from 'date' to 'purchaseDate' to match frontend
-      purchaseTime   // ✅ Changed from 'time' to 'purchaseTime' to match frontend
+      purchaseTime,
+      paymentMethod,
+      accountType,
+      employeeId,
+      employeeName,
     } = req.body;
 
     console.log('📝 Parsed FormData fields:', {
@@ -119,15 +125,50 @@ exports.createAsset = async (req, res) => {
       purchaseDate: parsedPurchaseDate,  // ✅ Use the parsed date
       purchaseTime: purchaseTime || null,
       receiptImage: receiptImagePath,
-      status: 'Active'
+      status: 'Active',
+      paymentMethod: paymentMethod || 'drawer',
+      accountType: accountType || 'fixed_asset',
     };
+
+    if (accountType === 'advance_to_employee' && employeeId) {
+      const emp = await Employee.findById(employeeId);
+      assetData.employeeAdvances = [{
+        employeeId,
+        employeeName: employeeName || emp?.name || 'Employee',
+        amount: parsedPurchasePrice || 0,
+        notes: description || 'Advance',
+      }];
+      if (emp && parsedPurchasePrice) {
+        emp.advancePayment = (emp.advancePayment || 0) + parsedPurchasePrice;
+        await emp.save();
+      }
+    }
 
     console.log('📤 Final asset data to save:', {
       ...assetData,
       purchaseDate: assetData.purchaseDate.toISOString()
     });
 
-    // ✅ Create the asset
+    const method = (paymentMethod || 'drawer').replace('cash', 'drawer');
+    if (parsedPurchasePrice > 0 && ['drawer', 'bank', 'easypaisa', 'jazzcash'].includes(method)) {
+      const balances = await Transaction.getBalances();
+      if ((balances[method] || 0) < parsedPurchasePrice) {
+        return res.status(400).json({
+          success: false,
+          error: `Insufficient ${method} balance`,
+        });
+      }
+      await Transaction.create({
+        type: 'withdraw',
+        method,
+        amount: parsedPurchasePrice,
+        net: parsedPurchasePrice,
+        description: `Asset: ${assetName}`,
+        reference: invoiceNo || `AST-${Date.now()}`,
+        status: 'completed',
+      });
+    }
+
     const asset = await Asset.create(assetData);
 
     console.log('✅ Asset created successfully:', {

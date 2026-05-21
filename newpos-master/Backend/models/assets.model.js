@@ -50,9 +50,28 @@ const assetSchema = new mongoose.Schema({
     default: 'Active'
   },
   receiptImage: {
-    type: String, // This will store the image URL or Base64 string
+    type: String,
     default: null
-  }
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['drawer', 'bank', 'easypaisa', 'jazzcash', 'cash'],
+    default: 'drawer',
+  },
+  accountType: {
+    type: String,
+    enum: ['fixed_asset', 'advance_to_employee', 'other'],
+    default: 'fixed_asset',
+  },
+  employeeAdvances: [
+    {
+      employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
+      employeeName: String,
+      amount: { type: Number, default: 0 },
+      date: { type: Date, default: Date.now },
+      notes: String,
+    },
+  ],
 }, {
   timestamps: true
 });

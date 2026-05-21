@@ -3,9 +3,30 @@ const { computePurchasePayment } = require('../utils/purchasePayment');
 
 const purchaseSchema = new mongoose.Schema(
   {
+    invoiceNo: { type: String, unique: true, sparse: true },
+    billNo: { type: String },
     materialName: { type: String, required: true },
     vendor: { type: String, required: true },
+    vendorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor' },
     price: { type: String, required: true },
+    approvalStatus: {
+      type: String,
+      enum: ['draft', 'pending', 'approved', 'rejected'],
+      default: 'pending',
+    },
+    createdBy: { type: String },
+    approvedBy: { type: String },
+    approvedAt: { type: Date },
+    paymentMethod: { type: String, default: 'cash' },
+    materials: [
+      {
+        name: String,
+        weight: Number,
+        pricePerKg: Number,
+        totalAmount: Number,
+        productCode: String,
+      },
+    ],
     weight: { type: String, required: true }, // Original total weight
     soldWeight: { type: Number, default: 0 }, // Total weight sold so far
     remainingWeight: { type: Number }, // Calculated: weight - soldWeight

@@ -2,69 +2,16 @@ import { useState, useEffect, useRef } from "react";
 import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package, ChevronDown, CheckCircle, DollarSign, History, Wallet, Smartphone, Building, Download, FileText } from "lucide-react";
 import { PurchaseDetailsView } from "./PurchaseDetailsView";
 import { toast } from "@/hooks/use-toast";
-import axios from "axios";
-import { exportAsCsv, exportAsExcelTable, exportAsWordTable, inDateRange, toYmd } from "@/lib/exportUtils";
-
-// Configure axios with environment variable
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-
-// Create axios instance with base URL
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-});
+import api, { API_BASE_URL } from "@/lib/api";
+import { canApprove, getCurrentUser } from "@/lib/auth";
+import { PRODUCT_CODES, getMaterialNameForCode } from "@/lib/productCodes";
+import { exportAsCsv, exportAsExcelTable, exportAsWordTable, exportAsPdf, inDateRange, toYmd } from "@/lib/exportUtils";
+import { getPurchaseTotalPaid, getPurchaseRemainingAmount, getPurchasePaidStatus, getPurchasePrice } from "@/lib/purchasePayment";
+import { fetchCompanySettings, getLogoUrl } from "@/lib/companySettings";
 
 // API endpoints
 const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
 const FINANCE_API_URL = `${API_BASE_URL}/api/finance`;
-
-/** Total paid = advance + amount paid at purchase (+ later payments stored in amountPaid). */
-const getPurchaseTotalPaid = (purchase: {
-  price?: number | string;
-  advancePayment?: number;
-  amountPaid?: number;
-  totalPaid?: number;
-}) => {
-  const storedTotal = Number(purchase.totalPaid);
-  if (
-    purchase.totalPaid != null &&
-    !Number.isNaN(storedTotal) &&
-    storedTotal > 0
-  ) {
-    return storedTotal;
-  }
-  const advance = Number(purchase.advancePayment) || 0;
-  const paid = Number(purchase.amountPaid) || 0;
-  const price = typeof purchase.price === "number"
-    ? purchase.price
-    : parseFloat(String(purchase.price || 0)) || 0;
-
-  if (paid > advance) return paid;
-  if (advance > 0 && paid === advance && paid > 0 && paid < price) return advance;
-  return advance + paid;
-};
-
-const getPurchasePrice = (purchase: { price?: number | string }) =>
-  typeof purchase.price === "number"
-    ? purchase.price
-    : parseFloat(String(purchase.price || 0)) || 0;
-
-const getPurchaseRemainingAmount = (purchase: {
-  price?: number | string;
-  advancePayment?: number;
-  amountPaid?: number;
-  totalPaid?: number;
-}) => Math.max(0, getPurchasePrice(purchase) - getPurchaseTotalPaid(purchase));
-
-const getPurchasePaidStatus = (
-  purchase: { price?: number | string; advancePayment?: number; amountPaid?: number; totalPaid?: number }
-): "none" | "partial" | "paid" => {
-  const price = getPurchasePrice(purchase);
-  const totalPaid = getPurchaseTotalPaid(purchase);
-  if (totalPaid <= 0) return "none";
-  if (totalPaid >= price) return "paid";
-  return "partial";
-};
 
 // Finance API functions with all payment methods
 const financeApi = {
@@ -151,6 +98,39 @@ const financeApi = {
   }
 };
 
+interface PurchaseMaterial {
+  name: string;
+  weight: number;
+  pricePerKg: number;
+  totalAmount: number;
+  productCode: string;
+}
+
+interface VendorOption {
+  _id: string;
+  name: string;
+}
+
+interface MaterialCatalogItem {
+  _id: string;
+  name: string;
+  productCode?: string;
+  defaultPricePerKg?: number;
+}
+
+interface PurchaseMaterialRow {
+  name: string;
+  weight: string;
+  pricePerKg: string;
+  productCode: string;
+}
+
+interface VendorBalance {
+  payableBalance: number;
+  advanceBalance: number;
+  netBalance?: number;
+}
+
 interface Purchase {
   _id: string;
   materialName: string;
@@ -162,6 +142,8 @@ interface Purchase {
   quality: string;
   purchaseDate: string;
   purchaseTime?: string;
+  approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
+  materials?: PurchaseMaterial[];
   materialColor: string;
   vehicleName: string;
   vehicleType: string;
@@ -2605,7 +2587,13 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     vehicleImage: null as File | null,
   });
 
-  const [selectedMaterialColor, setSelectedMaterialColor] = useState("#FFFFFF");
+  const [materialCatalog, setMaterialCatalog] = useState<MaterialCatalogItem[]>([]);
+  const [vendorBalance, setVendorBalance] = useState<VendorBalance | null>(null);
+  const [loadingVendorBalance, setLoadingVendorBalance] = useState(false);
+  const [materialRows, setMaterialRows] = useState<PurchaseMaterialRow[]>([
+    { name: "", weight: "", pricePerKg: "", productCode: "" },
+    { name: "", weight: "", pricePerKg: "", productCode: "" },
+  ]);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -2622,6 +2610,61 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     bank: 0,
   });
   const [checkingBalance, setCheckingBalance] = useState<boolean>(false);
+
+  const fetchVendorBalance = async (vendorName: string) => {
+    if (!vendorName.trim()) {
+      setVendorBalance(null);
+      return;
+    }
+    setLoadingVendorBalance(true);
+    try {
+      const response = await api.get(`/api/purchases/vendor/${encodeURIComponent(vendorName)}/balance`);
+      if (response.data.success) {
+        setVendorBalance(response.data.data);
+      } else {
+        setVendorBalance(null);
+      }
+    } catch (error) {
+      console.error("Failed to fetch vendor balance:", error);
+      setVendorBalance(null);
+    } finally {
+      setLoadingVendorBalance(false);
+    }
+  };
+
+  const fetchMaterialCatalog = async () => {
+    try {
+      const materialsRes = await api.get("/api/materials");
+      if (materialsRes.data.success) {
+        setMaterialCatalog(materialsRes.data.data || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch materials:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (open) {
+      fetchMaterialCatalog();
+    }
+  }, [open]);
+
+  useEffect(() => {
+    const validRows = materialRows.filter((r) => r.name.trim());
+    if (validRows.length === 0) return;
+    const totalWeight = validRows.reduce((s, r) => s + (parseFloat(r.weight) || 0), 0);
+    const totalPrice = validRows.reduce(
+      (s, r) => s + (parseFloat(r.weight) || 0) * (parseFloat(r.pricePerKg) || 0),
+      0
+    );
+    const names = validRows.map((r) => r.name.trim()).join(", ");
+    setFormData((prev) => ({
+      ...prev,
+      materialName: names,
+      weight: totalWeight > 0 ? String(totalWeight) : prev.weight,
+      price: totalPrice > 0 ? String(totalPrice) : prev.price,
+    }));
+  }, [materialRows]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -2777,8 +2820,27 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           paymentMethod: "cash",
           vehicleImage: null,
         });
-        
-        setSelectedMaterialColor(editData.materialColor || "#FFFFFF");
+
+        if (editData.materials?.length) {
+          setMaterialRows(
+            editData.materials.map((m) => ({
+              name: m.name || "",
+              weight: m.weight != null ? String(m.weight) : "",
+              pricePerKg: m.pricePerKg != null ? String(m.pricePerKg) : "",
+              productCode: m.productCode || "",
+            }))
+          );
+        } else {
+          setMaterialRows([
+            { name: editData.materialName || "", weight: editData.weight != null ? String(editData.weight) : "", pricePerKg: "", productCode: "" },
+            { name: "", weight: "", pricePerKg: "", productCode: "" },
+          ]);
+        }
+        if (editData.vendor) {
+          fetchVendorBalance(editData.vendor);
+        } else {
+          setVendorBalance(null);
+        }
         
         if (purchaseDateParsed) {
           setSelectedPurchaseDate(purchaseDateParsed);
@@ -2951,31 +3013,45 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-    
-    if (!formData.materialName.trim()) newErrors.materialName = "Material name is required";
-    if (!formData.vendor.trim()) newErrors.vendor = "Vendor is required";
+    const validMaterials = materialRows.filter((r) => r.name.trim());
+    if (validMaterials.length === 0) {
+      newErrors.materialName = "Add at least one material name";
+    }
+    if (!formData.vendor.trim()) newErrors.vendor = "Vendor name is required";
     if (!formData.price || parseFloat(formData.price) <= 0) newErrors.price = "Valid price is required";
     if (!formData.weight || parseFloat(formData.weight) <= 0) newErrors.weight = "Valid weight is required";
     if (!formData.quality) newErrors.quality = "Quality is required";
     if (!formData.purchaseDate) newErrors.purchaseDate = "Purchase date is required";
     if (!formData.purchaseTime) newErrors.purchaseTime = "Purchase time is required";
-    if (!formData.vehicleName.trim()) newErrors.vehicleName = "Vehicle name is required";
-    if (!formData.vehicleType.trim()) newErrors.vehicleType = "Vehicle type is required";
-    if (!formData.vehicleNumber.trim()) newErrors.vehicleNumber = "Vehicle number is required";
-    if (!formData.driverName.trim()) newErrors.driverName = "Driver name is required";
-    if (!formData.vehicleColor.trim()) newErrors.vehicleColor = "Vehicle color is required";
-    if (!formData.deliveryDate) newErrors.deliveryDate = "Delivery date is required";
-    if (!formData.deliveryTime) newErrors.deliveryTime = "Delivery time is required";
-    if (!formData.receiptNo.trim()) newErrors.receiptNo = "Receipt number is required";
+    // Vehicle details are optional per business requirements
     
+    const priceNum = parseFloat(formData.price) || 0;
+    const advanceNum = parseFloat(formData.advancePayment) || 0;
+    const amountPaidNum = parseFloat(formData.amountPaid) || 0;
+    const totalPaidNum = advanceNum + amountPaidNum;
+
     if (formData.advancePayment && isNaN(Number(formData.advancePayment))) {
       newErrors.advancePayment = "Advance payment must be a valid number";
+    } else if (advanceNum < 0) {
+      newErrors.advancePayment = "Advance payment cannot be negative";
+    } else if (priceNum > 0 && advanceNum > priceNum) {
+      newErrors.advancePayment = `Advance cannot exceed total price (Rs. ${priceNum.toLocaleString()})`;
     }
-    
+
     if (formData.amountPaid && isNaN(Number(formData.amountPaid))) {
       newErrors.amountPaid = "Amount paid must be a valid number";
+    } else if (amountPaidNum < 0) {
+      newErrors.amountPaid = "Amount paid cannot be negative";
+    } else if (priceNum > 0 && amountPaidNum > priceNum) {
+      newErrors.amountPaid = `Amount paid cannot exceed total price (Rs. ${priceNum.toLocaleString()})`;
     }
-    
+
+    if (priceNum > 0 && totalPaidNum > priceNum) {
+      const msg = `Total payment (Rs. ${totalPaidNum.toLocaleString()}) cannot exceed price (Rs. ${priceNum.toLocaleString()})`;
+      newErrors.amountPaid = newErrors.amountPaid || msg;
+      if (!newErrors.advancePayment) newErrors.advancePayment = msg;
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -2986,6 +3062,39 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
     }
+  };
+
+  const handleVendorBlur = () => {
+    if (formData.vendor.trim()) {
+      fetchVendorBalance(formData.vendor.trim());
+    } else {
+      setVendorBalance(null);
+    }
+  };
+
+  const updateMaterialRow = (index: number, field: keyof PurchaseMaterialRow, value: string) => {
+    setMaterialRows((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      if (field === "productCode" && value) {
+        const materialName = getMaterialNameForCode(value);
+        if (materialName) {
+          next[index].name = materialName;
+        }
+      }
+      return next;
+    });
+    if (errors.materialName) {
+      setErrors((prev) => ({ ...prev, materialName: "" }));
+    }
+  };
+
+  const addMaterialRow = () => {
+    setMaterialRows(prev => [...prev, { name: "", weight: "", pricePerKg: "", productCode: "" }]);
+  };
+
+  const removeMaterialRow = (index: number) => {
+    setMaterialRows(prev => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
   };
 
   const handleQualityChange = (quality: string) => {
@@ -3076,6 +3185,35 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
 
       const totalAmountPaid = advancePaymentNum + amountPaidNum;
       const remainingAmount = priceNum - totalAmountPaid;
+
+      if (totalAmountPaid > priceNum) {
+        toast({
+          title: "Payment exceeds price",
+          description: `Total payment Rs. ${totalAmountPaid.toLocaleString()} is more than purchase price Rs. ${priceNum.toLocaleString()}. Record cannot be saved.`,
+          variant: "destructive",
+        });
+        setErrors((prev) => ({
+          ...prev,
+          amountPaid: `Cannot pay more than Rs. ${priceNum.toLocaleString()}`,
+        }));
+        setIsSubmitting(false);
+        return;
+      }
+
+      const financeMethod = getFinanceMethod(formData.paymentMethod);
+      const shouldCheckBalance = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
+      if (shouldCheckBalance && amountPaidNum > 0) {
+        const currentBalance = getCurrentBalance();
+        if (amountPaidNum > currentBalance) {
+          toast({
+            title: "Insufficient Balance",
+            description: `${financeApi.getMethodLabel(financeMethod)} has Rs. ${currentBalance.toLocaleString()}. Cannot pay Rs. ${amountPaidNum.toLocaleString()}.`,
+            variant: "destructive",
+          });
+          setIsSubmitting(false);
+          return;
+        }
+      }
       
       let paidAmount: 'none' | 'partial' | 'paid' = 'none';
       if (totalAmountPaid >= priceNum) {
@@ -3091,7 +3229,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         weight: formData.weight,
         quality: formData.quality,
         purchaseDate: purchaseDateTime,
-        materialColor: selectedMaterialColor,
+        materialColor: formData.materialColor || "#FFFFFF",
         vehicleName: formData.vehicleName,
         vehicleType: formData.vehicleType,
         vehicleNumber: formData.vehicleNumber,
@@ -3099,6 +3237,8 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         vehicleColor: formData.vehicleColor,
         deliveryDate: deliveryDateTime,
         receiptNo: formData.receiptNo,
+        billNo: formData.receiptNo,
+        paymentMethod: formData.paymentMethod,
         advancePayment: advancePaymentNum,
         amountPaid: amountPaidNum,
         paidAmount: paidAmount,
@@ -3117,10 +3257,25 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         formDataToSend.append('vehicleImage', formData.vehicleImage);
       }
 
+      const materialsPayload = materialRows
+        .filter((row) => row.name.trim())
+        .map((row) => {
+          const weight = parseFloat(row.weight) || 0;
+          const pricePerKg = parseFloat(row.pricePerKg) || 0;
+          return {
+            name: row.name.trim(),
+            weight,
+            pricePerKg,
+            totalAmount: weight * pricePerKg,
+            productCode: row.productCode,
+          };
+        });
+      formDataToSend.append('materials', JSON.stringify(materialsPayload));
+
       let response;
       if (isEdit && editData && editData._id) {
         response = await api.put(
-          `${PURCHASES_API_URL}/${editData._id}`,
+          `/api/purchases/${editData._id}`,
           formDataToSend,
           {
             headers: {
@@ -3130,7 +3285,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         );
       } else {
         response = await api.post(
-          `${PURCHASES_API_URL}/add`,
+          `/api/purchases/add`,
           formDataToSend,
           {
             headers: {
@@ -3141,40 +3296,6 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       }
       
       if (response.data.success) {
-        if (totalAmountPaid > 0) {
-          const financeMethod = getFinanceMethod(formData.paymentMethod);
-          const currentBalance = getCurrentBalance();
-          
-          const shouldUpdateFinance = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
-          
-          if (shouldUpdateFinance && totalAmountPaid <= currentBalance) {
-            try {
-              await financeApi.updateBalance(
-                financeMethod,
-                totalAmountPaid,
-                `Initial payment for Purchase #${formData.receiptNo} - ${formData.materialName}`
-              );
-              toast({
-                title: "Finance Updated",
-                description: `Rs. ${totalAmountPaid.toLocaleString()} deducted from ${financeApi.getMethodLabel(financeMethod)}`,
-              });
-            } catch (financeError: any) {
-              console.error("Failed to update finance:", financeError);
-              toast({
-                title: "Warning",
-                description: `Purchase saved but failed to update ${financeApi.getMethodLabel(financeMethod)} balance`,
-                variant: "destructive",
-              });
-            }
-          } else if (shouldUpdateFinance && totalAmountPaid > currentBalance) {
-            toast({
-              title: "Warning",
-              description: `Purchase saved but ${financeApi.getMethodLabel(financeMethod)} has insufficient balance (Rs. ${currentBalance.toLocaleString()})`,
-              variant: "destructive",
-            });
-          }
-        }
-        
         if (totalAmountPaid > 0) {
           const initialPayment: PaymentHistory = {
             _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -3276,7 +3397,11 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       vehicleImage: null,
     });
     
-    setSelectedMaterialColor("#FFFFFF");
+    setVendorBalance(null);
+    setMaterialRows([
+      { name: "", weight: "", pricePerKg: "", productCode: "" },
+      { name: "", weight: "", pricePerKg: "", productCode: "" },
+    ]);
     setSelectedPurchaseDate(now);
     setSelectedDeliveryDate(null);
     setPurchaseCurrentMonth(now.getMonth());
@@ -3544,43 +3669,157 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
 
           <div className="mb-6">
             <h3 className="text-base font-semibold text-foreground mb-4">Product Details</h3>
+
+            <div className="mb-4">
+              <label className="block text-xs text-muted-foreground mb-1.5">Vendor Name * (type manually)</label>
+              <input
+                type="text"
+                name="vendor"
+                placeholder="e.g Ali Traders, Khan Plastic..."
+                value={formData.vendor}
+                onChange={handleInputChange}
+                onBlur={handleVendorBlur}
+                className={`w-full bg-cms-card border ${errors.vendor ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+              />
+              {errors.vendor && (
+                <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>
+              )}
+              {formData.vendor.trim() && (
+                <div className="mt-2 p-2 bg-muted/50 border border-border rounded-md text-xs space-y-1 max-w-md">
+                  {loadingVendorBalance ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Loading balance...
+                    </div>
+                  ) : vendorBalance ? (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Payable</span>
+                        <span className="font-medium text-red-600">Rs. {(vendorBalance.payableBalance || 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Advance</span>
+                        <span className="font-medium text-green-600">Rs. {(vendorBalance.advanceBalance || 0).toLocaleString()}</span>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            <div className="mb-4 p-4 border border-border rounded-lg bg-cms-card/50">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground">Materials *</h4>
+                  <p className="text-xs text-muted-foreground">Add 2–3 materials by hand — name, weight, price per kg</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addMaterialRow}
+                  className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add Material
+                </button>
+              </div>
+              {errors.materialName && (
+                <p className="text-xs text-red-500 mb-2">{errors.materialName}</p>
+              )}
+              <div className="space-y-3">
+                {materialRows.map((row, index) => {
+                  const rowTotal = (parseFloat(row.weight) || 0) * (parseFloat(row.pricePerKg) || 0);
+                  const catalogNames = materialCatalog.map((m) => m.name);
+                  return (
+                    <div key={index} className="grid grid-cols-12 gap-2 items-end p-3 bg-background border border-border rounded-md">
+                      <div className="col-span-4">
+                        <label className="block text-xs text-muted-foreground mb-1">Material Name</label>
+                        <input
+                          type="text"
+                          list={`material-names-${index}`}
+                          placeholder="e.g HD, LDPE, PP..."
+                          value={row.name}
+                          onChange={(e) => updateMaterialRow(index, "name", e.target.value)}
+                          className="w-full bg-cms-card border border-border rounded-md px-2 py-2 text-sm text-foreground"
+                        />
+                        <datalist id={`material-names-${index}`}>
+                          {catalogNames.map((n) => (
+                            <option key={n} value={n} />
+                          ))}
+                        </datalist>
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs text-muted-foreground mb-1">Weight (kg)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={row.weight}
+                          onChange={(e) => updateMaterialRow(index, "weight", e.target.value)}
+                          className="w-full bg-cms-card border border-border rounded-md px-2 py-2 text-sm text-foreground"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs text-muted-foreground mb-1">Price/kg</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={row.pricePerKg}
+                          onChange={(e) => updateMaterialRow(index, "pricePerKg", e.target.value)}
+                          className="w-full bg-cms-card border border-border rounded-md px-2 py-2 text-sm text-foreground"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs text-muted-foreground mb-1">Total</label>
+                        <div className="px-2 py-2 text-sm font-medium text-foreground bg-muted/50 border border-border rounded-md">
+                          Rs. {rowTotal.toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="col-span-1">
+                        <label className="block text-xs text-muted-foreground mb-1">Code</label>
+                        <select
+                          value={row.productCode}
+                          onChange={(e) => updateMaterialRow(index, "productCode", e.target.value)}
+                          className="w-full bg-cms-card border border-border rounded-md px-1 py-2 text-xs text-foreground"
+                        >
+                          <option value="">—</option>
+                          {PRODUCT_CODES.map((code) => (
+                            <option key={code.code} value={code.code}>{code.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-span-1 flex justify-end">
+                        {materialRows.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeMaterialRow(index)}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-md"
+                            title="Remove"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {formData.materialName && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Combined: {formData.materialName} — {formData.weight} kg — Rs. {parseFloat(formData.price || "0").toLocaleString()}
+                </p>
+              )}
+            </div>
+
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Material Name *</label>
-                <input
-                  type="text"
-                  name="materialName"
-                  placeholder="e.g Steel Beams"
-                  value={formData.materialName}
-                  onChange={handleInputChange}
-                  className={`w-full bg-cms-card border ${errors.materialName ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-                />
-                {errors.materialName && (
-                  <p className="text-xs text-red-500 mt-1">{errors.materialName}</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Vendor *</label>
-                <input
-                  type="text"
-                  name="vendor"
-                  placeholder="e.g Acme Inc."
-                  value={formData.vendor}
-                  onChange={handleInputChange}
-                  className={`w-full bg-cms-card border ${errors.vendor ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-                />
-                {errors.vendor && (
-                  <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Price *</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Total Price (Rs.) *</label>
                 <input
                   type="number"
                   name="price"
                   min="0"
                   step="0.01"
-                  placeholder="e.g 10000"
+                  placeholder="Auto from materials"
                   value={formData.price}
                   onChange={handleInputChange}
                   className={`w-full bg-cms-card border ${errors.price ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
@@ -3589,17 +3828,14 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                   <p className="text-xs text-red-500 mt-1">{errors.price}</p>
                 )}
               </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Weight (kg) *</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Total Weight (kg) *</label>
                 <input
                   type="number"
                   name="weight"
                   min="0"
                   step="0.1"
-                  placeholder="e.g 500"
+                  placeholder="Auto from materials"
                   value={formData.weight}
                   onChange={handleInputChange}
                   className={`w-full bg-cms-card border ${errors.weight ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
@@ -3736,33 +3972,6 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
             </div>
 
             <div className="grid grid-cols-3 gap-4 mb-4">
-              <div className="col-span-2">
-                <label className="block text-xs text-muted-foreground mb-2">Material Color *</label>
-                <div className="flex flex-wrap items-center gap-3">
-                  {colorOptions.map((color) => (
-                    <label key={color.value} className="flex items-center gap-1.5 cursor-pointer">
-                      <div className="relative flex items-center">
-                        <input
-                          type="radio"
-                          name="materialColor"
-                          value={color.value}
-                          checked={selectedMaterialColor === color.value}
-                          onChange={() => setSelectedMaterialColor(color.value)}
-                          className="sr-only"
-                        />
-                        <div 
-                          className={`w-5 h-5 rounded-full ${color.color} border-2 ${
-                            selectedMaterialColor === color.value 
-                              ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' 
-                              : 'border-border'
-                          }`} 
-                        />
-                      </div>
-                      <span className="text-xs text-foreground">{color.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Payment Method</label>
                 <select
@@ -3826,12 +4035,18 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                 <label className="block text-xs text-muted-foreground mb-1.5">Payment Status</label>
                 <div className="mt-2">
                   {formData.price && (formData.advancePayment || formData.amountPaid) ? (
+                    totalAmount > parseFloat(formData.price) ? (
+                      <span className="text-xs font-medium text-red-600">
+                        Overpaid — reduce payment to save
+                      </span>
+                    ) : (
                     <PaymentStatusBadge 
                       status={
                         totalAmount >= parseFloat(formData.price) ? 'paid' :
                         totalAmount > 0 ? 'partial' : 'none'
                       } 
                     />
+                    )
                   ) : (
                     <span className="text-xs text-muted-foreground">Enter amounts to see status</span>
                   )}
@@ -3996,7 +4211,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
 
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Receipt No. *</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Bill Number</label>
                 <input
                   type="text"
                   name="receiptNo"
@@ -4088,6 +4303,7 @@ export function POPView() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedPurchaseId, setSelectedPurchaseId] = useState<string | null>(null);
+  const [approvingPurchase, setApprovingPurchase] = useState(false);
   const [selectedPurchaseForEdit, setSelectedPurchaseForEdit] = useState<PurchaseWithRemaining | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -4493,14 +4709,64 @@ export function POPView() {
   const currentItems = filteredPurchases.slice(startIndex, endIndex);
 
   if (showDetails && selectedPurchaseId) {
+    const selectedPurchase = purchases.find((p) => p._id === selectedPurchaseId);
+    const userRole = getCurrentUser().role;
+
+    const handleApprovePurchase = async () => {
+      try {
+        setApprovingPurchase(true);
+        const response = await api.patch(`/api/purchases/${selectedPurchaseId}/approve`);
+        if (response.data.success) {
+          toast({
+            title: "Approved",
+            description: "Purchase approved successfully.",
+          });
+          await fetchPurchases();
+        } else {
+          throw new Error(response.data.message || "Failed to approve purchase");
+        }
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error.response?.data?.message || error.message || "Failed to approve purchase",
+          variant: "destructive",
+        });
+      } finally {
+        setApprovingPurchase(false);
+      }
+    };
+
     return (
-      <PurchaseDetailsView 
-        purchaseId={selectedPurchaseId} 
-        onBack={() => {
-          setShowDetails(false);
-          setSelectedPurchaseId(null);
-        }} 
-      />
+      <div className="flex-1 min-w-0 p-3 sm:p-4 md:p-6 overflow-auto animate-fade-in">
+        {canApprove(userRole) && selectedPurchase?.approvalStatus === "pending" && (
+          <div className="mb-4 flex justify-end">
+            <button
+              onClick={handleApprovePurchase}
+              disabled={approvingPurchase}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50"
+            >
+              {approvingPurchase ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Approving...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  Approve
+                </>
+              )}
+            </button>
+          </div>
+        )}
+        <PurchaseDetailsView 
+          purchaseId={selectedPurchaseId} 
+          onBack={() => {
+            setShowDetails(false);
+            setSelectedPurchaseId(null);
+          }} 
+        />
+      </div>
     );
   }
 

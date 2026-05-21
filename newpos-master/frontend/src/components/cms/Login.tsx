@@ -1,11 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Mail, Lock, Users, TrendingUp, UserCheck } from "lucide-react";
-
-const SUPER_ADMIN = {
-  email: "superadmin@gmail.com",
-  password: "786786"
-};
+import { loginUser, SUPER_ADMIN } from "@/lib/auth";
 
 const Index = () => {
   const [email, setEmail] = useState("");
@@ -125,27 +121,16 @@ const Index = () => {
       // Add delay to prevent timing attacks
       await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 400));
       
-      // Secure comparison with timing attack prevention
-      const isEmailValid = await secureCompare(email, SUPER_ADMIN.email);
-      const isPasswordValid = await secureCompare(password, SUPER_ADMIN.password);
+      const user = await loginUser(email, password);
       
-      if (isEmailValid && isPasswordValid) {
-        // Don't store credentials, only store authentication status
-        const obfuscatedEmail = encryptData(SUPER_ADMIN.email);
-        
-        localStorage.setItem('isLoggedIn', 'true');
-        localStorage.setItem('authToken', generateSessionToken());
-        localStorage.setItem('userEmail', obfuscatedEmail);
-        
+      if (user) {
         if (rememberMe) {
           localStorage.setItem('rememberMe', 'true');
         }
         
-        // Clear form data
         setEmail("");
         setPassword("");
         
-        // Navigate to CMSDashboard
         navigate('/CMSDashboard');
       } else {
         // Always show same error message regardless of what failed

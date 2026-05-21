@@ -11,13 +11,13 @@ import CustomersView from "./CustomersView";
 import Employee from "./Employee";
 import Finance from "./Finance";
 import Process from "./process";
+import SettingsView from "./SettingsView";
+import UsersView from "./UsersView";
+import ActivityLogView from "./ActivityLogView";
+import ReportsView from "./ReportsView";
 import { LogOut, Menu } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
-
-const SUPER_ADMIN = {
-  email: "superadmin@gmail.com",
-  password: "786786"
-};
+import { verifyAuthentication, logout, getCurrentUser } from "@/lib/auth";
 
 export function CMSDashboard() {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -51,13 +51,7 @@ export function CMSDashboard() {
         const isLoggedIn = localStorage.getItem('isLoggedIn');
         const userEmail = localStorage.getItem('userEmail');
         
-        if (isLoggedIn !== 'true' || !userEmail) {
-          navigate('/');
-          return;
-        }
-        
-        const decryptedEmail = decodeURIComponent(escape(atob(userEmail)));
-        if (decryptedEmail !== SUPER_ADMIN.email) {
+        if (!verifyAuthentication()) {
           navigate('/');
         }
       } catch (error) {
@@ -71,14 +65,7 @@ export function CMSDashboard() {
   }, [navigate]);
 
   // Logout function
-  const logout = () => {
-    localStorage.removeItem('isLoggedIn');
-    localStorage.removeItem('userEmail');
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('rememberMe');
-    sessionStorage.clear();
-    navigate('/');
-  };
+  const handleLogout = () => logout();
 
   const renderContent = () => {
     switch (activeTab) {
@@ -98,8 +85,16 @@ export function CMSDashboard() {
         return <Employee />;
       case "Finance":
         return <Finance />;
-        case"process":
-          return <Process />;
+      case "process":
+        return <Process />;
+      case "reports":
+        return <ReportsView />;
+      case "settings":
+        return <SettingsView />;
+      case "users":
+        return <UsersView />;
+      case "activity":
+        return <ActivityLogView />;
       // default:
       //   return (
       //     <div className="flex-1 flex items-center justify-center">
@@ -147,10 +142,10 @@ export function CMSDashboard() {
 
           <div className="flex items-center gap-2 flex-shrink-0">
             <span className="text-xs text-white/80 hidden sm:block truncate max-w-[100px] md:max-w-none">
-              {userEmail.split('@')[0]}
+              {getCurrentUser().name || userEmail.split('@')[0]}
             </span>
             <button
-              onClick={logout}
+              onClick={handleLogout}
               className="flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 rounded-md text-xs sm:text-sm font-medium bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all duration-200 touch-manipulation"
             >
               <LogOut className="w-4 h-4" />

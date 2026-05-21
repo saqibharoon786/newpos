@@ -1,43 +1,42 @@
+import { useEffect, useState } from "react";
 import { FileText, Truck, Package } from "lucide-react";
+import api from "@/lib/api";
 
-const activities = [
-  {
-    icon: FileText,
-    iconBg: "bg-blue-500/20",
-    iconColor: "text-blue-400",
-    title: "Client Project Payment",
-    type: "(SALE)",
-    typeColor: "text-cms-success",
-    date: "01 Nov 2023 09:15 AM",
-    amount: "Rs. 30,000",
-  },
-  {
-    icon: Truck,
-    iconBg: "bg-yellow-500/20",
-    iconColor: "text-yellow-400",
-    title: "Fuel for Delivery Van",
-    type: "(EXPENSE)",
-    typeColor: "text-cms-orange",
-    date: "01 Nov 2023 08:15 AM",
-    amount: "Rs. 5,000",
-  },
-  {
-    icon: Package,
-    iconBg: "bg-green-500/20",
-    iconColor: "text-green-400",
-    title: "Office Supplies",
-    type: "(PURCHASE)",
-    typeColor: "text-primary",
-    date: "01 Nov 2023 08:15 AM",
-    amount: "Rs. 3,000",
-  },
-];
+const iconMap: Record<string, typeof FileText> = {
+  POP: Package,
+  POS: FileText,
+  Kharcha: Truck,
+  Finance: FileText,
+};
 
 export function RecentActivity() {
+  const [activities, setActivities] = useState<any[]>([]);
+
+  useEffect(() => {
+    api.get("/api/activity-logs?limit=8").then((r) => {
+      const logs = r.data.data || [];
+      setActivities(
+        logs.map((l: any) => ({
+          icon: iconMap[l.module] || FileText,
+          iconBg: "bg-primary/20",
+          iconColor: "text-primary",
+          title: `${l.userName} — ${l.action}`,
+          type: `(${l.module})`,
+          typeColor: "text-muted-foreground",
+          date: new Date(l.createdAt).toLocaleString(),
+          amount: l.reason || "",
+        }))
+      );
+    }).catch(() => {});
+  }, []);
+
   return (
     <div className="bg-cms-card rounded-xl p-5">
-      <h3 className="text-lg font-semibold text-foreground mb-4">Recent Company Activity</h3>
+      <h3 className="text-lg font-semibold text-foreground mb-4">Recent Activity</h3>
       <div className="space-y-3">
+        {activities.length === 0 && (
+          <p className="text-sm text-muted-foreground">No recent activity logged yet.</p>
+        )}
         {activities.map((activity, index) => {
           const Icon = activity.icon;
           return (
@@ -53,7 +52,7 @@ export function RecentActivity() {
                   <p className="text-xs text-muted-foreground">{activity.date}</p>
                 </div>
               </div>
-              <span className="text-sm font-semibold text-foreground">{activity.amount}</span>
+              <span className="text-xs text-muted-foreground max-w-[120px] truncate">{activity.amount}</span>
             </div>
           );
         })}

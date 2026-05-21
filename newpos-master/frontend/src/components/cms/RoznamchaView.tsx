@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Search, Plus, Printer, Pencil, Eye, Trash2, ChevronLeft, ChevronRight, ChevronDown, BookOpen, Calendar, Filter, CheckCircle, XCircle, IndianRupee, FileText, Package, User, Building, Download } from "lucide-react";
 import { AddExpenseDialog } from "./AddExpenseDialog";
+import { ExpenseCategoriesPanel } from "./ExpenseCategoriesPanel";
 import { toast } from "@/hooks/use-toast";
 import axios from "axios";
 import { exportAsCsv, exportAsWordTable, toYmd } from "@/lib/exportUtils";
@@ -1857,6 +1858,8 @@ export function RoznamchaView() {
           </div>
           <h1 className="text-base sm:text-lg font-semibold text-foreground truncate">Daily Expense <span className="text-muted-foreground">(Roznamcha)</span></h1>
         </div>
+
+        <ExpenseCategoriesPanel />
 
         {/* Tabs and Actions Row */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6">

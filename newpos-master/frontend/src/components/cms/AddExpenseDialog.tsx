@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Save, Calendar, Clock, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import api from "@/lib/api";
 
 interface Expense {
   _id: string;
@@ -28,15 +29,18 @@ export function AddExpenseDialog({
   onSave, 
   editData 
 }: AddExpenseDialogProps) {
+  const [categories, setCategories] = useState<{ name: string }[]>([]);
   const [formData, setFormData] = useState({
     subject: "",
     description: "",
-    purpose: "Car" as const,
+    purpose: "Office",
     price: "",
     personResponsible: "HR" as const,
-    usage: "Personal" as const,
+    usage: "Company" as const,
     date: "",
     time: "",
+    paymentMethod: "drawer",
+    category: "General",
   });
 
   const [showCalendar, setShowCalendar] = useState(false);
@@ -68,6 +72,7 @@ export function AddExpenseDialog({
 
   useEffect(() => {
     if (open) {
+      api.get('/api/expense-categories').then((r) => setCategories(r.data.data || [])).catch(() => {});
       const now = new Date();
 
       if (editData) {
@@ -271,7 +276,7 @@ export function AddExpenseDialog({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Purpose</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Category / Purpose</label>
                 <div className="relative">
                   <select
                     name="purpose"
@@ -279,10 +284,16 @@ export function AddExpenseDialog({
                     onChange={handleInputChange}
                     className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground appearance-none focus:outline-none focus:ring-1 focus:ring-primary"
                   >
-                    <option value="Car">Car</option>
-                    <option value="Office">Office</option>
-                    <option value="Travel">Travel</option>
-                    <option value="Equipment">Equipment</option>
+                    {categories.length ? categories.map((c) => (
+                      <option key={c.name} value={c.name}>{c.name}</option>
+                    )) : (
+                      <>
+                        <option value="Electricity">Electricity</option>
+                        <option value="Rent">Rent</option>
+                        <option value="LPG Gas">LPG Gas</option>
+                        <option value="Office">Office</option>
+                      </>
+                    )}
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 </div>
@@ -301,6 +312,20 @@ export function AddExpenseDialog({
             </div>
 
             <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Payment From</label>
+                <select
+                  name="paymentMethod"
+                  value={formData.paymentMethod}
+                  onChange={handleInputChange}
+                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm"
+                >
+                  <option value="drawer">Cash Drawer</option>
+                  <option value="bank">Bank</option>
+                  <option value="easypaisa">Easypaisa</option>
+                  <option value="jazzcash">JazzCash</option>
+                </select>
+              </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Person Responsible</label>
                 <div className="relative">

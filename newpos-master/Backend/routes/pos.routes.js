@@ -57,8 +57,9 @@ router.get("/:id", posController.getSaleById);
 // Update sale with receipt image
 router.put("/:id", receiptUpload.single("receiptImage"), posController.updateSale);
 
-// Delete sale
-router.delete("/:id", posController.deleteSale);
+const { requireOwner, blockAccountantDelete } = require("../middleware/cmsAuth");
+router.patch("/:id/approve", requireOwner, posController.approveSale);
+router.delete("/:id", blockAccountantDelete, requireOwner, posController.deleteSale);
 
 // ✅ MATERIAL-SPECIFIC ROUTES (for POP integration)
 
