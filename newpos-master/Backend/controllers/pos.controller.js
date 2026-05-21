@@ -16,6 +16,21 @@ function parseSaleWeight(v) {
   return isNaN(n) ? 0 : n;
 }
 
+/** Bill total: pricePerKg × kg − discount + transport; else finalAmount / sellingPrice total. */
+function computeSaleBillTotal(body) {
+  const kg = parseSaleWeight(body.sellingWeight ?? body.weight);
+  const pricePerKg = parseFloat(body.pricePerKg);
+  const discount = parseFloat(body.discount) || 0;
+  const transport = parseFloat(body.transportationCost) || 0;
+  if (!isNaN(pricePerKg) && pricePerKg > 0 && kg > 0) {
+    return Math.max(0, Math.round((kg * pricePerKg - discount + transport) * 100) / 100);
+  }
+  const fromFinal = parseFloat(body.finalAmount);
+  if (!isNaN(fromFinal) && fromFinal > 0) return fromFinal;
+  const sp = parseFloat(body.sellingPrice) || 0;
+  return Math.max(0, Math.round((sp - discount + transport) * 100) / 100);
+}
+
 /**
  * Deduct weight from production batches (FIFO, oldest first) — same rules as addSale aggregated path.
  */
@@ -181,8 +196,19 @@ const addSale = async (req, res) => {
 
     const receiptImage = req.file ? `/uploads/receipts/${req.file.filename}` : "";
     const paidAmount = parseFloat(amountPaid) || 0;
-    const sellingPriceNum = parseFloat(sellingPrice) || 0;
+    const discountNum = parseFloat(req.body.discount) || 0;
+    const sellingPriceNum = computeSaleBillTotal({
+      ...req.body,
+      sellingWeight: weightToSell,
+    });
+    if (paidAmount > sellingPriceNum) {
+      return res.status(400).json({
+        success: false,
+        message: `Received amount (${paidAmount}) cannot exceed total bill (${sellingPriceNum})`,
+      });
+    }
     const remainingAmount = Math.max(0, sellingPriceNum - paidAmount);
+    const billTotalStr = String(sellingPriceNum);
     let finalPaymentStatus = paymentStatus;
     if (!finalPaymentStatus) {
       if (paidAmount === 0) finalPaymentStatus = 'none';
@@ -234,9 +260,9 @@ const addSale = async (req, res) => {
         actualPrice,
         productionCost: String(production.totalProductionCost || production.materialCost || 0),
         costPerKg: weightToSell > 0 ? (production.totalProductionCost || 0) / weightToSell : 0,
-        sellingPrice: sellingPrice.toString(),
-        discount: "0",
-        finalAmount: sellingPrice.toString(),
+        sellingPrice: billTotalStr,
+        discount: String(discountNum),
+        finalAmount: billTotalStr,
         advancePayment: paidAmount,
         amountPaid: paidAmount,
         remainingAmount: remainingAmount,
@@ -318,9 +344,9 @@ const addSale = async (req, res) => {
         materialColor,
         actualPrice,
         productionCost: "0",
-        sellingPrice: sellingPrice.toString(),
-        discount: "0",
-        finalAmount: sellingPrice.toString(),
+        sellingPrice: billTotalStr,
+        discount: String(discountNum),
+        finalAmount: billTotalStr,
         advancePayment: paidAmount,
         amountPaid: paidAmount,
         remainingAmount: remainingAmount,
@@ -384,9 +410,9 @@ const addSale = async (req, res) => {
         materialColor,
         actualPrice,
         productionCost: "0",
-        sellingPrice: sellingPrice.toString(),
-        discount: "0",
-        finalAmount: sellingPrice.toString(),
+        sellingPrice: billTotalStr,
+        discount: String(discountNum),
+        finalAmount: billTotalStr,
         advancePayment: paidAmount,
         amountPaid: paidAmount,
         remainingAmount: remainingAmount,
@@ -604,11 +630,29 @@ const updateSale = async (req, res) => {
       updateData.receiptImage = "";
     }
 
-    // Calculate final amount
-    if (updateData.sellingPrice || updateData.discount) {
-      const sellingPriceNum = parseFloat(updateData.sellingPrice) || parseFloat(existingSale.sellingPrice) || 0;
-      const discountNum = parseFloat(updateData.discount) || parseFloat(existingSale.discount) || 0;
-      updateData.finalAmount = (sellingPriceNum - discountNum).toString();
+    if (
+      updateData.sellingPrice ||
+      updateData.pricePerKg ||
+      updateData.discount ||
+      updateData.transportationCost ||
+      updateData.weight ||
+      updateData.sellingWeight
+    ) {
+      const billTotal = computeSaleBillTotal({
+        ...existingSale.toObject(),
+        ...updateData,
+        sellingWeight: updateData.weight ?? updateData.sellingWeight ?? existingSale.weight,
+      });
+      updateData.sellingPrice = String(billTotal);
+      updateData.finalAmount = String(billTotal);
+      const paid = parseFloat(updateData.amountPaid) ?? existingSale.amountPaid ?? 0;
+      if (paid > billTotal) {
+        return res.status(400).json({
+          success: false,
+          message: `Received amount (${paid}) cannot exceed total bill (${billTotal})`,
+        });
+      }
+      updateData.remainingAmount = Math.max(0, billTotal - paid);
     }
 
     // Handle advance payment

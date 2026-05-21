@@ -5,18 +5,23 @@ function computeProductionCosts(input) {
   const outputWeight = Number(input.outputWeight) || 0;
   const wasteWeight = Number(input.wasteWeight) || 0;
 
+  const pricePerKg =
+    purchasePrice > 0 && purchaseWeight > 0 ? purchasePrice / purchaseWeight : 0;
+
   let materialCost = Number(input.materialCost) || 0;
-  if (!materialCost && purchasePrice > 0 && purchaseWeight > 0) {
-    const weightBasis = weightUsedFromPOP > 0 ? weightUsedFromPOP : outputWeight;
-    if (weightBasis > 0) {
-      materialCost = (purchasePrice / purchaseWeight) * weightBasis;
+  if (!materialCost && pricePerKg > 0) {
+    const materialKg =
+      outputWeight > 0
+        ? outputWeight
+        : Math.max(0, weightUsedFromPOP - wasteWeight);
+    if (materialKg > 0) {
+      materialCost = pricePerKg * materialKg;
     }
   }
 
   let wasteCost = Number(input.wasteCost) || 0;
-  if (!wasteCost && wasteWeight > 0 && materialCost > 0) {
-    const basis = weightUsedFromPOP > 0 ? weightUsedFromPOP : outputWeight || 1;
-    wasteCost = wasteWeight * (materialCost / basis);
+  if (!wasteCost && wasteWeight > 0 && pricePerKg > 0) {
+    wasteCost = pricePerKg * wasteWeight;
   }
 
   const laborCostPerKg = Number(input.laborCostPerKg) || 0;

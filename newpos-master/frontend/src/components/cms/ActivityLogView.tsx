@@ -8,7 +8,7 @@ export default function ActivityLogView() {
 
   useEffect(() => {
     if (!canApprove(role)) return;
-    api.get('/api/activity-logs?limit=100').then((r) => setLogs(r.data.data || []));
+    api.get('/api/activitys-logs?limit=100').then((r) => setLogs(r.data.data || []));
   }, [role]);
 
   if (!canApprove(role)) return <p>Only Owner can view activity logs.</p>;

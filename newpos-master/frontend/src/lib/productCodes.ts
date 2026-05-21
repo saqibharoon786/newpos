@@ -32,3 +32,24 @@ export function getMaterialNameForCode(code: string): string {
   const product = getProductByCode(code);
   return product?.materialName || product?.name || '';
 }
+
+/** Resolve product code from POP material row or name */
+export function resolveProductCode(
+  materialName?: string,
+  explicitCode?: string
+): string {
+  const code = String(explicitCode || '').trim();
+  if (code) return code;
+  const n = String(materialName || '').trim().toLowerCase();
+  if (!n) return '';
+  for (const p of PRODUCT_CODES) {
+    const mn = p.materialName.toLowerCase();
+    if (n === mn || n.includes(mn) || mn.includes(n)) return p.code;
+  }
+  return '';
+}
+
+export function getProductCodeLabel(code: string): string {
+  const product = getProductByCode(code);
+  return product?.label || (code ? `Code ${code}` : '');
+}

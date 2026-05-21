@@ -438,9 +438,7 @@ const getProductionData = async (req, res) => {
 
     const purchaseIds = [
       ...new Set(
-        productionDocs
-          .filter((d) => d.purchaseId && (!d.totalProductionCost || d.totalProductionCost <= 0))
-          .map((d) => String(d.purchaseId))
+        productionDocs.filter((d) => d.purchaseId).map((d) => String(d.purchaseId))
       ),
     ];
     const purchaseDocs = purchaseIds.length
@@ -469,33 +467,35 @@ const getProductionData = async (req, res) => {
       const pop = doc.purchaseId ? purchaseById[String(doc.purchaseId)] : null;
       let materialCost = doc.materialCost || 0;
       let wasteCost = doc.wasteCost || 0;
+      let laborCost = 0;
       let totalProductionCost = doc.totalProductionCost || 0;
-      if (!totalProductionCost && pop) {
+      const laborCostPerKg = doc.laborCostPerKg || 0;
+      if (pop) {
         const computed = computeProductionCosts({
           purchasePrice: parseFloat(pop.price) || 0,
           purchaseWeight: parseFloat(pop.weight) || 0,
           weightUsedFromPOP: doc.weightUsedFromPOP || 0,
           outputWeight: doc.totalWeight || 0,
           wasteWeight: doc.wasteWeight || 0,
-          wasteCost: doc.wasteCost,
-          laborCostPerKg: doc.laborCostPerKg || 0,
-          materialCost: doc.materialCost,
+          laborCostPerKg,
         });
         materialCost = computed.materialCost;
         wasteCost = computed.wasteCost;
+        laborCost = computed.laborCost;
         totalProductionCost = computed.totalProductionCost;
       } else if (!totalProductionCost) {
         const computed = computeProductionCosts({
           outputWeight: doc.totalWeight || 0,
           weightUsedFromPOP: doc.weightUsedFromPOP || 0,
           wasteWeight: doc.wasteWeight || 0,
-          wasteCost: doc.wasteCost,
-          laborCostPerKg: doc.laborCostPerKg || 0,
-          materialCost: doc.materialCost,
+          laborCostPerKg,
         });
         materialCost = computed.materialCost;
         wasteCost = computed.wasteCost;
+        laborCost = computed.laborCost;
         totalProductionCost = computed.totalProductionCost;
+      } else {
+        laborCost = laborCostPerKg * (doc.totalWeight || 0);
       }
       return {
         _id: doc._id,
@@ -512,6 +512,7 @@ const getProductionData = async (req, res) => {
         laborCostPerKg: doc.laborCostPerKg || 0,
         materialCost,
         totalProductionCost,
+        laborCost,
         purchasePrice: pop ? parseFloat(pop.price) || 0 : undefined,
         purchaseWeight: pop ? parseFloat(pop.weight) || 0 : undefined,
         vendor: pop?.vendor,

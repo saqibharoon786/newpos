@@ -79,26 +79,23 @@ const saleSchema = new mongoose.Schema(
 
 // Pre-save middleware to automatically calculate remaining amount and payment status
 saleSchema.pre('save', function(next) {
-  const sellingPriceNum = parseFloat(this.sellingPrice) || 0;
+  const billTotal = parseFloat(this.finalAmount) || parseFloat(this.sellingPrice) || 0;
   const amountPaidNum = this.amountPaid || 0;
-  
-  // Calculate remaining amount
-  this.remainingAmount = Math.max(0, sellingPriceNum - amountPaidNum);
-  
-  // Determine payment status
+
+  this.remainingAmount = Math.max(0, billTotal - amountPaidNum);
+
   if (amountPaidNum === 0) {
     this.paymentStatus = 'none';
-  } else if (amountPaidNum >= sellingPriceNum) {
+  } else if (amountPaidNum >= billTotal) {
     this.paymentStatus = 'paid';
   } else {
     this.paymentStatus = 'partial';
   }
-  
-  // Set finalAmount if not already set
+
   if (!this.finalAmount) {
     this.finalAmount = this.sellingPrice;
   }
-  
+
   next();
 });
 
