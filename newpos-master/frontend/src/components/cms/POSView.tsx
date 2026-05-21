@@ -3,22 +3,12 @@ import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, 
 import { AddSaleDialog } from "./AddSaleDialog"; // CHANGED: Import AddSaleDialog instead of AddAssetDialog
 import { SaleDetailsView } from "./SaleDetailsView";
 import { toast } from "@/hooks/use-toast";
-import axios from "axios";
+import api from "@/lib/api";
 import { exportAsCsv, exportAsWordTable, inDateRange, toYmd } from "@/lib/exportUtils";
 
-// Configure axios with environment variable
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-
-// Create axios instance with environment variable as base URL
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-});
-
-// Define endpoints using environment variable
-const SALES_API_URL = `${API_BASE_URL}/api/sales`;
-const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
-const FINANCE_DEPOSIT_URL = `${API_BASE_URL}/api/finance/deposit`;
+const SALES_API_URL = "/api/sales";
+const PURCHASES_API_URL = "/api/purchases";
+const FINANCE_DEPOSIT_URL = "/api/finance/deposit";
 
 interface Sale {
   _id: string;
@@ -1322,10 +1312,14 @@ export function POSView() {
       }
     } catch (error: any) {
       console.error('Error fetching sales:', error);
-      setError(error.response?.data?.message || error.message || 'Failed to fetch sales');
+      const msg = error.response?.data?.message || error.message || 'Failed to fetch sales';
+      setError(msg);
       toast({
         title: "Error",
-        description: "Failed to load sales. Please try again.",
+        description:
+          msg === "Please login to continue"
+            ? "Please login again — session expired"
+            : `Failed to load sales: ${msg}`,
         variant: "destructive",
       });
     } finally {
@@ -2122,7 +2116,13 @@ export function POSView() {
                         <div className="flex flex-col">
                           <span className="text-sm font-medium text-foreground">Rs. {formatCurrency(totalAmount)}</span>
                           <span className="text-xs text-muted-foreground">
-                            Rs. {parseFloat(sale.sellingPrice || '0').toLocaleString()} each
+                            {(() => {
+                              const kg = parseFloat(sale.weight || "0") || 0;
+                              const rate = kg > 0 ? totalAmount / kg : 0;
+                              return kg > 0
+                                ? `Rs. ${rate.toLocaleString(undefined, { maximumFractionDigits: 2 })}/kg`
+                                : "";
+                            })()}
                           </span>
                         </div>
                       </td>

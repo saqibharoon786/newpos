@@ -1,20 +1,10 @@
 import { useState, useEffect } from "react";
 import { Printer, Circle, Scale, Palette, Building2, Award, IndianRupee, Calendar, User, CreditCard, ArrowLeft, Loader2, Mail, Phone, MapPin, Briefcase, Tag, Percent, DollarSign, Package, Building, Truck, Settings, AlertCircle, Car, FileText } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import axios from "axios";
+import api, { API_BASE_URL } from "@/lib/api";
 
-// Configure axios with environment variable
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-
-// Create axios instance with environment variable as base URL
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-});
-
-// Define endpoints using environment variable
-const SALES_API_URL = `${API_BASE_URL}/api/sales`;
-const PURCHASE_API_URL = `${API_BASE_URL}/api/purchases`;
+const SALES_API_URL = "/api/sales";
+const PURCHASE_API_URL = "/api/purchases";
 
 interface Sale {
   _id: string;
