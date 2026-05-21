@@ -18,6 +18,54 @@ const api = axios.create({
 const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
 const FINANCE_API_URL = `${API_BASE_URL}/api/finance`;
 
+/** Total paid = advance + amount paid at purchase (+ later payments stored in amountPaid). */
+const getPurchaseTotalPaid = (purchase: {
+  price?: number | string;
+  advancePayment?: number;
+  amountPaid?: number;
+  totalPaid?: number;
+}) => {
+  const storedTotal = Number(purchase.totalPaid);
+  if (
+    purchase.totalPaid != null &&
+    !Number.isNaN(storedTotal) &&
+    storedTotal > 0
+  ) {
+    return storedTotal;
+  }
+  const advance = Number(purchase.advancePayment) || 0;
+  const paid = Number(purchase.amountPaid) || 0;
+  const price = typeof purchase.price === "number"
+    ? purchase.price
+    : parseFloat(String(purchase.price || 0)) || 0;
+
+  if (paid > advance) return paid;
+  if (advance > 0 && paid === advance && paid > 0 && paid < price) return advance;
+  return advance + paid;
+};
+
+const getPurchasePrice = (purchase: { price?: number | string }) =>
+  typeof purchase.price === "number"
+    ? purchase.price
+    : parseFloat(String(purchase.price || 0)) || 0;
+
+const getPurchaseRemainingAmount = (purchase: {
+  price?: number | string;
+  advancePayment?: number;
+  amountPaid?: number;
+  totalPaid?: number;
+}) => Math.max(0, getPurchasePrice(purchase) - getPurchaseTotalPaid(purchase));
+
+const getPurchasePaidStatus = (
+  purchase: { price?: number | string; advancePayment?: number; amountPaid?: number; totalPaid?: number }
+): "none" | "partial" | "paid" => {
+  const price = getPurchasePrice(purchase);
+  const totalPaid = getPurchaseTotalPaid(purchase);
+  if (totalPaid <= 0) return "none";
+  if (totalPaid >= price) return "paid";
+  return "partial";
+};
+
 // Finance API functions with all payment methods
 const financeApi = {
   // Get all balances
@@ -126,6 +174,7 @@ interface Purchase {
   vehicleImage: string;
   advancePayment: number;
   amountPaid: number;
+  totalPaid?: number;
   paidAmount: 'none' | 'partial' | 'paid';
   remainingAmount: number;
   status: 'available' | 'partially_sold' | 'sold_out';
@@ -300,8 +349,8 @@ const VendorSummary = ({
     purchasesInRange.forEach(purchase => {
       const vendor = purchase.vendor || 'Unknown';
       const price = purchase.price || 0;
-      const amountPaid = purchase.amountPaid || 0;
-      const remainingAmount = purchase.remainingAmount || 0;
+      const amountPaid = getPurchaseTotalPaid(purchase);
+      const remainingAmount = getPurchaseRemainingAmount(purchase);
       const weight = parseFloat(purchase.weight) || 0;
       const processWeight = purchase.processWeight ?? purchase.productionConsumedWeight ?? 0;
       const remainingWeight = purchase.remainingWeight || 0;
@@ -351,7 +400,7 @@ const VendorSummary = ({
       }
       
       // Update payment status count
-      switch(purchase.paidAmount) {
+      switch(getPurchasePaidStatus(purchase)) {
         case 'paid':
           vendorSummary[vendor].paymentStatus.paid += 1;
           break;
@@ -1352,7 +1401,8 @@ const PaymentModal = ({
       return;
     }
 
-    const remainingAmount = purchase.price - purchase.amountPaid;
+    const currentTotalPaid = getPurchaseTotalPaid(purchase);
+    const remainingAmount = getPurchaseRemainingAmount(purchase);
     if (amount > remainingAmount) {
       toast({
         title: "Error",
@@ -1378,10 +1428,16 @@ const PaymentModal = ({
 
     setIsSubmitting(true);
     try {
-      const newAmountPaid = purchase.amountPaid + amount;
-      const newPaidStatus = newAmountPaid >= purchase.price ? 'paid' : 
-                           newAmountPaid > 0 ? 'partial' : 'none';
-      const newRemainingAmount = purchase.price - newAmountPaid;
+      const newTotalPaid = currentTotalPaid + amount;
+      const advance = Number(purchase.advancePayment) || 0;
+      const newAmountPaidField = Math.max(0, newTotalPaid - advance);
+      const purchasePrice = getPurchasePrice(purchase);
+      const newPaidStatus = getPurchasePaidStatus({
+        ...purchase,
+        totalPaid: newTotalPaid,
+        price: purchasePrice,
+      });
+      const newRemainingAmount = Math.max(0, purchasePrice - newTotalPaid);
       
       const paymentRecord: PaymentHistory = {
         _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -1397,9 +1453,10 @@ const PaymentModal = ({
       };
 
       const updateData = {
-        amountPaid: newAmountPaid,
+        amountPaid: newAmountPaidField,
         paidAmount: newPaidStatus,
-        remainingAmount: newRemainingAmount
+        remainingAmount: newRemainingAmount,
+        totalPaid: newTotalPaid,
       };
 
       if (shouldCheckBalance) {
@@ -1450,7 +1507,8 @@ const PaymentModal = ({
 
   if (!open || !purchase) return null;
 
-  const remainingAmount = purchase.price - purchase.amountPaid;
+  const totalPaid = getPurchaseTotalPaid(purchase);
+  const remainingAmount = getPurchaseRemainingAmount(purchase);
   const financeMethod = getFinanceMethod(paymentMethod);
   const currentBalance = getCurrentBalance();
   const showBalanceCheck = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
@@ -1489,7 +1547,7 @@ const PaymentModal = ({
               <div>
                 <p className="text-xs text-muted-foreground">Amount Paid</p>
                 <p className="text-lg font-semibold text-green-600">
-                  Rs. {purchase.amountPaid.toLocaleString()}
+                  Rs. {totalPaid.toLocaleString()}
                 </p>
               </div>
             </div>
@@ -1500,7 +1558,7 @@ const PaymentModal = ({
               </p>
             </div>
             <div className="mt-3">
-              <PaymentStatusBadge status={purchase.paidAmount} />
+              <PaymentStatusBadge status={getPurchasePaidStatus(purchase)} />
             </div>
           </div>
 
@@ -1755,14 +1813,20 @@ const PayTotalVendorModal = ({
 
       for (const purchase of purchases) {
         if (left <= 0) break;
-        const purchaseRemaining = purchase.remainingAmount ?? (purchase.price - (purchase.amountPaid || 0));
+        const purchaseRemaining = getPurchaseRemainingAmount(purchase);
         const pay = Math.min(left, purchaseRemaining);
         if (pay <= 0) continue;
 
-        const newAmountPaid = (purchase.amountPaid || 0) + pay;
-        const totalAmount = purchase.price;
-        const newPaidAmount = newAmountPaid >= totalAmount ? "paid" : "partial";
-        const newRemainingAmount = Math.max(0, totalAmount - newAmountPaid);
+        const newTotalPaid = getPurchaseTotalPaid(purchase) + pay;
+        const totalAmount = getPurchasePrice(purchase);
+        const advance = Number(purchase.advancePayment) || 0;
+        const newAmountPaidField = Math.max(0, newTotalPaid - advance);
+        const newPaidAmount = getPurchasePaidStatus({
+          ...purchase,
+          totalPaid: newTotalPaid,
+          price: totalAmount,
+        });
+        const newRemainingAmount = Math.max(0, totalAmount - newTotalPaid);
 
         const paymentRecord: PaymentHistory = {
           _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -1778,9 +1842,10 @@ const PayTotalVendorModal = ({
         };
 
         await api.put(`${PURCHASES_API_URL}/${purchase._id}`, {
-          amountPaid: newAmountPaid,
+          amountPaid: newAmountPaidField,
           paidAmount: newPaidAmount,
           remainingAmount: newRemainingAmount,
+          totalPaid: newTotalPaid,
         });
 
         records.push(paymentRecord);
@@ -1971,7 +2036,7 @@ const MarkAsPaidModal = ({
   const handleMarkPaid = async () => {
     if (!purchase) return;
 
-    const remainingAmount = purchase.price - purchase.amountPaid;
+    const remainingAmount = getPurchaseRemainingAmount(purchase);
     const financeMethod = getFinanceMethod(paymentMethod);
     const currentBalance = getCurrentBalance();
     
@@ -2001,10 +2066,13 @@ const MarkAsPaidModal = ({
         financeMethod: financeMethod
       };
 
+      const advance = Number(purchase.advancePayment) || 0;
+      const purchasePrice = getPurchasePrice(purchase);
       const updateData = {
-        amountPaid: purchase.price,
+        amountPaid: Math.max(0, purchasePrice - advance),
         paidAmount: 'paid',
-        remainingAmount: 0
+        remainingAmount: 0,
+        totalPaid: purchasePrice,
       };
 
       if (shouldCheckBalance) {
@@ -2055,7 +2123,8 @@ const MarkAsPaidModal = ({
 
   if (!open || !purchase) return null;
 
-  const remainingAmount = purchase.price - purchase.amountPaid;
+  const totalPaid = getPurchaseTotalPaid(purchase);
+  const remainingAmount = getPurchaseRemainingAmount(purchase);
   const financeMethod = getFinanceMethod(paymentMethod);
   const currentBalance = getCurrentBalance();
   const showBalanceCheck = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
@@ -2094,7 +2163,7 @@ const MarkAsPaidModal = ({
               <div>
                 <p className="text-xs text-muted-foreground">Currently Paid</p>
                 <p className="text-lg font-semibold text-green-600">
-                  Rs. {purchase.amountPaid.toLocaleString()}
+                  Rs. {totalPaid.toLocaleString()}
                 </p>
               </div>
             </div>
@@ -2105,7 +2174,7 @@ const MarkAsPaidModal = ({
               </p>
             </div>
             <div className="mt-3 flex items-center gap-2">
-              <PaymentStatusBadge status={purchase.paidAmount} />
+              <PaymentStatusBadge status={getPurchasePaidStatus(purchase)} />
               <span className="text-xs text-muted-foreground">→</span>
               <PaymentStatusBadge status={'paid'} />
             </div>
@@ -2243,7 +2312,8 @@ const PaymentHistoryModal = ({
 
   if (!open || !purchase) return null;
 
-  const remainingAmount = purchase.price - purchase.amountPaid;
+  const totalPaid = getPurchaseTotalPaid(purchase);
+  const remainingAmount = getPurchaseRemainingAmount(purchase);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -2275,7 +2345,7 @@ const PaymentHistoryModal = ({
               <div>
                 <p className="text-xs text-muted-foreground">Amount Paid</p>
                 <p className="text-lg font-semibold text-green-600">
-                  Rs. {purchase.amountPaid.toLocaleString()}
+                  Rs. {totalPaid.toLocaleString()}
                 </p>
               </div>
               <div>
@@ -2287,13 +2357,13 @@ const PaymentHistoryModal = ({
               <div>
                 <p className="text-xs text-muted-foreground">Payment Status</p>
                 <div className="mt-1">
-                  <PaymentStatusBadge status={purchase.paidAmount} />
+                  <PaymentStatusBadge status={getPurchasePaidStatus(purchase)} />
                 </div>
               </div>
             </div>
             <div className="mt-3 text-xs text-muted-foreground">
               Total Payments: {paymentHistory.length} | 
-              Total Paid: Rs. {purchase.amountPaid.toLocaleString()} | 
+              Total Paid: Rs. {totalPaid.toLocaleString()} | 
               Remaining: Rs. {remainingAmount.toLocaleString()}
             </div>
           </div>
@@ -2396,7 +2466,7 @@ const PaymentHistoryModal = ({
                         Total Paid
                       </td>
                       <td className="px-4 py-3 text-lg font-bold text-green-600">
-                        Rs. {purchase.amountPaid.toLocaleString()}
+                        Rs. {totalPaid.toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={3}>
                         {paymentHistory.length} payment{paymentHistory.length !== 1 ? 's' : ''}
@@ -2697,7 +2767,13 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           deliveryTime: deliveryTimeStr,
           receiptNo: editData.receiptNo || "",
           advancePayment: editData.advancePayment?.toString() || "",
-          amountPaid: editData.amountPaid?.toString() || "",
+          amountPaid: (() => {
+            const advance = Number(editData.advancePayment) || 0;
+            const paid = Number(editData.amountPaid) || 0;
+            if (paid > advance) return String(paid - advance);
+            if (advance > 0 && paid === advance && paid < (Number(editData.price) || 0)) return "0";
+            return paid ? String(paid) : "";
+          })(),
           paymentMethod: "cash",
           vehicleImage: null,
         });
@@ -3024,7 +3100,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         deliveryDate: deliveryDateTime,
         receiptNo: formData.receiptNo,
         advancePayment: advancePaymentNum,
-        amountPaid: totalAmountPaid,
+        amountPaid: amountPaidNum,
         paidAmount: paidAmount,
         remainingAmount: remainingAmount > 0 ? remainingAmount : 0,
         soldWeight: 0,
@@ -4147,11 +4223,11 @@ export function POPView() {
     }, 0);
     
     const totalAmountPaid = purchases.reduce((sum, p) => {
-      return sum + (Number(p.amountPaid) || 0);
+      return sum + getPurchaseTotalPaid(p);
     }, 0);
     
     const totalRemainingAmount = purchases.reduce((sum, p) => {
-      return sum + (Number(p.remainingAmount) || 0);
+      return sum + getPurchaseRemainingAmount(p);
     }, 0);
     
     const totalWeight = purchases.reduce((sum, p) => {
@@ -4197,9 +4273,16 @@ export function POPView() {
           
           const colorNames = getColorSearchNames(purchase.materialColor);
           
+          const withPrice = { ...purchase, price: parsedPrice };
+          const totalPaid = getPurchaseTotalPaid(withPrice);
+          const remainingAmount = getPurchaseRemainingAmount(withPrice);
+          const paidAmount = getPurchasePaidStatus(withPrice);
+
           return {
-            ...purchase,
-            price: parsedPrice,
+            ...withPrice,
+            totalPaid,
+            remainingAmount,
+            paidAmount,
             totalWeight: originalWeight,
             soldWeight: soldWeight,
             processWeight: productionConsumed,
@@ -4381,9 +4464,9 @@ export function POPView() {
       "Used Weight (kg)": p.productionConsumedWeight || 0,
       "Remaining Weight (kg)": p.remainingWeight || 0,
       "Price": p.price || 0,
-      "Amount Paid": p.amountPaid || 0,
-      "Remaining Amount": p.remainingAmount || 0,
-      "Payment Status": p.paidAmount || "none",
+      "Amount Paid": getPurchaseTotalPaid(p),
+      "Remaining Amount": getPurchaseRemainingAmount(p),
+      "Payment Status": getPurchasePaidStatus(p),
     }));
     const rangeText =
       exportStartDate || exportEndDate
@@ -4671,19 +4754,19 @@ export function POPView() {
                         Rs. {formatCurrency(purchase.price || 0)}
                       </td>
                       <td className="px-4 py-3 text-sm text-green-600 font-semibold">
-                        Rs. {formatCurrency(purchase.amountPaid || 0)}
+                        Rs. {formatCurrency(getPurchaseTotalPaid(purchase))}
                       </td>
                       <td className="px-4 py-3">
                         <div className={`font-semibold ${
-                          purchase.remainingAmount > 0 
+                          getPurchaseRemainingAmount(purchase) > 0 
                             ? 'text-red-600' 
                             : 'text-green-600'
                         }`}>
-                          Rs. {formatCurrency(purchase.remainingAmount || 0)}
+                          Rs. {formatCurrency(getPurchaseRemainingAmount(purchase))}
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <PaymentStatusBadge status={purchase.paidAmount || 'none'} />
+                        <PaymentStatusBadge status={getPurchasePaidStatus(purchase)} />
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground">
                         <div className="font-medium">{formatCurrency(purchase.totalWeight)} kg</div>
@@ -4726,7 +4809,7 @@ export function POPView() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          {purchase.paidAmount !== 'paid' && purchase.remainingAmount > 0 && (
+                          {getPurchasePaidStatus(purchase) !== 'paid' && getPurchaseRemainingAmount(purchase) > 0 && (
                             <button 
                               onClick={() => handleRecordPayment(purchase)}
                               className="p-1.5 hover:bg-green-100 rounded transition-colors text-muted-foreground hover:text-green-600"
@@ -4735,7 +4818,7 @@ export function POPView() {
                               <DollarSign className="w-4 h-4" />
                             </button>
                           )}
-                          {purchase.paidAmount !== 'paid' && purchase.remainingAmount > 0 && (
+                          {getPurchasePaidStatus(purchase) !== 'paid' && getPurchaseRemainingAmount(purchase) > 0 && (
                             <button 
                               onClick={() => handleMarkAsPaid(purchase)}
                               className="p-1.5 hover:bg-blue-100 rounded transition-colors text-muted-foreground hover:text-blue-600"
@@ -4744,7 +4827,7 @@ export function POPView() {
                               <CheckCircle className="w-4 h-4" />
                             </button>
                           )}
-                          {(purchase.amountPaid || 0) > 0 && (
+                          {getPurchaseTotalPaid(purchase) > 0 && (
                             <button 
                               onClick={() => handleViewPaymentHistory(purchase)}
                               className="p-1.5 hover:bg-purple-100 rounded transition-colors text-muted-foreground hover:text-purple-600"
