@@ -1,5 +1,6 @@
 const Purchase = require("../models/pop.model");
 const Sale = require("../models/pos.model");
+const { computePurchasePayment, withComputedPayment } = require("../utils/purchasePayment");
 
 // Add Purchase
 const addPurchase = async (req, res) => {
@@ -41,44 +42,29 @@ const addPurchase = async (req, res) => {
     // Convert price to number
     const priceNum = parseFloat(price) || 0;
     
-    // Parse advance payment
     let advancePaymentNum = 0;
-    if (advancePayment !== undefined && advancePayment !== null && advancePayment !== '') {
+    if (advancePayment !== undefined && advancePayment !== null && advancePayment !== "") {
       advancePaymentNum = parseFloat(advancePayment) || 0;
     }
-    
-    // Parse amount paid during purchase
+
     let amountPaidNum = 0;
-    if (amountPaid !== undefined && amountPaid !== null && amountPaid !== '') {
+    if (amountPaid !== undefined && amountPaid !== null && amountPaid !== "") {
       amountPaidNum = parseFloat(amountPaid) || 0;
     }
-    
-    // Calculate total paid (advance + amount paid)
-    const totalPaid = advancePaymentNum + amountPaidNum;
-    
-    console.log('Payment calculations:');
-    console.log('Total Price:', priceNum);
-    console.log('Advance Payment:', advancePaymentNum);
-    console.log('Amount Paid:', amountPaidNum);
-    console.log('Total Paid:', totalPaid);
 
-    // Calculate payment status
-    let paidAmount = 'none';
-    let remainingAmount = priceNum;
-    
-    if (totalPaid === 0) {
-      paidAmount = 'none';
-      remainingAmount = priceNum;
-    } else if (totalPaid >= priceNum) {
-      paidAmount = 'paid';
-      remainingAmount = 0;
-    } else {
-      paidAmount = 'partial';
-      remainingAmount = priceNum - totalPaid;
-    }
+    const payment = computePurchasePayment({
+      price: priceNum,
+      advancePayment: advancePaymentNum,
+      amountPaid: amountPaidNum,
+    });
 
-    console.log('Payment Status:', paidAmount);
-    console.log('Remaining Amount:', remainingAmount);
+    console.log("Payment calculations:");
+    console.log("Total Price:", priceNum);
+    console.log("Advance Payment:", advancePaymentNum);
+    console.log("Amount Paid (at purchase):", amountPaidNum);
+    console.log("Total Paid:", payment.totalPaid);
+    console.log("Payment Status:", payment.paidAmount);
+    console.log("Remaining Amount:", payment.remainingAmount);
 
     // Handle vehicle image
     const vehicleImage = req.file ? `/uploads/${req.file.filename}` : "";
@@ -101,9 +87,9 @@ const addPurchase = async (req, res) => {
       receiptNo,
       advancePayment: advancePaymentNum,
       amountPaid: amountPaidNum,
-      totalPaid: totalPaid,
-      paidAmount: paidAmount,
-      remainingAmount: remainingAmount,
+      totalPaid: payment.totalPaid,
+      paidAmount: payment.paidAmount,
+      remainingAmount: payment.remainingAmount,
       vehicleImage,
     });
 
@@ -160,7 +146,7 @@ const getPurchases = async (req, res) => {
       const sold = p.soldWeight || 0;
       const productionConsumed = p.productionConsumedWeight || 0;
       const remainingWeight = Math.max(0, totalWeight - sold - productionConsumed);
-      return { ...p, remainingWeight };
+      return withComputedPayment({ ...p, remainingWeight });
     });
     res.status(200).json({ success: true, data });
   } catch (error) {
@@ -178,7 +164,10 @@ const getPurchaseById = async (req, res) => {
     const sold = purchase.soldWeight || 0;
     const productionConsumed = purchase.productionConsumedWeight || 0;
     const remainingWeight = Math.max(0, totalWeight - sold - productionConsumed);
-    res.status(200).json({ success: true, data: { ...purchase, remainingWeight } });
+    res.status(200).json({
+      success: true,
+      data: withComputedPayment({ ...purchase, remainingWeight }),
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -193,6 +182,17 @@ const updatePurchase = async (req, res) => {
       updatedData.vehicleImage = `/uploads/${req.file.filename}`;
     }
 
+    const existing = await Purchase.findById(req.params.id).lean();
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Not Found" });
+    }
+
+    const merged = { ...existing, ...updatedData };
+    const payment = computePurchasePayment(merged);
+    updatedData.totalPaid = payment.totalPaid;
+    updatedData.paidAmount = payment.paidAmount;
+    updatedData.remainingAmount = payment.remainingAmount;
+
     const purchase = await Purchase.findByIdAndUpdate(
       req.params.id,
       updatedData,
@@ -202,7 +202,7 @@ const updatePurchase = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Purchase updated successfully",
-      data: purchase,
+      data: withComputedPayment(purchase.toObject()),
     });
 
   } catch (error) {
@@ -300,13 +300,13 @@ const getAllPurchasesWithRemainingWeight = async (req, res) => {
           const productionConsumed = purchase.productionConsumedWeight || 0;
           const remainingWeight = Math.max(0, totalWeight - soldWeight - productionConsumed);
           
-          return {
+          return withComputedPayment({
             ...purchase.toObject(),
             totalWeight,
             soldWeight,
             remainingWeight,
             salesCount: sales.length
-          };
+          });
         } catch (error) {
           console.error(`Error calculating for ${purchase.materialName}:`, error);
           const totalWeight = parseFloat(purchase.weight) || 0;

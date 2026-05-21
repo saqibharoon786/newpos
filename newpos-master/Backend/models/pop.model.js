@@ -1,4 +1,5 @@
-const mongoose = require('mongoose'); // ADD THIS LINE
+const mongoose = require('mongoose');
+const { computePurchasePayment } = require('../utils/purchasePayment');
 
 const purchaseSchema = new mongoose.Schema(
   {
@@ -61,6 +62,11 @@ purchaseSchema.pre('save', function(next) {
   } else {
     this.status = 'available';
   }
+
+  const payment = computePurchasePayment(this);
+  this.totalPaid = payment.totalPaid;
+  this.paidAmount = payment.paidAmount;
+  this.remainingAmount = payment.remainingAmount;
   
   next();
 });
