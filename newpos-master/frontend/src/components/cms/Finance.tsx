@@ -9,35 +9,9 @@ import { AlertCircle, Wallet, Smartphone, Building, Edit, Trash2, Plus, Download
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from "sonner";
-import axios from 'axios';
 import api from '@/lib/api';
 
-// ==================== API CONFIGURATION ====================
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-
-const createAPI = () => {
-  const instance = axios.create({
-    baseURL: API_BASE_URL,
-    timeout: 30000,
-  });
-
-  instance.interceptors.request.use(
-    (config) => {
-      if (config.url && !config.url.startsWith('/api/')) {
-        config.url = `/api${config.url.startsWith('/') ? '' : '/'}${config.url}`;
-      }
-      
-      return config;
-    },
-    (error) => {
-      return Promise.reject(error);
-    }
-  );
-
-  return instance;
-};
-
-const API = createAPI();
+const FINANCE_API = '/api/finance';
 
 interface Transaction {
   _id: string;
@@ -355,7 +329,7 @@ export default function FinanceModule() {
         params.endDate = endDate;
       }
 
-      const response = await API.get('/finance/transactions', { params });
+      const response = await api.get(`${FINANCE_API}/transactions`, { params });
       
       if (response.data.success) {
         const transactionsData = (response.data.transactions || []).map((transaction: any) => ({
@@ -387,7 +361,7 @@ export default function FinanceModule() {
   const fetchBalances = async () => {
     setLoading(prev => ({ ...prev, balances: true }));
     try {
-      const response = await API.get('/finance/balances');
+      const response = await api.get(`${FINANCE_API}/balances`);
       
       if (response.data.success) {
         const balancesData = response.data.balances || {
@@ -415,7 +389,7 @@ export default function FinanceModule() {
       setLoading(prev => ({ ...prev, deposit: true }));
       console.log('Sending deposit data:', data);
       
-      const response = await API.post('/finance/deposit', {
+      const response = await api.post(`${FINANCE_API}/deposit`, {
         method: data.method,
         amount: parseFloat(data.amount),
         description: data.description || 'Deposit',
@@ -466,6 +440,8 @@ export default function FinanceModule() {
       let errorMessage = 'Error creating deposit';
       if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
+      } else if (error.response?.status === 401) {
+        errorMessage = 'Session expire — logout kar ke dubara login karen';
       } else if (error.response?.status === 400) {
         errorMessage = 'Bad request. Please check your input.';
       } else if (error.message) {
@@ -483,7 +459,7 @@ export default function FinanceModule() {
       setLoading(prev => ({ ...prev, withdraw: true }));
       console.log('Sending withdrawal data:', data);
       
-      const response = await API.post('/finance/withdraw', {
+      const response = await api.post(`${FINANCE_API}/withdraw`, {
         method: data.method,
         amount: parseFloat(data.amount),
         description: data.description || 'Withdrawal',
@@ -534,6 +510,8 @@ export default function FinanceModule() {
       let errorMessage = 'Error creating withdrawal';
       if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
+      } else if (error.response?.status === 401) {
+        errorMessage = 'Session expire — logout kar ke dubara login karen';
       } else if (error.response?.status === 400) {
         errorMessage = error.response.data?.message || 'Insufficient balance or invalid input.';
       } else if (error.message) {
@@ -550,7 +528,7 @@ export default function FinanceModule() {
     try {
       console.log('Updating transaction:', id, data);
       
-      const response = await API.put(`/finance/transactions/${id}`, {
+      const response = await api.put(`${FINANCE_API}/transactions/${id}`, {
         description: data.description,
         amount: parseFloat(data.amount)
       });
@@ -594,7 +572,7 @@ export default function FinanceModule() {
     try {
       console.log('Deleting transaction:', id);
       
-      const response = await API.delete(`/finance/transactions/${id}`);
+      const response = await api.delete(`${FINANCE_API}/transactions/${id}`);
       
       console.log('Delete response:', response.data);
       
@@ -623,7 +601,7 @@ export default function FinanceModule() {
   const exportTransactions = async () => {
     try {
       setLoading(prev => ({ ...prev, export: true }));
-      const response = await API.get('/finance/export', {
+      const response = await api.get(`${FINANCE_API}/export`, {
         responseType: 'blob'
       });
       

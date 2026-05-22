@@ -65,3 +65,40 @@ export function calcPopWeightFromBags(code: string, bags: number): number {
   if (!bagSize || !Number.isFinite(bags) || bags <= 0) return 0;
   return Math.round(bags * bagSize * 100) / 100;
 }
+
+type PopMaterialLine = {
+  name?: string;
+  weight?: number;
+  productCode?: string;
+  pricePerKg?: number;
+  totalAmount?: number;
+};
+
+/** Cost rate for production — only the selected product code line on multi-material POP */
+export function getPopLinePricingFromPurchase(
+  pop: {
+    price?: number | string;
+    weight?: number | string;
+    materials?: PopMaterialLine[];
+  },
+  productCode: string
+): { purchasePrice: number; purchaseWeight: number } {
+  const mats = pop.materials || [];
+  const code = String(productCode || '').trim();
+  if (mats.length > 0 && code) {
+    const line = mats.find((m) => String(m.productCode || '').trim() === code);
+    if (line) {
+      const w = parseFloat(String(line.weight)) || 0;
+      const pricePerKg = parseFloat(String(line.pricePerKg)) || 0;
+      const totalAmount = parseFloat(String(line.totalAmount)) || 0;
+      return {
+        purchasePrice: totalAmount > 0 ? totalAmount : pricePerKg * w,
+        purchaseWeight: w,
+      };
+    }
+  }
+  return {
+    purchasePrice: parseFloat(String(pop.price)) || 0,
+    purchaseWeight: parseFloat(String(pop.weight)) || 0,
+  };
+}
