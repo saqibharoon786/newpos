@@ -1285,6 +1285,8 @@ export function RoznamchaView() {
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
   const [optimisticUpdates, setOptimisticUpdates] = useState<{[key: string]: ExpenseItem}>({});
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Pagination states
   const [pagination, setPagination] = useState<PaginationData>({
@@ -1674,6 +1676,90 @@ export function RoznamchaView() {
     }
   };
 
+  const deletableExpenses = expenses.filter(
+    (e) => !e._id.startsWith("temp-") && !optimisticUpdates[e._id]
+  );
+  const allPageSelected =
+    deletableExpenses.length > 0 &&
+    deletableExpenses.every((e) => selectedIds.includes(e._id));
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (allPageSelected) {
+      const pageIds = new Set(deletableExpenses.map((e) => e._id));
+      setSelectedIds((prev) => prev.filter((id) => !pageIds.has(id)));
+    } else {
+      const pageIds = deletableExpenses.map((e) => e._id);
+      setSelectedIds((prev) => [...new Set([...prev, ...pageIds])]);
+    }
+  };
+
+  const clearSelection = () => setSelectedIds([]);
+
+  const handleBulkDelete = async () => {
+    const ids = selectedIds.filter(
+      (id) => !id.startsWith("temp-") && expenses.some((e) => e._id === id)
+    );
+    if (ids.length === 0) return;
+    if (
+      !confirm(
+        `Kya aap ${ids.length} kharcha delete karna chahte hain? Yeh wapas nahi hoga.`
+      )
+    ) {
+      return;
+    }
+
+    setBulkDeleting(true);
+    const backup = expenses.filter((e) => ids.includes(e._id));
+    setExpenses((prev) => prev.filter((e) => !ids.includes(e._id)));
+    if (viewExpense && ids.includes(viewExpense._id)) setViewExpense(null);
+
+    const results = await Promise.allSettled(
+      ids.map((id) => api.delete(`${EXPENSES_API}/${id}`))
+    );
+    const failedIds = ids.filter((_, i) => results[i].status === "rejected");
+    const okCount = ids.length - failedIds.length;
+
+    if (failedIds.length > 0) {
+      const restore = backup.filter((e) => failedIds.includes(e._id));
+      setExpenses((prev) => {
+        const merged = [...prev];
+        restore.forEach((e) => {
+          if (!merged.some((x) => x._id === e._id)) merged.unshift(e);
+        });
+        return merged;
+      });
+      setSelectedIds(failedIds);
+      toast({
+        title: okCount > 0 ? "Partial delete" : "Error",
+        description:
+          okCount > 0
+            ? `${okCount} delete, ${failedIds.length} fail`
+            : `${failedIds.length} record delete nahi ho sakay`,
+        variant: "destructive",
+      });
+      if (okCount > 0) {
+        fetchStats();
+        fetchExpenses(pagination.currentPage);
+      }
+    } else {
+      toast({
+        title: "Deleted",
+        description: `${ids.length} kharcha delete ho gaye`,
+        action: <CheckCircle className="w-4 h-4 text-green-500" />,
+      });
+      clearSelection();
+      fetchStats();
+      fetchExpenses(pagination.currentPage);
+    }
+    setBulkDeleting(false);
+  };
+
   // Handle delete expense
   const handleDeleteExpense = async (id: string) => {
     if (!confirm("Are you sure you want to delete this expense?")) return;
@@ -1700,6 +1786,7 @@ export function RoznamchaView() {
       fetchStats();
       // Refresh current page to update pagination counts
       fetchExpenses(pagination.currentPage);
+      setSelectedIds((prev) => prev.filter((x) => x !== id));
       
     } catch (error) {
       console.error("Error deleting expense:", error);
@@ -2128,15 +2215,51 @@ export function RoznamchaView() {
           </button>
         </div>
 
-        {/* Pagination Info */}
-        <div className="flex items-center justify-between mb-4">
+        {/* Pagination Info + bulk actions */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="text-sm text-muted-foreground">
             Showing {(pagination.currentPage - 1) * (pagination.itemsPerPage || 10) + 1} to{" "}
             {Math.min(pagination.currentPage * (pagination.itemsPerPage || 10), pagination.totalItems)} of{" "}
             {pagination.totalItems} expenses
+            {selectedIds.length > 0 && (
+              <span className="ml-2 text-primary font-medium">
+                · {selectedIds.length} selected
+              </span>
+            )}
           </div>
-          <div className="text-sm text-muted-foreground">
-            Page {pagination.currentPage} of {pagination.totalPages}
+          <div className="flex flex-wrap items-center gap-2">
+            {deletableExpenses.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleSelectAll}
+                className="px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors"
+              >
+                {allPageSelected ? "Unselect page" : "Select all (this page)"}
+              </button>
+            )}
+            {selectedIds.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  className="px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="px-3 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {bulkDeleting ? "Deleting…" : `Delete selected (${selectedIds.length})`}
+                </button>
+              </>
+            )}
+            <span className="text-sm text-muted-foreground">
+              Page {pagination.currentPage} of {pagination.totalPages}
+            </span>
           </div>
         </div>
 
@@ -2173,6 +2296,16 @@ export function RoznamchaView() {
               <table className="w-full min-w-[700px]">
                 <thead>
                   <tr className="bg-cms-table-header">
+                    <th className="text-center px-2 py-3 w-10">
+                      <input
+                        type="checkbox"
+                        checked={allPageSelected}
+                        onChange={toggleSelectAll}
+                        disabled={deletableExpenses.length === 0 || bulkDeleting}
+                        title="Select all on this page"
+                        className="w-4 h-4 rounded border-border cursor-pointer"
+                      />
+                    </th>
                     <th className="text-center px-2 sm:px-4 py-3 text-xs sm:text-sm font-medium text-foreground">#</th>
                     <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Subject</th>
                     <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Purpose</th>
@@ -2187,6 +2320,8 @@ export function RoznamchaView() {
                   {expenses.map((expense, index) => {
                     const isOptimistic = optimisticUpdates[expense._id];
                     const isTemp = expense._id.startsWith('temp-');
+                    const canSelect = !isTemp && !isOptimistic;
+                    const isSelected = selectedIds.includes(expense._id);
                     const serialNumber =
                       (pagination.currentPage - 1) * (pagination.itemsPerPage || 10) + index + 1;
                     const formattedDate = formatDateWithMonthName(expense.date);
@@ -2198,8 +2333,19 @@ export function RoznamchaView() {
                           index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'
                         } hover:bg-cms-card-hover transition-colors ${
                           isOptimistic ? 'opacity-80 bg-yellow-50' : ''
-                        } ${isTemp ? 'opacity-70 bg-blue-50' : ''}`}
+                        } ${isTemp ? 'opacity-70 bg-blue-50' : ''} ${
+                          isSelected ? 'ring-1 ring-inset ring-primary/40' : ''
+                        }`}
                       >
+                        <td className="px-2 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={!canSelect || bulkDeleting}
+                            onChange={() => toggleSelectOne(expense._id)}
+                            className="w-4 h-4 rounded border-border cursor-pointer disabled:cursor-not-allowed"
+                          />
+                        </td>
                         <td className="px-4 py-3 text-sm text-foreground font-medium text-center">
                           {serialNumber}
                         </td>
