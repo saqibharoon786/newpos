@@ -3,6 +3,12 @@ const { ProcessingMaterial, ProductionData } = require("../models/process.model.
 const Purchase = require("../models/pop.model.js");
 const Employee = require("../models/employee.model.js");
 const { computeProductionCosts } = require("../utils/productionCost");
+const {
+  deductPopWeight,
+  restorePopWeight,
+  getPopLinePricing,
+  buildProcessingQueueItems,
+} = require("../utils/popMaterialConsumption");
 
 function parsePurchaseDate(purchase) {
   const d = purchase.purchaseDate;
@@ -20,6 +26,10 @@ function parsePurchaseDate(purchase) {
   return Number.isNaN(parsed.getTime()) ? purchase.createdAt || new Date() : parsed;
 }
 
+function normCodeForFilter(c) {
+  return String(c || "").trim();
+}
+
 function formatProcessError(error) {
   if (error.name === "ValidationError") {
     return Object.values(error.errors)
@@ -31,6 +41,24 @@ function formatProcessError(error) {
   }
   return error.message || "Failed to process";
 }
+
+/** Processing queue — server calculates per-code weight (100/105/110 alag) */
+const getProcessingQueue = async (req, res) => {
+  try {
+    const purchases = await Purchase.find().sort({ createdAt: -1 }).lean();
+    const items = buildProcessingQueueItems(purchases);
+    res.status(200).json({
+      success: true,
+      count: items.length,
+      data: items,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to load processing queue",
+    });
+  }
+};
 
 // Get all processing materials from purchases
 const getProcessingMaterials = async (req, res) => {
@@ -207,49 +235,28 @@ const createProductionRecord = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid employee selection — please re-select employees" });
     }
     const purchaseId = productionData.purchaseId;
+    const productCode = normCodeForFilter(productionData.productCode);
     const weightUsedFromPOP = productionData.weightUsedFromPOP != null ? parseFloat(productionData.weightUsedFromPOP) : null;
-    const groupPurchases = productionData.groupPurchases || null; // [{ purchaseId, availableWeight }, ...] for allocating across receipts
 
     if (weightUsedFromPOP != null && !isNaN(weightUsedFromPOP) && weightUsedFromPOP > 0) {
-      if (Array.isArray(groupPurchases) && groupPurchases.length > 0) {
-        // Allocate weight used across multiple receipts (same quality+color) so remaining total is correct
-        let remainingToAllocate = weightUsedFromPOP;
-        for (const item of groupPurchases) {
-          if (remainingToAllocate <= 0) break;
-          const pid = item.purchaseId;
-          const purchase = await Purchase.findById(pid);
-          if (!purchase) continue;
-          const originalWeight = parseFloat(purchase.weight) || 0;
-          const sold = parseFloat(purchase.soldWeight) || 0;
-          const currentConsumed = parseFloat(purchase.productionConsumedWeight) || 0;
-          const available = Math.max(0, originalWeight - sold - currentConsumed);
-          const toDeduct = Math.min(remainingToAllocate, available);
-          if (toDeduct > 0) {
-            purchase.productionConsumedWeight = currentConsumed + toDeduct;
-            await purchase.save();
-            
-            // Also update ProcessingMaterial if it exists
-            await ProcessingMaterial.findOneAndUpdate(
-              { purchaseId: purchase._id },
-              { availableWeight: purchase.remainingWeight }
-            );
-
-            remainingToAllocate -= toDeduct;
-          }
-        }
-      } else if (purchaseId) {
-        const purchase = await Purchase.findById(purchaseId);
-        if (purchase) {
-          const current = parseFloat(purchase.productionConsumedWeight) || 0;
-          purchase.productionConsumedWeight = current + weightUsedFromPOP;
-          await purchase.save(); // Triggers remainingWeight update
-
-          // Also update ProcessingMaterial if it exists
-          await ProcessingMaterial.findOneAndUpdate(
-            { purchaseId: purchase._id },
-            { availableWeight: purchase.remainingWeight }
-          );
-        }
+      if (!productCode) {
+        return res.status(400).json({
+          success: false,
+          message: "Product code (100/105/110) required — sirf us code ki line se weight cut hoga",
+        });
+      }
+      if (!purchaseId) {
+        return res.status(400).json({
+          success: false,
+          message: "POP purchase required for queue production",
+        });
+      }
+      const result = await deductPopWeight(purchaseId, {
+        productCode,
+        weight: weightUsedFromPOP,
+      });
+      if (!result.ok) {
+        return res.status(400).json({ success: false, message: result.message });
       }
     }
 
@@ -274,8 +281,9 @@ const createProductionRecord = async (req, res) => {
     if (purchaseId) {
       const pop = await Purchase.findById(purchaseId).lean();
       if (pop) {
-        purchasePrice = parseFloat(pop.price) || 0;
-        purchaseWeight = parseFloat(pop.weight) || 0;
+        const pricing = getPopLinePricing(pop, productCode);
+        purchasePrice = pricing.purchasePrice;
+        purchaseWeight = pricing.purchaseWeight;
       }
     }
     const costs = computeProductionCosts({
@@ -314,6 +322,10 @@ const createProductionRecord = async (req, res) => {
 
     res.status(201).json({
       success: true,
+      message:
+        weightUsedFromPOP > 0 && productCode
+          ? `Code ${productCode}: ${weightUsedFromPOP} kg sirf isi code ki POP line se minus hua`
+          : undefined,
       data: populatedRecord,
     });
   } catch (error) {
@@ -697,18 +709,19 @@ const updateProduction = async (req, res) => {
       const purchaseId = updateData.purchaseId || currentProduction.purchaseId;
 
       if (purchaseId && newUsedFromPOP !== oldUsedFromPOP) {
-        const purchase = await Purchase.findById(purchaseId);
-        if (purchase) {
-          const diff = newUsedFromPOP - oldUsedFromPOP;
-          const currentConsumed = parseFloat(purchase.productionConsumedWeight) || 0;
-          purchase.productionConsumedWeight = currentConsumed + diff;
-          await purchase.save();
-
-          // Also update ProcessingMaterial if it exists
-          await ProcessingMaterial.findOneAndUpdate(
-            { purchaseId: purchase._id },
-            { availableWeight: purchase.remainingWeight }
-          );
+        const code = normCodeForFilter(
+          updateData.productCode || currentProduction.productCode
+        );
+        const diff = newUsedFromPOP - oldUsedFromPOP;
+        if (code) {
+          if (diff > 0) {
+            const result = await deductPopWeight(purchaseId, { productCode: code, weight: diff });
+            if (!result.ok) {
+              return res.status(400).json({ success: false, message: result.message });
+            }
+          } else if (diff < 0) {
+            await restorePopWeight(purchaseId, { productCode: code, weight: -diff });
+          }
         }
       }
     }
@@ -754,25 +767,11 @@ const deleteProduction = async (req, res) => {
     }
 
     // Restore consumed weight to Purchase record if applicable
-    if (production.weightUsedFromPOP > 0 && production.purchaseId) {
-      const purchase = await Purchase.findById(production.purchaseId);
-      if (purchase) {
-        const currentConsumed = parseFloat(purchase.productionConsumedWeight) || 0;
-        const restoredWeight = production.weightUsedFromPOP;
-        
-        // Update purchase consumed weight
-        purchase.productionConsumedWeight = Math.max(0, currentConsumed - restoredWeight);
-        await purchase.save(); // This will also trigger remainingWeight recalculation
-
-        // Also update ProcessingMaterial if it exists so the queue stays in sync
-        const material = await ProcessingMaterial.findOne({ purchaseId: production.purchaseId });
-        if (material) {
-          material.availableWeight = purchase.remainingWeight;
-          // If it was marked processed or in_progress, maybe reset to pending if weight is restored?
-          // For now, let's just restore weight.
-          await material.save();
-        }
-      }
+    if (production.weightUsedFromPOP > 0 && production.purchaseId && production.productCode) {
+      await restorePopWeight(production.purchaseId, {
+        productCode: production.productCode,
+        weight: production.weightUsedFromPOP,
+      });
     }
 
     await ProductionData.findByIdAndDelete(id);
@@ -898,6 +897,7 @@ const exportProductionData = async (req, res) => {
 };
 
 module.exports = {
+  getProcessingQueue,
   getProcessingMaterials,
   updateMaterialStatus,
   createProductionRecord,

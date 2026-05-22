@@ -1,5 +1,6 @@
 const express = require("express");
 const {
+  getProcessingQueue,
   getProcessingMaterials,
   updateMaterialStatus,
   createProductionRecord,
@@ -21,6 +22,7 @@ const router = express.Router();
 router.get("/dashboard", getProcessingDashboard);
 
 // Material routes
+router.get("/queue", getProcessingQueue);
 router.get("/materials", getProcessingMaterials);
 router.put("/materials/:id", updateMaterialStatus);
 

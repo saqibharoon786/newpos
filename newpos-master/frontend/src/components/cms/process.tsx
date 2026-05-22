@@ -43,13 +43,20 @@ import {
   getProductCodeLabel,
   resolveProductCode,
   getBagSizeForCode,
+  getProductByCode,
   calcPopWeightFromBags,
+  getPopLinePricingFromPurchase,
 } from "@/lib/productCodes";
 import {
   computeProcessQueueCosts,
   getPricePerKgFromPop,
   getProductionDisplayCost,
 } from "@/lib/productionCost";
+
+function normCodeStrict(code?: string): string {
+  const c = String(code || "").trim();
+  return getProductByCode(c) ? c : "";
+}
 
 // Relative paths — api client uses Vite proxy + CMS auth headers
 const PROCESSING_API_URL = "/api/processing";
@@ -102,69 +109,10 @@ interface ProcessingMaterial {
   purchaseDate: string;
   purchasePrice?: number;
   productCode?: string;
+  /** POP materials[] index — deduction only on this line */
+  materialLineIndex?: number;
   status: 'pending' | 'in_progress' | 'processed' | 'on_hold';
   batchNo?: string;
-}
-
-/** Build queue rows from POP purchases (one row per material line when codes exist) */
-function buildProcessingQueueFromPurchases(purchases: any[]): ProcessingMaterial[] {
-  const items: ProcessingMaterial[] = [];
-
-  for (const purchase of purchases) {
-    const originalWeight = parseFloat(purchase.weight) || 0;
-    const productionConsumed = parseFloat(purchase.productionConsumedWeight) || 0;
-    const availableForProcessing = originalWeight - productionConsumed;
-    if (availableForProcessing <= 0) continue;
-
-    const base = {
-      purchaseId: purchase._id,
-      receiptNo: purchase.receiptNo || purchase.invoiceNo || 'N/A',
-      quality: purchase.quality || 'Unknown',
-      color: purchase.materialColor || '#FFFFFF',
-      vendor: purchase.vendor || 'Unknown',
-      purchaseDate: purchase.purchaseDate || purchase.createdAt,
-      purchasePrice: parseFloat(purchase.price) || 0,
-      status: 'pending' as const,
-    };
-
-    const mats = (purchase.materials || []).filter(
-      (m: { name?: string; productCode?: string }) => m?.name?.trim() || m?.productCode
-    );
-
-    if (mats.length > 0) {
-      const totalMatWeight = mats.reduce(
-        (s: number, m: { weight?: number }) => s + (parseFloat(String(m.weight)) || 0),
-        0
-      );
-      const weightDivisor = totalMatWeight > 0 ? totalMatWeight : mats.length;
-
-      mats.forEach((m: { name?: string; weight?: number; productCode?: string }, idx: number) => {
-        const matWeight = parseFloat(String(m.weight)) || 0;
-        const share = totalMatWeight > 0 ? matWeight / weightDivisor : 1 / mats.length;
-        const code = resolveProductCode(m.name, m.productCode);
-        items.push({
-          _id: `${purchase._id}-${code || idx}`,
-          ...base,
-          materialName: m.name?.trim() || purchase.materialName || 'Unknown',
-          productCode: code || '—',
-          originalWeight: matWeight || originalWeight,
-          availableWeight: Math.round(availableForProcessing * share * 10) / 10,
-        });
-      });
-    } else {
-      const code = resolveProductCode(purchase.materialName);
-      items.push({
-        _id: purchase._id,
-        ...base,
-        materialName: purchase.materialName || 'Unknown',
-        productCode: code || '—',
-        originalWeight,
-        availableWeight: availableForProcessing,
-      });
-    }
-  }
-
-  return items;
 }
 
 interface ProcessingStage {
@@ -1452,7 +1400,6 @@ const StartProcessFormModal = ({
   onSaved,
   initialMaterial,
   purchaseId,
-  groupPurchases,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1467,10 +1414,10 @@ const StartProcessFormModal = ({
     purchasePrice?: number;
     purchaseWeight?: number;
     productCode?: string;
-    materialOptions?: { materialName: string; purchaseId: string; productCode?: string }[];
+    materialLineIndex?: number;
+    materialOptions?: { materialName: string; purchaseId: string; productCode?: string; materialLineIndex?: number }[];
   } | null;
   purchaseId?: string | null;
-  groupPurchases?: { purchaseId: string; availableWeight: number }[];
 }) => {
   const [materialName, setMaterialName] = useState("");
   const [quality, setQuality] = useState("Standard");
@@ -1513,16 +1460,17 @@ const StartProcessFormModal = ({
       .then((res) => {
         if (cancelled || !res.data?.success) return;
         const pop = res.data.data;
+        const pricing = getPopLinePricingFromPurchase(pop, productCode);
         setPopPricing({
-          price: parseFloat(pop.price) || 0,
-          weight: parseFloat(pop.weight) || 0,
+          price: pricing.purchasePrice,
+          weight: pricing.purchaseWeight,
         });
       })
       .catch(() => setPopPricing(null));
     return () => {
       cancelled = true;
     };
-  }, [open, purchaseId]);
+  }, [open, purchaseId, productCode]);
 
   useEffect(() => {
     if (!open || !isFromQueue) return;
@@ -1635,9 +1583,7 @@ const StartProcessFormModal = ({
       setSelectedShift("morning");
       setSelectedEmployees([]);
       setProductCode(
-        initialMaterial?.productCode && initialMaterial.productCode !== '—'
-          ? initialMaterial.productCode
-          : PRODUCT_CODES[0]?.code || ""
+        normCodeStrict(initialMaterial?.productCode) || PRODUCT_CODES[0]?.code || ""
       );
       setWasteCost("");
       setLaborCostPerKg("");
@@ -1756,15 +1702,25 @@ const StartProcessFormModal = ({
       ? initialMaterial.materialOptions.find(o => o.materialName.trim() === materialName.trim())?.purchaseId
       : purchaseId;
     if (effectivePurchaseId) payload.purchaseId = effectivePurchaseId;
+      if (initialMaterial?.materialLineIndex != null) {
+        payload.materialLineIndex = initialMaterial.materialLineIndex;
+      }
       if (isFromQueue && !isNaN(usedFromPOP)) {
         payload.weightUsedFromPOP = usedFromPOP;
-        if (groupPurchases && groupPurchases.length > 0) {
-          payload.groupPurchases = groupPurchases;
+        const selectedCode = normCodeStrict(productCode);
+        if (!selectedCode) {
+          throw new Error("Product code select karen — sirf Code 100/105/110 se cut hoga");
         }
+        payload.productCode = selectedCode;
       }
       const response = await api.post(`${PROCESSING_API_URL}/production`, payload);
       if (response.data.success) {
-        toast({ title: "Success", description: "Production saved. It appears in Production List and can be sold from POS." });
+        toast({
+          title: "Success",
+          description:
+            response.data.message ||
+            "Production saved. Sirf selected code ki POP line se weight minus hua.",
+        });
         onSaved();
         onClose();
       } else {
@@ -1906,12 +1862,20 @@ const StartProcessFormModal = ({
                   <select
                     value={productCode}
                     onChange={(e) => setProductCode(e.target.value)}
-                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    disabled={
+                      !!(initialMaterial?.productCode && initialMaterial.productCode !== '—')
+                    }
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-70"
                   >
                     {PRODUCT_CODES.map((p) => (
                       <option key={p.code} value={p.code}>{p.label} — {p.bagSize} kg/bag</option>
                     ))}
                   </select>
+                  {initialMaterial?.productCode && initialMaterial.productCode !== '—' && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Sirf Code {initialMaterial.productCode} ka POP use hoga — doosre code se nahi.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1.5">Total Bags *</label>
@@ -3309,11 +3273,9 @@ export function ProcessingModule() {
         setProductionData(productionResponse.data.data || []);
       }
 
-      // Fetch materials from POP: remaining for processing = weight - productionConsumedWeight
-      const purchasesResponse = await api.get(`${PURCHASES_API_URL}/get-all`);
-      if (purchasesResponse.data.success) {
-        const purchases = purchasesResponse.data.data || [];
-        setMaterials(buildProcessingQueueFromPurchases(purchases));
+      const queueResponse = await api.get(`${PROCESSING_API_URL}/queue`);
+      if (queueResponse.data.success) {
+        setMaterials(queueResponse.data.data || []);
       }
       
       // Fetch active batches for dashboard
@@ -3518,15 +3480,24 @@ export function ProcessingModule() {
                 purchasePrice: materialForStartProcess.purchasePrice,
                 purchaseWeight: materialForStartProcess.originalWeight,
                 productCode: materialForStartProcess.productCode,
+                materialLineIndex: materialForStartProcess.materialLineIndex,
                 materialOptions: groupMaterials && groupMaterials.length > 0
                   ? (() => {
+                      const code = normCodeStrict(materialForStartProcess.productCode);
                       const seen = new Set<string>();
                       return groupMaterials
-                        .filter(m => { const n = m.materialName || "Unknown"; if (seen.has(n)) return false; seen.add(n); return true; })
-                        .map(m => ({
+                        .filter((m) => !code || m.productCode === code)
+                        .filter((m) => {
+                          const n = m.materialName || "Unknown";
+                          if (seen.has(n)) return false;
+                          seen.add(n);
+                          return true;
+                        })
+                        .map((m) => ({
                           materialName: m.materialName || "Unknown",
                           purchaseId: m.purchaseId,
                           productCode: m.productCode,
+                          materialLineIndex: m.materialLineIndex,
                         }));
                     })()
                   : undefined,
@@ -3534,11 +3505,6 @@ export function ProcessingModule() {
             : null
         }
         purchaseId={materialForStartProcess?.purchaseId ?? null}
-        groupPurchases={
-          groupMaterials && groupMaterials.length > 0
-            ? groupMaterials.map((m) => ({ purchaseId: m.purchaseId, availableWeight: m.availableWeight }))
-            : undefined
-        }
       />
       {/* Start Processing Modal (legacy: from queue material) */}
       <StartProcessingModal

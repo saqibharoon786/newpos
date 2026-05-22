@@ -119,6 +119,8 @@ const productionDataSchema = new mongoose.Schema(
     ],
     notes: String,
     productCode: { type: String },
+    /** Index in POP materials[] — ensures deduction only on that code line */
+    materialLineIndex: { type: Number },
     bagSize: { type: Number },
     wasteWeight: { type: Number, default: 0, min: 0 },
     wasteCost: { type: Number, default: 0, min: 0 },

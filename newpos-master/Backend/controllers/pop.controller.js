@@ -10,6 +10,7 @@ const { generatePurchaseInvoiceNo } = require("../utils/invoiceGenerator");
 const vendorController = require("./vendor.controller");
 const { logActivity } = require("../utils/activityLogger");
 const notificationController = require("./notification.controller");
+const { getPurchaseDisplayWeights } = require("../utils/popMaterialConsumption");
 
 // Add Purchase
 const addPurchase = async (req, res) => {
@@ -246,11 +247,8 @@ const getPurchases = async (req, res) => {
   try {
     const purchases = await Purchase.find().sort({ createdAt: -1 }).lean();
     const data = purchases.map((p) => {
-      const totalWeight = parseFloat(p.weight) || 0;
-      const sold = p.soldWeight || 0;
-      const productionConsumed = p.productionConsumedWeight || 0;
-      const remainingWeight = Math.max(0, totalWeight - sold - productionConsumed);
-      return withComputedPayment({ ...p, remainingWeight });
+      const weights = getPurchaseDisplayWeights(p);
+      return withComputedPayment({ ...p, ...weights });
     });
     res.status(200).json({ success: true, data });
   } catch (error) {
@@ -264,13 +262,10 @@ const getPurchaseById = async (req, res) => {
     const purchase = await Purchase.findById(req.params.id).lean();
     if (!purchase)
       return res.status(404).json({ success: false, message: "Not Found" });
-    const totalWeight = parseFloat(purchase.weight) || 0;
-    const sold = purchase.soldWeight || 0;
-    const productionConsumed = purchase.productionConsumedWeight || 0;
-    const remainingWeight = Math.max(0, totalWeight - sold - productionConsumed);
+    const weights = getPurchaseDisplayWeights(purchase);
     res.status(200).json({
       success: true,
-      data: withComputedPayment({ ...purchase, remainingWeight }),
+      data: withComputedPayment({ ...purchase, ...weights }),
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

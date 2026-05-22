@@ -25,12 +25,16 @@ const purchaseSchema = new mongoose.Schema(
         pricePerKg: Number,
         totalAmount: Number,
         productCode: String,
+        /** kg used in production for this code only (not other lines on same receipt) */
+        productionConsumedWeight: { type: Number, default: 0 },
       },
     ],
     weight: { type: String, required: true }, // Original total weight
     soldWeight: { type: Number, default: 0 }, // Total weight sold so far
     remainingWeight: { type: Number }, // Calculated: weight - soldWeight
-    productionConsumedWeight: { type: Number, default: 0 }, // Weight used in Start Process (factory); remaining for processing = weight - productionConsumedWeight
+    productionConsumedWeight: { type: Number, default: 0 }, // Sum of per-code consumption (materials lines)
+    /** Per product code kg used in production: { "100": 30, "105": 0, "110": 0 } */
+    codeConsumption: { type: Object, default: {} },
     quality: { type: String, required: false },
     
     // Add status field
@@ -70,11 +74,37 @@ const purchaseSchema = new mongoose.Schema(
 
 // Add pre-save middleware to calculate remainingWeight (after sales and after weight sent to processing)
 purchaseSchema.pre('save', function(next) {
-  const originalWeight = parseFloat(this.weight) || 0;
+  const mats = this.materials || [];
   const soldWeight = this.soldWeight || 0;
-  const productionConsumed = this.productionConsumedWeight || 0;
-  this.remainingWeight = Math.max(0, originalWeight - soldWeight - productionConsumed);
-  
+  let originalWeight = parseFloat(this.weight) || 0;
+
+  if (mats.length > 0) {
+    const sumMatWeight = mats.reduce((s, m) => s + (parseFloat(m.weight) || 0), 0);
+    if (sumMatWeight > 0) {
+      originalWeight = sumMatWeight;
+      if (!this.weight || parseFloat(this.weight) <= 0) {
+        this.weight = String(sumMatWeight);
+      }
+    }
+    let totalConsumed = 0;
+    let lineRemainingSum = 0;
+    const cc = {};
+    for (const m of mats) {
+      const w = parseFloat(m.weight) || 0;
+      const code = String(m.productCode || '').trim();
+      const c = parseFloat(m.productionConsumedWeight) || 0;
+      if (code) cc[code] = c;
+      totalConsumed += c;
+      lineRemainingSum += Math.max(0, w - c);
+    }
+    this.codeConsumption = cc;
+    this.productionConsumedWeight = totalConsumed;
+    this.remainingWeight = Math.max(0, lineRemainingSum);
+  } else {
+    const productionConsumed = this.productionConsumedWeight || 0;
+    this.remainingWeight = Math.max(0, originalWeight - soldWeight - productionConsumed);
+  }
+
   // Update status based on remaining weight
   if (this.remainingWeight <= 0) {
     this.status = 'sold_out';
