@@ -1,25 +1,26 @@
 import { useState, useEffect } from "react";
 import { Printer, Circle, Scale, Palette, Building2, Award, IndianRupee, Calendar, Truck, Settings, User, CreditCard, ArrowLeft, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import axios from "axios";
+import api, { API_BASE_URL } from "@/lib/api";
 import { fetchCompanySettings, getLogoUrl } from "@/lib/companySettings";
 
-// Configure axios using environment variable
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-});
+const UPLOAD_BASE = API_BASE_URL || (typeof window !== "undefined" ? window.location.origin : "");
 
-// Update the purchases endpoint
-const PURCHASES_API_URL = `${API_BASE_URL}/api/purchases`;
+interface PurchaseMaterial {
+  name?: string;
+  materialName?: string;
+  productCode?: string;
+  weight?: number;
+  pricePerKg?: number;
+  totalAmount?: number;
+}
 
 interface Purchase {
   _id: string;
   materialName: string;
   vendor: string;
-  price: string;
-  weight: string;
+  price: string | number;
+  weight: string | number;
   quality: string;
   purchaseDate: string;
   materialColor: string;
@@ -30,7 +31,16 @@ interface Purchase {
   vehicleColor: string;
   deliveryDate: string;
   receiptNo: string;
+  invoiceNo?: string;
   vehicleImage: string;
+  materials?: PurchaseMaterial[];
+  remainingWeight?: number;
+  soldWeight?: number;
+  productionConsumedWeight?: number;
+  totalPaid?: number;
+  remainingAmount?: number;
+  paidAmount?: string;
+  approvalStatus?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,21 +70,18 @@ const getImageUrl = (imagePath: string | undefined): string | null => {
   // Check common path patterns
   // Pattern 1: starts with uploads/
   if (cleanPath.startsWith('uploads/')) {
-    return `${API_BASE_URL}/${cleanPath}`;
+    return `${UPLOAD_BASE}/${cleanPath}`;
   }
   
-  // Pattern 2: If path contains uploads but not at start
   if (cleanPath.includes('uploads/')) {
-    return `${API_BASE_URL}/${cleanPath}`;
+    return `${UPLOAD_BASE}/${cleanPath}`;
   }
   
-  // Pattern 3: Just a filename with extension
   if (cleanPath.includes('.') && !cleanPath.includes('/')) {
-    return `${API_BASE_URL}/uploads/vehicles/${cleanPath}`;
+    return `${UPLOAD_BASE}/uploads/vehicles/${cleanPath}`;
   }
   
-  // Default: try to construct URL based on common vehicle image path
-  return `${API_BASE_URL}/${cleanPath}`;
+  return `${UPLOAD_BASE}/${cleanPath}`;
 };
 
 // Function to test image loading with retries
@@ -153,7 +160,7 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
       setVehicleImageUrl(null);
       setImageLoading(true);
       
-      const response = await api.get(`${PURCHASES_API_URL}/${purchaseId}`);
+      const response = await api.get(`/api/purchases/${purchaseId}`);
       
       if (response.data.success) {
         const purchaseData = response.data.data;
@@ -187,13 +194,9 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
       // Try different URL patterns
       const altPatterns = [
         // Direct from API_BASE_URL with cleaned path
-        `${API_BASE_URL}/${originalPath.startsWith('/') ? originalPath.substring(1) : originalPath}`,
-        // With uploads/ prefix
-        `${API_BASE_URL}/uploads/${originalPath.split('/').pop()}`,
-        // With uploads/vehicles/ prefix
-        `${API_BASE_URL}/uploads/vehicles/${originalPath.split('/').pop()}`,
-        // Try with localhost:5000 directly
-        `http://localhost:5000/${originalPath.startsWith('/') ? originalPath.substring(1) : originalPath}`,
+        `${UPLOAD_BASE}/${originalPath.startsWith('/') ? originalPath.substring(1) : originalPath}`,
+        `${UPLOAD_BASE}/uploads/${originalPath.split('/').pop()}`,
+        `${UPLOAD_BASE}/uploads/vehicles/${originalPath.split('/').pop()}`,
       ];
       
       // Try each pattern
@@ -561,9 +564,9 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
     }
   };
 
-  const formatCurrency = (amount: string) => {
+  const formatCurrency = (amount: string | number) => {
     try {
-      const numAmount = parseFloat(amount);
+      const numAmount = typeof amount === 'number' ? amount : parseFloat(String(amount).replace(/,/g, ''));
       if (isNaN(numAmount)) return 'Rs. 0';
       return `Rs. ${numAmount.toLocaleString('en-PK')}`;
     } catch (error) {
@@ -911,6 +914,76 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
         </div>
       </div>
 
+      {/* Materials line items */}
+      {purchase.materials && purchase.materials.length > 0 && (
+        <div className="bg-cms-card rounded-xl p-5 border border-border mb-6">
+          <h3 className="text-base font-semibold text-foreground mb-4 pb-3 border-b border-border">
+            Materials (Mall detail)
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-cms-table-header">
+                <tr>
+                  <th className="text-left px-3 py-2">Code</th>
+                  <th className="text-left px-3 py-2">Material</th>
+                  <th className="text-right px-3 py-2">Weight (kg)</th>
+                  <th className="text-right px-3 py-2">Price/kg</th>
+                  <th className="text-right px-3 py-2">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {purchase.materials.map((m, idx) => (
+                  <tr key={idx} className="border-t border-border">
+                    <td className="px-3 py-2">{m.productCode || '—'}</td>
+                    <td className="px-3 py-2">{m.name || m.materialName || '—'}</td>
+                    <td className="px-3 py-2 text-right">{m.weight ?? '—'}</td>
+                    <td className="px-3 py-2 text-right">
+                      {m.pricePerKg != null ? formatCurrency(m.pricePerKg) : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {m.totalAmount != null ? formatCurrency(m.totalAmount) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Payment & weight summary */}
+      <div className="bg-cms-card rounded-xl p-5 border border-border mb-6">
+        <h3 className="text-base font-semibold text-foreground mb-4 pb-3 border-b border-border">
+          Payment & Weight
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div>
+            <label className="text-xs text-muted-foreground">Total Paid</label>
+            <p className="text-sm font-medium text-foreground mt-1">
+              {purchase.totalPaid != null ? formatCurrency(purchase.totalPaid) : '—'}
+            </p>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Remaining Amount</label>
+            <p className="text-sm font-medium text-foreground mt-1">
+              {purchase.remainingAmount != null ? formatCurrency(purchase.remainingAmount) : '—'}
+            </p>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Remaining Weight</label>
+            <p className="text-sm font-medium text-foreground mt-1">
+              {purchase.remainingWeight != null ? `${purchase.remainingWeight} kg` : '—'}
+            </p>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Approval</label>
+            <p className="text-sm font-medium text-foreground mt-1 capitalize">
+              {purchase.approvalStatus || '—'}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Additional Information */}
       <div className="bg-cms-card rounded-xl p-5 border border-border">
         <h3 className="text-base font-semibold text-foreground mb-4 pb-3 border-b border-border">Additional Information</h3>
@@ -924,8 +997,8 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
             <p className="text-sm text-foreground mt-1">{formatDate(purchase.updatedAt)}</p>
           </div>
           <div>
-            <label className="text-xs text-muted-foreground">Database ID</label>
-            <p className="text-sm text-foreground mt-1 font-mono">{purchase._id}</p>
+            <label className="text-xs text-muted-foreground">Invoice / Receipt</label>
+            <p className="text-sm text-foreground mt-1">{purchase.invoiceNo || purchase.receiptNo || 'N/A'}</p>
           </div>
         </div>
       </div>

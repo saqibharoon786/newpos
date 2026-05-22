@@ -70,6 +70,21 @@ export function getPricePerKgFromPop(purchasePrice: number, purchaseWeight: numb
   return Math.round((price / weight) * 100) / 100;
 }
 
+/**
+ * Process queue preview + production history list use the same rules:
+ * POP price/kg × output kg (material), POP price/kg × waste kg (waste), labor × output.
+ */
+export function computeProcessQueueCosts(input: ProductionCostInput) {
+  return computeProductionCosts({
+    purchasePrice: input.purchasePrice,
+    purchaseWeight: input.purchaseWeight,
+    weightUsedFromPOP: input.weightUsedFromPOP,
+    outputWeight: input.outputWeight,
+    wasteWeight: input.wasteWeight,
+    laborCostPerKg: input.laborCostPerKg,
+  });
+}
+
 export function getProductionDisplayCost(record: {
   totalProductionCost?: number;
   materialCost?: number;
