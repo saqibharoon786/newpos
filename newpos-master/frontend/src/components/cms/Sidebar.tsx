@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LayoutDashboard, ShoppingCart, Store, BookOpen, Package, Users, UserCog, X, Settings, FileBarChart, ScrollText, Shield } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Store, BookOpen, Package, Users, UserCog, X, Settings, FileBarChart, ScrollText, Shield, Truck } from "lucide-react";
 import { getCurrentUser, canApprove } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { fetchCompanySettings, getLogoUrl } from "@/lib/companySettings";
@@ -15,6 +15,7 @@ interface SidebarProps {
 
 const baseMenuItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "vendors", label: "Vendors", icon: Truck },
   { id: "pop", label: "POP", icon: ShoppingCart },
   { id: "process", label: "Process", icon: ShoppingCart },
   { id: "pos", label: "POS", icon: Store },

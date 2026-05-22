@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { DashboardView } from "./DashboardView";
 import { POPView } from "./POPView";
+import VendorsView from "./VendorsView";
 import { POSView } from "./POSView";
 import { RoznamchaView } from "./RoznamchaView";
 import { AssetsView } from "./AssetsView";
@@ -71,6 +72,8 @@ export function CMSDashboard() {
     switch (activeTab) {
       case "dashboard":
         return <DashboardView />;
+      case "vendors":
+        return <VendorsView />;
       case "pop":
         return <POPView />;
       case "pos":

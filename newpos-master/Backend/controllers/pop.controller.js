@@ -272,42 +272,109 @@ const getPurchaseById = async (req, res) => {
   }
 };
 
+function parseMaterialsField(raw, fallback) {
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  try {
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    return fallback;
+  }
+}
+
 // Update Purchase
 const updatePurchase = async (req, res) => {
   try {
-    const updatedData = { ...req.body };
-
-    if (req.file) {
-      updatedData.vehicleImage = `/uploads/${req.file.filename}`;
-    }
-
-    const existing = await Purchase.findById(req.params.id).lean();
+    const existing = await Purchase.findById(req.params.id);
     if (!existing) {
       return res.status(404).json({ success: false, message: "Not Found" });
     }
 
-    const merged = { ...existing, ...updatedData };
-    const paymentCheck = validatePurchasePaymentLimits(merged);
+    const priceNum = parseFloat(req.body.price) || parseFloat(existing.price) || 0;
+    const advancePaymentNum =
+      req.body.advancePayment !== undefined && req.body.advancePayment !== ''
+        ? parseFloat(req.body.advancePayment) || 0
+        : Number(existing.advancePayment) || 0;
+    const amountPaidNum =
+      req.body.amountPaid !== undefined && req.body.amountPaid !== ''
+        ? parseFloat(req.body.amountPaid) || 0
+        : Number(existing.amountPaid) || 0;
+
+    const paymentCheck = validatePurchasePaymentLimits({
+      price: priceNum,
+      advancePayment: advancePaymentNum,
+      amountPaid: amountPaidNum,
+    });
     if (!paymentCheck.ok) {
       return res.status(400).json({ success: false, message: paymentCheck.message });
     }
     const payment = paymentCheck.payment;
-    updatedData.totalPaid = payment.totalPaid;
-    updatedData.paidAmount = payment.paidAmount;
-    updatedData.remainingAmount = payment.remainingAmount;
 
-    const purchase = await Purchase.findByIdAndUpdate(
-      req.params.id,
-      updatedData,
-      { new: true }
-    );
+    let vendorDoc = null;
+    if (req.body.vendor) {
+      try {
+        vendorDoc = await vendorController.getVendorByName(req.body.vendor);
+      } catch (e) {
+        console.error('Vendor lookup on update:', e.message);
+      }
+    }
+
+    const updatedFields = {
+      materialName: req.body.materialName ?? existing.materialName,
+      vendor: req.body.vendor ?? existing.vendor,
+      vendorId: vendorDoc?._id ?? existing.vendorId,
+      price: String(priceNum),
+      weight: req.body.weight ?? existing.weight,
+      quality: req.body.quality ?? existing.quality,
+      purchaseDate: req.body.purchaseDate ?? existing.purchaseDate,
+      materialColor: req.body.materialColor ?? existing.materialColor,
+      vehicleName: req.body.vehicleName ?? existing.vehicleName,
+      vehicleType: req.body.vehicleType ?? existing.vehicleType,
+      vehicleNumber: req.body.vehicleNumber ?? existing.vehicleNumber,
+      driverName: req.body.driverName ?? existing.driverName,
+      vehicleColor: req.body.vehicleColor ?? existing.vehicleColor,
+      deliveryDate: req.body.deliveryDate ?? existing.deliveryDate,
+      receiptNo: req.body.receiptNo ?? existing.receiptNo,
+      billNo: req.body.billNo ?? req.body.receiptNo ?? existing.billNo,
+      paymentMethod: req.body.paymentMethod ?? existing.paymentMethod,
+      materials: parseMaterialsField(req.body.materials, existing.materials),
+      advancePayment: advancePaymentNum,
+      amountPaid: amountPaidNum,
+      totalPaid: payment.totalPaid,
+      paidAmount: payment.paidAmount,
+      remainingAmount: payment.remainingAmount,
+      soldWeight: existing.soldWeight,
+      productionConsumedWeight: existing.productionConsumedWeight,
+      status: existing.status,
+      invoiceNo: existing.invoiceNo,
+      approvalStatus: existing.approvalStatus,
+      createdBy: existing.createdBy,
+    };
+
+    if (req.file) {
+      updatedFields.vehicleImage = `/uploads/vehicles/${req.file.filename}`;
+    }
+
+    const purchase = await Purchase.findByIdAndUpdate(req.params.id, updatedFields, {
+      new: true,
+      runValidators: true,
+    });
+
+    await logActivity({
+      userId: req.user?._id || req.body.createdBy,
+      userName: req.user?.username || req.body.createdBy || 'system',
+      action: 'Update',
+      module: 'POP',
+      recordId: purchase._id,
+      beforeValues: existing.toObject(),
+      afterValues: purchase.toObject(),
+      req,
+    });
 
     res.status(200).json({
       success: true,
       message: "Purchase updated successfully",
       data: withComputedPayment(purchase.toObject()),
     });
-
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
