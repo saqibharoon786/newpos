@@ -24,7 +24,7 @@ async function generatePurchaseInvoiceNo(date = new Date()) {
 async function generateSaleInvoiceNo(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const year = String(date.getFullYear()).slice(-2);
-  const prefix = `SV${month}${year}`;
+  const prefix = `SI${month}${year}`;
 
   const last = await Sale.findOne({ invoiceNo: new RegExp(`^${prefix}`) })
     .sort({ invoiceNo: -1 })

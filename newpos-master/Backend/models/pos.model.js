@@ -37,6 +37,8 @@ const saleSchema = new mongoose.Schema(
     actualPrice: { type: String, required: true },
     productionCost: { type: String, required: true },
     sellingPrice: { type: String, required: true },
+    /** Rate per kg before discount — edit par double discount na ho */
+    sellingPricePerKg: { type: Number, default: 0 },
     discount: { type: String, default: "0" },
     finalAmount: { type: String },
     advancePayment: { type: Number, default: 0 }, // ADDED THIS FIELD

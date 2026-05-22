@@ -53,6 +53,7 @@ interface Sale {
   actualPrice: string;
   productionCost: string;
   sellingPrice: string;
+  sellingPricePerKg?: number;
   discount: string;
   advancePayment: number;
   amountPaid: number;
@@ -171,6 +172,8 @@ export function AddSaleDialog({
     materialColor: string;
     productionCost?: string | number;
     weight?: number;
+    weightForCost?: number;
+    costPerKg?: number;
   } | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>("cash");
   const [weightError, setWeightError] = useState<string>("");
@@ -184,9 +187,18 @@ export function AddSaleDialog({
       phoneNo: string;
       address?: string;
       email?: string;
+      totalBalanceDue?: number;
+      salesBalanceDue?: number;
+      profileBalanceDue?: number;
+      advanceCredit?: number;
     }[]
   >([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [customerBalanceInfo, setCustomerBalanceInfo] = useState<{
+    totalBalanceDue: number;
+    salesBalanceDue: number;
+    advanceCredit: number;
+  } | null>(null);
 
   // Calendar helper functions
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -228,15 +240,19 @@ export function AddSaleDialog({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const costPerKg =
-    selectedMaterialInfo?.productionCost != null &&
-    selectedMaterialInfo?.weight != null &&
-    selectedMaterialInfo.weight > 0
-      ? (
-          parseFloat(String(selectedMaterialInfo.productionCost)) /
-          selectedMaterialInfo.weight
-        ).toFixed(2)
-      : null;
+  const costPerKgDisplay = (() => {
+    const fromApi = selectedMaterialInfo?.costPerKg;
+    if (fromApi != null && Number.isFinite(fromApi) && fromApi > 0) {
+      return fromApi.toFixed(2);
+    }
+    const cost = parseFloat(String(selectedMaterialInfo?.productionCost ?? ""));
+    const w =
+      selectedMaterialInfo?.weightForCost ??
+      selectedMaterialInfo?.weight ??
+      0;
+    if (cost > 0 && w > 0) return (cost / w).toFixed(2);
+    return null;
+  })();
   const currentUser = getCurrentUser();
 
   const fetchRegisteredCustomers = async () => {
@@ -253,6 +269,7 @@ export function AddSaleDialog({
   const handleCustomerSelect = (customerId: string) => {
     setSelectedCustomerId(customerId);
     if (!customerId) {
+      setCustomerBalanceInfo(null);
       setFormData((prev) => ({
         ...prev,
         buyerName: "",
@@ -263,6 +280,11 @@ export function AddSaleDialog({
     }
     const customer = registeredCustomers.find((c) => c._id === customerId);
     if (!customer) return;
+    setCustomerBalanceInfo({
+      totalBalanceDue: customer.totalBalanceDue ?? 0,
+      salesBalanceDue: customer.salesBalanceDue ?? 0,
+      advanceCredit: customer.advanceCredit ?? 0,
+    });
     setFormData((prev) => ({
       ...prev,
       buyerName: customer.customerName,
@@ -276,29 +298,57 @@ export function AddSaleDialog({
     }
   };
 
+  const fetchNextInvoiceNo = async () => {
+    try {
+      const res = await api.get("/api/sales/next-invoice");
+      if (res.data?.success && res.data.data?.invoiceNo) {
+        setFormData((prev) => ({
+          ...prev,
+          invoiceNo: res.data.data.invoiceNo,
+        }));
+      }
+    } catch (e) {
+      console.error("Failed to fetch next invoice:", e);
+    }
+  };
+
   useEffect(() => {
     if (open) {
       fetchMaterials();
       fetchRegisteredCustomers();
       
       if (isEdit && editData) {
-        // Populate form for editing
         populateEditForm();
       } else {
-        // Set default values for new sale
         const todayStr = getTodayDate();
         const currentTimeStr = getCurrentTime();
-        
-        setFormData(prev => ({
+        setFormData((prev) => ({
           ...prev,
           purchaseDate: todayStr,
           purchaseTime: currentTimeStr,
+          branch: prev.branch || "Main",
         }));
-        
         setSelectedDate(new Date());
+        fetchNextInvoiceNo();
       }
     }
   }, [open, isEdit, editData]);
+
+  /** Edit/view: rate per kg before discount (DB may only store final bill total). */
+  const resolveSellingRatePerKg = (sale: Sale): string => {
+    const w = parseFloat(sale.weight) || 0;
+    if (w <= 0) return sale.sellingPrice || "";
+    const stored = sale.sellingPricePerKg;
+    if (stored != null && stored > 0) return String(stored);
+    const finalAmt = parseFloat(sale.finalAmount || sale.sellingPrice) || 0;
+    const discount = parseFloat(sale.discount) || 0;
+    const transport = parseFloat(String(sale.transportationCost)) || 0;
+    if (finalAmt > 0) {
+      const rate = (finalAmt + discount - transport) / w;
+      if (rate > 0) return String(Math.round(rate * 100) / 100);
+    }
+    return sale.sellingPrice || "";
+  };
 
   // Populate form for editing
   const populateEditForm = () => {
@@ -348,12 +398,7 @@ export function AddSaleDialog({
       materialColor: editData.materialColor || "#FFFFFF",
       actualPrice: editData.actualPrice || "",
       productionCost: editData.productionCost || "",
-      sellingPrice: (() => {
-        const w = parseFloat(editData.weight) || 0;
-        const total = parseFloat(editData.finalAmount || editData.sellingPrice) || 0;
-        if (w > 0 && total > 0) return String(Math.round((total / w) * 100) / 100);
-        return editData.sellingPrice || "";
-      })(),
+      sellingPrice: resolveSellingRatePerKg(editData),
       discount: editData.discount || "0",
       advancePayment: editData.advancePayment?.toString() || "",
       buyerName: editData.buyerName || "",
@@ -441,6 +486,14 @@ export function AddSaleDialog({
         const color = (item.color || "#FFFFFF").toString().trim();
         const compositeId = `${materialName}|${quality}|${color}`;
         const totalAvailable = item.totalAvailableWeight ?? 0;
+        const totalCost = parseFloat(item.totalProductionCost) || 0;
+        const outputW = parseFloat(item.totalOutputWeight) || totalAvailable;
+        const costPerKg =
+          item.costPerKg != null && item.costPerKg > 0
+            ? parseFloat(item.costPerKg)
+            : outputW > 0 && totalCost > 0
+              ? totalCost / outputW
+              : 0;
         return {
           _id: compositeId,
           materialName,
@@ -464,6 +517,8 @@ export function AddSaleDialog({
           batchNo: "",
           createdAt: "",
           isAggregated: true,
+          totalProductionCost: totalCost,
+          costPerKg,
         };
       });
       setMaterials(processedMaterials);
@@ -590,19 +645,26 @@ export function AddSaleDialog({
     const selectedMaterial = materials.find(m => m._id === selectedId);
     if (!selectedMaterial) return;
     const name = selectedMaterial.materialName;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       materialName: name,
-      supplierName: selectedMaterial.vendor || prev.supplierName,
       actualPrice: selectedMaterial.price || prev.actualPrice,
-      branch: name || prev.branch,
     }));
     setSelectedColor(selectedMaterial.materialColor || "#FFFFFF");
     const totalWeight = parseFloat(selectedMaterial.weight) || 0;
     const availableWeight = selectedMaterial.availableWeight ?? totalWeight;
     const isAggregated = (selectedMaterial as { isAggregated?: boolean }).isAggregated === true;
-    const productionCost = (selectedMaterial as { totalProductionCost?: number; productionCost?: string }).totalProductionCost
-      ?? (selectedMaterial as { productionCost?: string }).productionCost;
+    const mat = selectedMaterial as {
+      totalProductionCost?: number;
+      productionCost?: string;
+      costPerKg?: number;
+    };
+    const productionCost =
+      mat.totalProductionCost ?? mat.productionCost;
+    const costPerKg =
+      mat.costPerKg != null && mat.costPerKg > 0
+        ? mat.costPerKg
+        : undefined;
     setSelectedMaterialInfo({
       totalWeight,
       availableWeight,
@@ -614,6 +676,8 @@ export function AddSaleDialog({
       materialColor: selectedMaterial.materialColor,
       productionCost: productionCost ?? formData.productionCost,
       weight: totalWeight > 0 ? totalWeight : undefined,
+      weightForCost: availableWeight > 0 ? availableWeight : totalWeight,
+      costPerKg,
     });
     if (productionCost != null) {
       setFormData((prev) => ({
@@ -755,8 +819,6 @@ export function AddSaleDialog({
     const fd = getEffectiveFormData();
 
     if (!fd.materialName.trim()) newErrors.materialName = "Material name is required";
-    if (!fd.supplierName.trim()) newErrors.supplierName = "Supplier name is required";
-    if (!fd.invoiceNo.trim()) newErrors.invoiceNo = "Invoice number is required";
 
     if (!fd.weight.trim()) {
       newErrors.weight = "Weight is required";
@@ -774,10 +836,9 @@ export function AddSaleDialog({
       }
     }
 
-    if (!fd.unit.trim()) newErrors.unit = "Unit is required";
+    if (!fd.unit.trim()) newErrors.unit = "Bags is required";
     if (!fd.purchaseDate) newErrors.purchaseDate = "Sale date is required";
     if (!fd.purchaseTime) newErrors.purchaseTime = "Sale time is required";
-    if (!fd.branch) newErrors.branch = "Branch is required";
     const saleKg = parseFloat(fd.weight.replace(/,/g, "")) || 0;
     const pricePerKg = parseFloat(fd.sellingPrice.replace(/,/g, "")) || 0;
     if (!fd.sellingPrice || pricePerKg <= 0)
@@ -895,19 +956,29 @@ export function AddSaleDialog({
       if (fd.customerId) {
         formDataToSend.append('customerId', fd.customerId);
       }
-      formDataToSend.append('invoiceNo', fd.invoiceNo);
+      if (fd.invoiceNo.trim()) {
+        formDataToSend.append('invoiceNo', fd.invoiceNo.trim());
+      }
       formDataToSend.append('transportationCost', fd.transportationCost);
       formDataToSend.append('notes', fd.notes);
 
       // Additional fields
       formDataToSend.append('materialName', fd.materialName);
-      formDataToSend.append('supplierName', fd.supplierName);
+      formDataToSend.append('supplierName', 'Production');
       formDataToSend.append('quality', qualityValue);
       formDataToSend.append('unit', fd.unit);
       formDataToSend.append('branch', fd.branch);
       formDataToSend.append('materialColor', selectedColor);
       formDataToSend.append('actualPrice', '0');
-      formDataToSend.append('productionCost', '0');
+      const prodCost =
+        selectedMaterialInfo?.productionCost != null
+          ? String(selectedMaterialInfo.productionCost)
+          : costPerKgDisplay && fd.weight
+            ? String(
+                parseFloat(costPerKgDisplay) * (parseFloat(fd.weight) || 0)
+              )
+            : "0";
+      formDataToSend.append('productionCost', prodCost);
       formDataToSend.append('discount', fd.discount);
       formDataToSend.append('advancePayment', fd.advancePayment || '0');
       formDataToSend.append('buyerAddress', fd.buyerAddress || '');
@@ -1232,6 +1303,39 @@ export function AddSaleDialog({
               ))}
             </select>
           </div>
+          {customerBalanceInfo && (
+            <div className="mb-4 p-4 rounded-lg border-2 border-primary/25 bg-card shadow-sm">
+              <p className="text-sm font-semibold text-foreground mb-3">Customer account summary</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/40">
+                  <p className="text-xs font-medium text-red-900 dark:text-red-100">
+                    Purana balance (hum ne lena hai)
+                  </p>
+                  <p className="text-xl font-bold text-red-700 dark:text-red-300 mt-1">
+                    Rs. {customerBalanceInfo.totalBalanceDue.toLocaleString()}
+                  </p>
+                  {customerBalanceInfo.salesBalanceDue > 0 && (
+                    <p className="text-xs font-medium text-red-800/90 dark:text-red-200/90 mt-1">
+                      Sales pending: Rs. {customerBalanceInfo.salesBalanceDue.toLocaleString()}
+                    </p>
+                  )}
+                </div>
+                <div className="rounded-md border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-950/40">
+                  <p className="text-xs font-medium text-green-900 dark:text-green-100">
+                    Advance / pehle diya hua
+                  </p>
+                  <p className="text-xl font-bold text-green-800 dark:text-green-300 mt-1">
+                    {customerBalanceInfo.advanceCredit > 0
+                      ? `Rs. ${customerBalanceInfo.advanceCredit.toLocaleString()}`
+                      : "Rs. 0"}
+                  </p>
+                  {customerBalanceInfo.advanceCredit <= 0 && (
+                    <p className="text-xs text-green-800/80 dark:text-green-200/80 mt-1">Koi advance nahi</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Customer Name *</label>
@@ -1299,31 +1403,6 @@ export function AddSaleDialog({
           </div>
         </div>
 
-        {/* Debug Info - Remove in production */}
-        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-          <h4 className="text-sm font-semibold text-yellow-800 mb-2">Debug Info</h4>
-          <p className="text-xs text-yellow-700">
-            API Base URL: {API_BASE_URL}
-          </p>
-          <p className="text-xs text-yellow-700">
-            Materials Count: {materials.length}
-          </p>
-          <p className="text-xs text-yellow-700">
-            Loading: {loadingMaterials ? "Yes" : "No"}
-          </p>
-          {apiError && (
-            <p className="text-xs text-red-600 mt-1">
-              API Error: {apiError}
-            </p>
-          )}
-          <button 
-            onClick={fetchMaterials}
-            className="mt-2 px-3 py-1 text-xs bg-blue-500 text-white rounded"
-          >
-            Refresh Materials
-          </button>
-        </div>
-
         {/* Product Details Section */}
         <div className="mb-6">
           <h3 className="text-base font-semibold text-foreground mb-4">Product Details</h3>
@@ -1335,7 +1414,7 @@ export function AddSaleDialog({
                 <Package className="w-4 h-4 text-blue-600" />
                 <h4 className="text-sm font-medium text-blue-800">Material Stock Information</h4>
               </div>
-              <div className={`grid gap-3 ${costPerKg ? 'grid-cols-4' : 'grid-cols-3'}`}>
+              <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
                 <div className="text-center p-2 bg-white rounded border">
                   <p className="text-xs text-gray-600">Total Weight</p>
                   <p className="text-lg font-bold text-gray-800">{selectedMaterialInfo.totalWeight} kg</p>
@@ -1348,12 +1427,12 @@ export function AddSaleDialog({
                   <p className="text-xs text-gray-600">Available for Sale</p>
                   <p className="text-lg font-bold text-green-600">{selectedMaterialInfo.availableWeight} kg</p>
                 </div>
-                {costPerKg && (
-                  <div className="text-center p-2 bg-white rounded border">
-                    <p className="text-xs text-gray-600">Cost per kg</p>
-                    <p className="text-lg font-bold text-indigo-700">Rs. {costPerKg}</p>
-                  </div>
-                )}
+                <div className="text-center p-2 bg-white rounded border">
+                  <p className="text-xs text-gray-600">Cost per kg</p>
+                  <p className="text-lg font-bold text-indigo-700">
+                    {costPerKgDisplay ? `Rs. ${costPerKgDisplay}` : "—"}
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -1411,33 +1490,17 @@ export function AddSaleDialog({
             )}
 
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Supplier Name *</label>
-              <input
-                type="text"
-                name="supplierName"
-                placeholder="e.g Acme Inc."
-                value={formData.supplierName}
-                onChange={handleInputChange}
-                className={`w-full bg-cms-input-bg border ${errors.supplierName ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-              />
-              {errors.supplierName && (
-                <p className="text-xs text-red-500 mt-1">{errors.supplierName}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Invoice No. *</label>
+              <label className="block text-xs text-muted-foreground mb-1.5">Sale Invoice No. (SI — auto)</label>
               <input
                 type="text"
                 name="invoiceNo"
-                placeholder="e.g INV-001"
+                readOnly={!isEdit}
+                placeholder="SI052600001"
                 value={formData.invoiceNo}
                 onChange={handleInputChange}
-                className={`w-full bg-cms-input-bg border ${errors.invoiceNo ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary read-only:opacity-80"
               />
-              {errors.invoiceNo && (
-                <p className="text-xs text-red-500 mt-1">{errors.invoiceNo}</p>
-              )}
+              <p className="text-xs text-muted-foreground mt-1">SI se start — sale identify karne ke liye</p>
             </div>
           </div>
 
@@ -1468,7 +1531,7 @@ export function AddSaleDialog({
             </div>
 
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Units (number e.g. 3, 5, 7) *</label>
+              <label className="block text-xs text-muted-foreground mb-1.5">Bags *</label>
               <input
                 type="text"
                 name="unit"
@@ -1534,7 +1597,7 @@ export function AddSaleDialog({
 
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Link to Raw Material Branch *</label>
+              <label className="block text-xs text-muted-foreground mb-1.5">Branch (optional)</label>
               <div className="relative">
                 <select
                   name="branch"
@@ -1551,9 +1614,6 @@ export function AddSaleDialog({
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
               </div>
-              {errors.branch && (
-                <p className="text-xs text-red-500 mt-1">{errors.branch}</p>
-              )}
             </div>
 
             <div>
@@ -1613,7 +1673,7 @@ export function AddSaleDialog({
             </div>
 
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Discount</label>
+              <label className="block text-xs text-muted-foreground mb-1.5">Discount (Rs.)</label>
               <input
                 type="number"
                 name="discount"
