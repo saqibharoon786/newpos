@@ -4,6 +4,9 @@ import { AddAssetDialog } from "./AddAssetDialog";
 import { AssetDetailsView } from "./AssetDetailsView";
 import { toast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import api from "@/lib/api";
+
+const ASSETS_API = "/api/assets";
 
 interface AssetItem {
   _id: string;
@@ -24,10 +27,6 @@ interface AssetItem {
   createdAt: string;
   updatedAt: string;
 }
-
-// ✅ Use environment variable for API base URL
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-const ASSETS_API_URL = `${API_BASE_URL}/api/assets`;
 
 // Helper function to format date as "22 Jan 2026"
 const formatDateWithMonthName = (dateString: string): string => {
@@ -88,22 +87,18 @@ export function AssetsView() {
   const fetchAssets = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${ASSETS_API_URL}/get-all`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const result = await response.json();
-      
+      const response = await api.get(`${ASSETS_API}/get-all`);
+      const result = response.data;
       if (result.success) {
         setData(result.data || []);
       } else {
-        throw new Error(result.error || "Failed to fetch assets");
+        throw new Error(result.error || result.message || "Failed to fetch assets");
       }
     } catch (error: any) {
       console.error("Error fetching assets:", error);
       toast({
         title: "Error",
-        description: error.message || "Failed to load assets",
+        description: error.response?.data?.message || error.message || "Failed to load assets",
         variant: "destructive",
       });
     } finally {
@@ -114,10 +109,8 @@ export function AssetsView() {
   // Fetch statistics
   const fetchStats = async () => {
     try {
-      const response = await fetch(`${ASSETS_API_URL}/stats`);
-      if (!response.ok) return;
-      
-      const result = await response.json();
+      const response = await api.get(`${ASSETS_API}/stats`);
+      const result = response.data;
       if (result.success) {
         setStats({
           totalAssets: result.data.overview?.totalAssets || data.length,
@@ -163,34 +156,10 @@ const handleAddAsset = async (assetData: any) => {
       console.log("=== END DEBUG ===");
 
       // Send FormData to backend
-      console.log("🚀 Sending request to:", `${ASSETS_API_URL}/create-assets`);
-      
-      const response = await fetch(`${ASSETS_API_URL}/create-assets`, {
-        method: 'POST',
-        body: assetData,
-      });
+      const response = await api.post(`${ASSETS_API}/create-assets`, assetData);
+      const result = response.data;
 
-      console.log("📥 Add response status:", response.status);
-      
-      // Get response as text first
-      const responseText = await response.text();
-      console.log("📥 Raw response text:", responseText);
-      
-      let result;
-      try {
-        result = JSON.parse(responseText);
-        console.log("📥 Parsed response:", result);
-      } catch (e) {
-        console.error("❌ Failed to parse JSON:", e);
-        
-        // ✅ FIXED: Create a proper Error object
-        const error = new Error(`Invalid JSON response from server. Status: ${response.status}`);
-        (error as any).responseText = responseText;
-        (error as any).status = response.status;
-        throw error;
-      }
-
-      if (response.ok && result.success) {
+      if (result.success) {
         console.log("✅ Success! Created asset:", result.data);
         
         toast({
@@ -211,7 +180,7 @@ const handleAddAsset = async (assetData: any) => {
         } else if (result.message) {
           errorMsg = typeof result.message === 'string' ? result.message : JSON.stringify(result.message);
         } else {
-          errorMsg = `Server error: ${response.status}`;
+          errorMsg = `Server error`;
         }
         
         const error = new Error(errorMsg);
@@ -326,28 +295,10 @@ const handleAddAsset = async (assetData: any) => {
       }
 
       // Send update request
-      const response = await fetch(`${ASSETS_API_URL}/${editingAsset._id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updateData)
-      });
+      const response = await api.put(`${ASSETS_API}/${editingAsset._id}`, updateData);
+      const result = response.data;
 
-      console.log("📥 Update response status:", response.status);
-      
-      const responseText = await response.text();
-      console.log("📥 Update response text:", responseText);
-      
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (e) {
-        console.error("Failed to parse update response as JSON:", e);
-        throw new Error("Invalid response from server");
-      }
-
-      if (response.ok && result.success) {
+      if (result.success) {
         toast({
           title: "✅ Success",
           description: "Asset updated successfully",
@@ -381,13 +332,10 @@ const handleAddAsset = async (assetData: any) => {
     if (!confirm(`Are you sure you want to delete "${assetName}"?`)) return;
 
     try {
-      const response = await fetch(`${ASSETS_API_URL}/${id}`, {
-        method: 'DELETE',
-      });
+      const response = await api.delete(`${ASSETS_API}/${id}`);
+      const result = response.data;
 
-      const result = await response.json();
-
-      if (response.ok && result.success) {
+      if (result.success) {
         toast({
           title: "✅ Deleted",
           description: `${assetName} has been deleted.`,

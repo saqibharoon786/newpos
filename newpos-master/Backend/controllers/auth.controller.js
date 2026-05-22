@@ -2,6 +2,7 @@ const authService = require("../services/auth.service")
 const { asyncHandler } = require("../utils/asyncHandler")
 const { createResponse } = require("../utils/response")
 const { HTTP_STATUS } = require("../middleware/constants")
+const { generateAccessToken } = require("../utils/jwt")
 
 /**
  * @desc    Register new user
@@ -25,6 +26,42 @@ const login = asyncHandler(async (req, res) => {
   const result = await authService.login(email, password)
 
   res.status(HTTP_STATUS.OK).json(createResponse(true, "Login successful", result))
+})
+
+/** Owner / super-admin CMS login — returns JWT (works on live server without custom headers) */
+const ownerSession = asyncHandler(async (req, res) => {
+  const email = (req.body.email || "").trim().toLowerCase()
+  const password = req.body.password || ""
+  const ownerEmail = (process.env.CMS_OWNER_EMAIL || "superadmin@gmail.com").toLowerCase()
+  const ownerPassword = process.env.CMS_OWNER_PASSWORD || "786786"
+
+  if (email !== ownerEmail || password !== ownerPassword) {
+    return res
+      .status(HTTP_STATUS.UNAUTHORIZED)
+      .json(createResponse(false, "Invalid credentials"))
+  }
+
+  const accessToken = generateAccessToken({
+    id: "super-admin",
+    role: "owner",
+    email: ownerEmail,
+  })
+
+  res.status(HTTP_STATUS.OK).json(
+    createResponse(true, "Login successful", {
+      user: {
+        _id: "super-admin",
+        id: "super-admin",
+        email: ownerEmail,
+        role: "owner",
+        username: "owner",
+        firstName: "Owner",
+        lastName: "",
+        fullName: "Owner",
+      },
+      tokens: { accessToken, refreshToken: accessToken },
+    })
+  )
 })
 
 /**
@@ -82,6 +119,7 @@ const getProfile = asyncHandler(async (req, res) => {
 module.exports = {
   register,
   login,
+  ownerSession,
   refreshToken,
   logout,
   changePassword,
