@@ -38,10 +38,15 @@ import {
 import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
 import { exportAsCsv, exportAsWordTable, inDateRange, toYmd } from "@/lib/exportUtils";
-import { PRODUCT_CODES, getProductCodeLabel, resolveProductCode } from "@/lib/productCodes";
 import {
-  calcWasteCostFromPop,
-  computeProductionCosts,
+  PRODUCT_CODES,
+  getProductCodeLabel,
+  resolveProductCode,
+  getBagSizeForCode,
+  calcPopWeightFromBags,
+} from "@/lib/productCodes";
+import {
+  computeProcessQueueCosts,
   getPricePerKgFromPop,
   getProductionDisplayCost,
 } from "@/lib/productionCost";
@@ -1485,16 +1490,39 @@ const StartProcessFormModal = ({
   const [wasteWeight, setWasteWeight] = useState("");
   const [wasteCost, setWasteCost] = useState("");
   const [laborCostPerKg, setLaborCostPerKg] = useState("");
+  const [popPricing, setPopPricing] = useState<{ price: number; weight: number } | null>(null);
   const popAvailableWeight = initialMaterial?.popAvailableWeight ?? 0;
   const isFromQueue = !!(purchaseId && popAvailableWeight > 0);
-  const purchasePrice = initialMaterial?.purchasePrice ?? 0;
-  const purchaseWeight = initialMaterial?.purchaseWeight ?? 0;
+  const purchasePrice = popPricing?.price ?? initialMaterial?.purchasePrice ?? 0;
+  const purchaseWeight = popPricing?.weight ?? initialMaterial?.purchaseWeight ?? 0;
 
   /** Machine output = weight put in machine − waste (e.g. 50 used − 5 waste = 45 output) */
   const calcMachineOutputKg = (usedKg: number, wasteKg: number) =>
     Math.max(0, Math.round((usedKg - wasteKg) * 100) / 100);
 
   const pricePerKg = getPricePerKgFromPop(purchasePrice, purchaseWeight);
+
+  useEffect(() => {
+    if (!open || !purchaseId) {
+      setPopPricing(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get(`${PURCHASES_API_URL}/${purchaseId}`)
+      .then((res) => {
+        if (cancelled || !res.data?.success) return;
+        const pop = res.data.data;
+        setPopPricing({
+          price: parseFloat(pop.price) || 0,
+          weight: parseFloat(pop.weight) || 0,
+        });
+      })
+      .catch(() => setPopPricing(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, purchaseId]);
 
   useEffect(() => {
     if (!open || !isFromQueue) return;
@@ -1504,25 +1532,49 @@ const StartProcessFormModal = ({
       const output = calcMachineOutputKg(used, waste);
       setMachineOutputWeight(output > 0 ? String(output) : "0");
     }
-    if (purchasePrice > 0 && purchaseWeight > 0) {
-      const autoWasteCost = calcWasteCostFromPop(purchasePrice, purchaseWeight, waste);
-      setWasteCost(autoWasteCost > 0 ? String(autoWasteCost) : "");
+  }, [open, isFromQueue, weightUsedFromPOP, wasteWeight]);
+
+  const bagSizeKg = getBagSizeForCode(productCode);
+
+  /** Total bags × code bag size → weight deducted from POP */
+  useEffect(() => {
+    if (!open || !isFromQueue || !bagSizeKg) return;
+    const bags = parseInt(String(totalBags).trim(), 10);
+    if (isNaN(bags) || bags <= 0) {
+      setWeightUsedFromPOP("");
+      return;
     }
-  }, [open, isFromQueue, weightUsedFromPOP, wasteWeight, purchasePrice, purchaseWeight]);
+    let kg = calcPopWeightFromBags(productCode, bags);
+    if (popAvailableWeight > 0 && kg > popAvailableWeight) {
+      kg = Math.round(popAvailableWeight * 100) / 100;
+    }
+    setWeightUsedFromPOP(String(kg));
+  }, [open, isFromQueue, totalBags, productCode, bagSizeKg, popAvailableWeight]);
 
   const estimatedCosts = useMemo(() => {
     const usedPop = parseFloat(String(weightUsedFromPOP).trim().replace(",", ".")) || 0;
     const output = isFromQueue
       ? parseFloat(String(machineOutputWeight).trim().replace(",", ".")) || parseFloat(String(totalWeight).trim().replace(",", ".")) || 0
       : parseFloat(String(totalWeight).trim().replace(",", ".")) || 0;
-    return computeProductionCosts({
+    const wasteKg = parseFloat(String(wasteWeight).trim().replace(",", ".")) || 0;
+    const labor = parseFloat(String(laborCostPerKg).trim().replace(",", ".")) || 0;
+    if (isFromQueue && purchasePrice > 0 && purchaseWeight > 0) {
+      return computeProcessQueueCosts({
+        purchasePrice,
+        purchaseWeight,
+        weightUsedFromPOP: usedPop,
+        outputWeight: output,
+        wasteWeight: wasteKg,
+        laborCostPerKg: labor,
+      });
+    }
+    return computeProcessQueueCosts({
       purchasePrice,
       purchaseWeight,
       weightUsedFromPOP: usedPop,
       outputWeight: output,
-      wasteWeight: parseFloat(String(wasteWeight).trim().replace(",", ".")) || 0,
-      wasteCost: parseFloat(String(wasteCost).trim().replace(",", ".")) || 0,
-      laborCostPerKg: parseFloat(String(laborCostPerKg).trim().replace(",", ".")) || 0,
+      wasteWeight: wasteKg,
+      laborCostPerKg: labor,
     });
   }, [
     purchasePrice,
@@ -1531,10 +1583,15 @@ const StartProcessFormModal = ({
     machineOutputWeight,
     totalWeight,
     wasteWeight,
-    wasteCost,
     laborCostPerKg,
     isFromQueue,
   ]);
+
+  /** Keep waste cost field in sync with production history formula */
+  useEffect(() => {
+    if (!open || !isFromQueue || purchasePrice <= 0 || purchaseWeight <= 0) return;
+    setWasteCost(estimatedCosts.wasteCost > 0 ? String(estimatedCosts.wasteCost) : "");
+  }, [open, isFromQueue, estimatedCosts.wasteCost, purchasePrice, purchaseWeight]);
 
   const fetchEmployees = async () => {
     try {
@@ -1584,6 +1641,7 @@ const StartProcessFormModal = ({
       );
       setWasteCost("");
       setLaborCostPerKg("");
+      setPopPricing(null);
       fetchEmployees();
     }
   }, [open, initialMaterial?.materialName, initialMaterial?.quality, initialMaterial?.popAvailableWeight, initialMaterial?.color, initialMaterial?.materialOptions]);
@@ -1598,7 +1656,13 @@ const StartProcessFormModal = ({
     const bags = parseInt(totalBags, 10);
     const weightStr = isFromQueue ? String(machineOutputWeight).trim().replace(",", ".") : String(totalWeight).trim().replace(",", ".");
     const weight = parseFloat(weightStr);
-    const usedFromPOP = isFromQueue ? parseFloat(String(weightUsedFromPOP).trim().replace(",", ".")) : 0;
+    let usedFromPOP = isFromQueue ? parseFloat(String(weightUsedFromPOP).trim().replace(",", ".")) : 0;
+    if (isFromQueue && bagSizeKg > 0 && !isNaN(bags) && bags > 0) {
+      usedFromPOP = Math.min(
+        calcPopWeightFromBags(productCode, bags),
+        popAvailableWeight > 0 ? popAvailableWeight : calcPopWeightFromBags(productCode, bags)
+      );
+    }
     if (!materialName.trim()) {
       toast({ title: "Error", description: "Please enter material name", variant: "destructive" });
       return;
@@ -1608,10 +1672,6 @@ const StartProcessFormModal = ({
       return;
     }
     const wasteKg = parseFloat(String(wasteWeight).trim().replace(",", ".")) || 0;
-    const autoWasteCostRs =
-      isFromQueue && purchasePrice > 0 && purchaseWeight > 0
-        ? calcWasteCostFromPop(purchasePrice, purchaseWeight, wasteKg)
-        : parseFloat(String(wasteCost).trim().replace(",", ".")) || 0;
     if (isFromQueue) {
       if (isNaN(usedFromPOP) || usedFromPOP <= 0 || usedFromPOP > popAvailableWeight) {
         toast({
@@ -1647,6 +1707,18 @@ const StartProcessFormModal = ({
       toast({ title: "Error", description: "Machine output weight must be greater than 0.", variant: "destructive" });
       return;
     }
+    const costsAtSave = computeProcessQueueCosts({
+      purchasePrice,
+      purchaseWeight,
+      weightUsedFromPOP: usedFromPOP,
+      outputWeight: machineOutput,
+      wasteWeight: wasteKg,
+      laborCostPerKg: parseFloat(String(laborCostPerKg).trim().replace(",", ".")) || 0,
+    });
+    const autoWasteCostRs =
+      isFromQueue && purchasePrice > 0 && purchaseWeight > 0
+        ? costsAtSave.wasteCost
+        : parseFloat(String(wasteCost).trim().replace(",", ".")) || 0;
     if (!selectedMachine) {
       toast({ title: "Error", description: "Please select a machine", variant: "destructive" });
       return;
@@ -1675,6 +1747,7 @@ const StartProcessFormModal = ({
         employees: employeesPayload,
         status: "completed",
         productCode: productCode || undefined,
+        bagSize: bagSizeKg || undefined,
         wasteWeight: wasteKg,
         wasteCost: autoWasteCostRs,
         laborCostPerKg: parseFloat(String(laborCostPerKg).trim().replace(",", ".")) || 0,
@@ -1751,7 +1824,14 @@ const StartProcessFormModal = ({
             )}
           </div>
           <div className="mb-4 p-3 rounded-lg border border-border bg-cms-card/50">
-            <p className="text-xs font-medium text-muted-foreground mb-2">Estimated total cost (auto-calculated)</p>
+            <p className="text-xs font-medium text-muted-foreground mb-2">
+              Estimated total cost (same as Production History after save)
+            </p>
+            {isFromQueue && pricePerKg > 0 && (
+              <p className="text-xs text-muted-foreground mb-2">
+                POP rate: Rs. {pricePerKg.toLocaleString()}/kg · Material = output kg × rate · Waste = waste kg × rate
+              </p>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
               <div>
                 <span className="text-muted-foreground">Material</span>
@@ -1759,7 +1839,7 @@ const StartProcessFormModal = ({
               </div>
               <div>
                 <span className="text-muted-foreground">Waste</span>
-                <p className="font-semibold">Rs. {estimatedCosts.wasteCost.toLocaleString()}</p>
+                <p className="font-semibold text-red-600">Rs. {estimatedCosts.wasteCost.toLocaleString()}</p>
               </div>
               <div>
                 <span className="text-muted-foreground">Labor</span>
@@ -1822,6 +1902,18 @@ const StartProcessFormModal = ({
                   </div>
                 </div>
                 <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Product Code *</label>
+                  <select
+                    value={productCode}
+                    onChange={(e) => setProductCode(e.target.value)}
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    {PRODUCT_CODES.map((p) => (
+                      <option key={p.code} value={p.code}>{p.label} — {p.bagSize} kg/bag</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs text-muted-foreground mb-1.5">Total Bags *</label>
                   <input
                     type="number"
@@ -1831,6 +1923,14 @@ const StartProcessFormModal = ({
                     placeholder="e.g. 15 or 20"
                     className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   />
+                  {isFromQueue && bagSizeKg > 0 && (
+                    <p className="text-xs text-primary mt-1">
+                      Code {productCode}: {bagSizeKg} kg per bag
+                      {totalBags && parseInt(totalBags, 10) > 0
+                        ? ` → ${calcPopWeightFromBags(productCode, parseInt(totalBags, 10))} kg POP se minus hoga`
+                        : ""}
+                    </p>
+                  )}
                 </div>
                 {isFromQueue ? (
                   <>
@@ -1845,16 +1945,31 @@ const StartProcessFormModal = ({
                       <p className="text-xs text-muted-foreground mt-1">Available from POP for this material. Remaining after use will stay in queue.</p>
                     </div>
                     <div>
-                      <label className="block text-xs text-muted-foreground mb-1.5">Weight used from POP (kg) *</label>
+                      <label className="block text-xs text-muted-foreground mb-1.5">
+                        Weight used from POP (kg) * — auto (bags × {bagSizeKg || "?"} kg)
+                      </label>
                       <input
                         type="text"
                         inputMode="decimal"
                         value={weightUsedFromPOP}
                         onChange={(e) => setWeightUsedFromPOP(e.target.value)}
-                        placeholder={`e.g. 400 (max ${popAvailableWeight})`}
+                        placeholder={
+                          bagSizeKg && totalBags
+                            ? String(calcPopWeightFromBags(productCode, parseInt(totalBags, 10) || 0))
+                            : `max ${popAvailableWeight}`
+                        }
                         className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                       />
-                      <p className="text-xs text-muted-foreground mt-1">How much you put in the machine. Remaining in POP = {popAvailableWeight} − used.</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Bags × bag size = POP weight (100→30, 105→40, 110→25 kg/bag). Remaining POP ≈{" "}
+                        {Math.max(
+                          0,
+                          Math.round(
+                            (popAvailableWeight - (parseFloat(weightUsedFromPOP) || 0)) * 100
+                          ) / 100
+                        )}{" "}
+                        kg
+                      </p>
                     </div>
                     <div>
                       <label className="block text-xs text-muted-foreground mb-1.5">Waste Weight (kg)</label>
@@ -1898,18 +2013,6 @@ const StartProcessFormModal = ({
                     <p className="text-xs text-muted-foreground mt-1">Custom weight only — not from POP. Any value (e.g. 8000) is saved to Production List.</p>
                   </div>
                 )}
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1.5">Product Code</label>
-                  <select
-                    value={productCode}
-                    onChange={(e) => setProductCode(e.target.value)}
-                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    {PRODUCT_CODES.map((p) => (
-                      <option key={p.code} value={p.code}>{p.label}</option>
-                    ))}
-                  </select>
-                </div>
                 {!isFromQueue && (
                   <div>
                     <label className="block text-xs text-muted-foreground mb-1.5">Waste Weight (kg)</label>
@@ -1940,8 +2043,8 @@ const StartProcessFormModal = ({
                   />
                   {isFromQueue && pricePerKg > 0 && (
                     <p className="text-xs text-primary mt-1">
-                      Auto: {wasteWeight || "0"} kg waste × Rs. {pricePerKg.toLocaleString()}/kg (POP) ={" "}
-                      <strong>Rs. {(parseFloat(wasteCost) || 0).toLocaleString()}</strong>
+                      {wasteWeight || "0"} kg × Rs. {pricePerKg.toLocaleString()}/kg ={" "}
+                      <strong>Rs. {estimatedCosts.wasteCost.toLocaleString()}</strong> (matches history)
                     </p>
                   )}
                 </div>
