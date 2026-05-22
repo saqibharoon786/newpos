@@ -124,8 +124,6 @@ customerSchema.virtual('pendingAmount').get(function() {
 // Create indexes for better performance
 customerSchema.index({ customerName: 1 });
 customerSchema.index({ phoneNo: 1 });
-customerSchema.index({ email: 1 });
-customerSchema.index({ customerId: 1 });
 customerSchema.index({ isActive: 1 });
 customerSchema.index({ amount: 1 });
 customerSchema.index({ paidAmount: 1 });

@@ -202,20 +202,6 @@ export default function VendorsView() {
         defaultWeight: parseFloat(r.weight) || 0,
       }));
 
-    if (materials.length === 0) {
-      toast.error("Add at least one material with code and price/kg");
-      return;
-    }
-    const missingWeight = materialRows.some(
-      (r) =>
-        (r.materialName.trim() || r.productCode.trim()) &&
-        !(parseFloat(r.weight) > 0)
-    );
-    if (missingWeight) {
-      toast.error("Har material ki weight (kg) zaroori hai — code select karein ya manually likhein");
-      return;
-    }
-
     setIsSaving(true);
     try {
       const payload = { name: name.trim(), phone, address, materials };
@@ -600,7 +586,7 @@ export default function VendorsView() {
                       Materials & pricing
                     </h4>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Code → material name auto — enter weight (kg) & price/kg (POP mein yeh sab auto ayega)
+                      Optional — code select karein to POP mein auto-fill hoga
                     </p>
                   </div>
                   <button
@@ -654,7 +640,7 @@ export default function VendorsView() {
                         </div>
                         <div className="col-span-2">
                           <label className="block text-xs text-muted-foreground mb-1">
-                            Price/kg *
+                            Price/kg
                           </label>
                           <input
                             type="number"
@@ -669,7 +655,7 @@ export default function VendorsView() {
                         </div>
                         <div className="col-span-2">
                           <label className="block text-xs text-muted-foreground mb-1">
-                            Weight (kg) *
+                            Weight (kg)
                           </label>
                           <input
                             type="number"

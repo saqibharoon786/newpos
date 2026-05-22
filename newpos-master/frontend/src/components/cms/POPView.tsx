@@ -3069,9 +3069,26 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-    const validMaterials = materialRows.filter((r) => r.name.trim());
+    const activeRows = materialRows.filter(
+      (r) =>
+        r.name.trim() ||
+        r.productCode.trim() ||
+        r.weight.trim() ||
+        r.pricePerKg.trim()
+    );
+    const validMaterials = materialRows.filter(
+      (r) =>
+        r.productCode.trim() &&
+        r.name.trim() &&
+        parseFloat(r.weight) > 0 &&
+        parseFloat(r.pricePerKg) > 0
+    );
     if (validMaterials.length === 0) {
-      newErrors.materialName = "Add at least one material name";
+      newErrors.materialName =
+        "Har material ke liye code (100/105/110), naam, weight (kg) aur price/kg zaroori hai";
+    } else if (activeRows.length > validMaterials.length) {
+      newErrors.materialName =
+        "Koi material incomplete hai — code select karein ya auto-filled data hata di hai to dubara bharein";
     }
     if (!formData.vendor.trim()) newErrors.vendor = "Vendor name is required";
     if (!formData.price || parseFloat(formData.price) <= 0) newErrors.price = "Valid price is required";
@@ -3109,7 +3126,16 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     }
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const firstError =
+      newErrors.materialName ||
+      newErrors.vendor ||
+      newErrors.price ||
+      newErrors.weight ||
+      Object.values(newErrors)[0];
+    return {
+      ok: Object.keys(newErrors).length === 0,
+      message: firstError,
+    };
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -3258,7 +3284,13 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   };
 
   const handleSubmit = async () => {
-    if (!validateForm()) {
+    const validation = validateForm();
+    if (!validation.ok) {
+      toast({
+        title: "Validation failed",
+        description: validation.message || "Please complete all required fields",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -3268,9 +3300,11 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       const formDataToSend = new FormData();
       
       const parseDate = (dateStr: string, timeStr: string): string => {
+        if (!dateStr?.trim()) return "";
         const [dd, mm, yyyy] = dateStr.split('/').map(Number);
-        const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-        if (!timeMatch) return new Date().toISOString();
+        if (!dd || !mm || !yyyy) return "";
+        const timeMatch = (timeStr || "").match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (!timeMatch) return new Date(yyyy, mm - 1, dd).toISOString();
         
         let hour = parseInt(timeMatch[1]);
         const minute = parseInt(timeMatch[2]);
@@ -3284,7 +3318,9 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       };
 
       const purchaseDateTime = parseDate(formData.purchaseDate, formData.purchaseTime);
-      const deliveryDateTime = parseDate(formData.deliveryDate, formData.deliveryTime);
+      const deliveryDateTime = formData.deliveryDate.trim()
+        ? parseDate(formData.deliveryDate, formData.deliveryTime || "09:00 AM")
+        : "";
 
       const priceNum = parseFloat(formData.price) || 0;
       const advancePaymentNum = parseFloat(formData.advancePayment) || 0;
@@ -3365,7 +3401,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       }
 
       Object.entries(fields).forEach(([key, value]) => {
-        if (value !== null && value !== undefined) {
+        if (value !== null && value !== undefined && value !== "") {
           formDataToSend.append(key, String(value));
         }
       });
@@ -3375,7 +3411,13 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       }
 
       const materialsPayload = materialRows
-        .filter((row) => row.name.trim())
+        .filter(
+          (row) =>
+            row.productCode.trim() &&
+            row.name.trim() &&
+            parseFloat(row.weight) > 0 &&
+            parseFloat(row.pricePerKg) > 0
+        )
         .map((row) => {
           const weight = parseFloat(row.weight) || 0;
           const pricePerKg = parseFloat(row.pricePerKg) || 0;
@@ -3915,7 +3957,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                         </div>
                       </div>
                       <div className="col-span-1">
-                        <label className="block text-xs text-muted-foreground mb-1">Code</label>
+                        <label className="block text-xs text-muted-foreground mb-1">Code *</label>
                         <select
                           value={row.productCode}
                           onChange={(e) => updateMaterialRow(index, "productCode", e.target.value)}
@@ -4217,10 +4259,11 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           </div>
 
           <div className="mb-6">
-            <h3 className="text-base font-semibold text-foreground mb-4">Delivery Vehicle Details</h3>
+            <h3 className="text-base font-semibold text-foreground mb-1">Delivery Vehicle Details</h3>
+            <p className="text-xs text-muted-foreground mb-4">Optional — khali chhor sakte hain</p>
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Vehicle Name *</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Vehicle Name</label>
                 <input
                   type="text"
                   name="vehicleName"
@@ -4234,7 +4277,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                 )}
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Vehicle Type *</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Vehicle Type</label>
                 <input
                   type="text"
                   name="vehicleType"
@@ -4248,7 +4291,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                 )}
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Vehicle Number *</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Vehicle Number</label>
                 <input
                   type="text"
                   name="vehicleNumber"
@@ -4265,7 +4308,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
 
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Driver Name *</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Driver Name</label>
                 <input
                   type="text"
                   name="driverName"
@@ -4279,7 +4322,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                 )}
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Vehicle Color *</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Vehicle Color</label>
                 <input
                   type="text"
                   name="vehicleColor"
@@ -4293,7 +4336,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                 )}
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Delivery Date & Time *</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Delivery Date & Time</label>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <div 

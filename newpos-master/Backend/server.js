@@ -47,6 +47,9 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || "localhost";
 
+// Behind nginx / Cloudflare — required for rate-limit + correct client IP
+app.set("trust proxy", 1);
+
 // Connect to database
 connectDB();
 
@@ -66,9 +69,17 @@ const receiptsDir = path.join(__dirname, "receipts");
 const allowedOrigins = [
   "http://localhost:8081",
   "http://localhost:8082",
+  "https://internationalplasticplus.cloud",
+  "https://www.internationalplasticplus.cloud",
+  "http://internationalplasticplus.cloud",
 ].filter(Boolean);
 if (process.env.FRONTEND_URL) {
   allowedOrigins.push(process.env.FRONTEND_URL);
+}
+if (process.env.CORS_ORIGINS) {
+  process.env.CORS_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean).forEach((o) => {
+    if (!allowedOrigins.includes(o)) allowedOrigins.push(o);
+  });
 }
 
 const corsOptions = {
@@ -234,6 +245,10 @@ app.get("/api/health", (req, res) => {
     environment: process.env.NODE_ENV || "development",
     rateLimiting: "Disabled",
     caching: "Enabled (in-memory)",
+    features: {
+      vendors: true,
+      vendorRoutes: ["/api/vendors", "GET|POST /", "GET|PUT|DELETE /:id"],
+    },
     static: {
       uploadsCount: fs.readdirSync(uploadsDir).length,
       receiptsCount: fs.readdirSync(receiptsDir).length,
@@ -271,6 +286,7 @@ app.listen(PORT, () => {
   logger.info(`Server running on http://${HOST}:${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || "development"}`);
   logger.info(`Rate limiting: DISABLED`);
+  logger.info(`Vendor API: POST/GET /api/vendors (cmsProtect)`);
 
   console.log(`
 ====================================================
