@@ -818,21 +818,39 @@ const getProductionForPOS = async (req, res) => {
           quality: doc.quality || "Standard",
           color: doc.color || "#FFFFFF",
           totalAvailableWeight: 0,
+          totalProductionCost: 0,
+          totalOutputWeight: 0,
           productionIds: [],
         });
       }
       const g = groups.get(key);
       g.totalAvailableWeight += avail;
       g.productionIds.push(doc._id);
+      g.totalProductionCost =
+        (g.totalProductionCost || 0) + (parseFloat(doc.totalProductionCost) || 0);
+      g.totalOutputWeight =
+        (g.totalOutputWeight || 0) +
+        (parseFloat(doc.availableWeight ?? doc.totalWeight) || 0);
     }
 
-    const data = Array.from(groups.values()).map((g) => ({
-      materialName: g.materialName,
-      quality: g.quality,
-      color: g.color,
-      totalAvailableWeight: g.totalAvailableWeight,
-      productionIds: g.productionIds,
-    }));
+    const data = Array.from(groups.values()).map((g) => {
+      const totalW = g.totalOutputWeight || g.totalAvailableWeight || 0;
+      const totalCost = g.totalProductionCost || 0;
+      const costPerKg =
+        totalW > 0 && totalCost > 0
+          ? Math.round((totalCost / totalW) * 100) / 100
+          : 0;
+      return {
+        materialName: g.materialName,
+        quality: g.quality,
+        color: g.color,
+        totalAvailableWeight: g.totalAvailableWeight,
+        totalProductionCost: totalCost,
+        totalOutputWeight: totalW,
+        costPerKg,
+        productionIds: g.productionIds,
+      };
+    });
 
     res.status(200).json({
       success: true,

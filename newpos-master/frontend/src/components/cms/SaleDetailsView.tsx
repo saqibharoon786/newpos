@@ -19,7 +19,9 @@ interface Sale {
   actualPrice: string;
   productionCost: string;
   sellingPrice: string;
+  sellingPricePerKg?: number;
   discount: string;
+  transportationCost?: number | string;
   buyerName: string;
   buyerAddress: string;
   buyerPhone: string;
@@ -489,12 +491,12 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
             <div class="print-section">
               <h3>Pricing Details</h3>
               <div class="print-row">
-                <span class="print-label">Selling Price:</span>
-                <span class="print-value">${formatCurrency(sale?.sellingPrice || '0')}</span>
+                <span class="print-label">Rate per kg:</span>
+                <span class="print-value">${formatCurrency(String(getRatePerKg(sale as Sale)))}</span>
               </div>
               <div class="print-row">
                 <span class="print-label">Discount:</span>
-                <span class="print-value">${sale?.discount || '0'}%</span>
+                <span class="print-value">${formatCurrency(sale?.discount || '0')}</span>
               </div>
               <div class="print-row">
                 <span class="print-label">Final Amount:</span>
@@ -705,6 +707,17 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
       '#000000': 'Black',
     };
     return colorMap[colorCode] || colorCode;
+  };
+
+  const getRatePerKg = (s: Sale): number => {
+    if (s.sellingPricePerKg != null && s.sellingPricePerKg > 0) return s.sellingPricePerKg;
+    const w = parseFloat(s.weight) || 0;
+    if (w <= 0) return 0;
+    const finalAmt = parseFloat(s.finalAmount || s.sellingPrice) || 0;
+    const discount = parseFloat(s.discount) || 0;
+    const transport = parseFloat(String(s.transportationCost)) || 0;
+    if (finalAmt <= 0) return 0;
+    return Math.round(((finalAmt + discount - transport) / w) * 100) / 100;
   };
 
   // Calculate profit
@@ -936,16 +949,16 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
                 <DollarSign className="w-4 h-4" />
-                <span className="text-sm">Selling Price</span>
+                <span className="text-sm">Rate per kg</span>
               </div>
-              <span className="text-sm text-foreground">{formatCurrency(sale.sellingPrice)}</span>
+              <span className="text-sm text-foreground">{formatCurrency(String(getRatePerKg(sale)))}</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
                 <Percent className="w-4 h-4" />
-                <span className="text-sm">Discount</span>
+                <span className="text-sm">Discount (Rs.)</span>
               </div>
-              <span className="text-sm text-foreground">{sale.discount || '0'}%</span>
+              <span className="text-sm text-foreground">{formatCurrency(sale.discount || '0')}</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">

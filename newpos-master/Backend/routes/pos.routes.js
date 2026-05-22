@@ -45,6 +45,9 @@ const receiptUpload = multer({
 // Create new sale with receipt image
 router.post("/add-sale", receiptUpload.single("receiptImage"), posController.addSale);
 
+// Next sale invoice (SI prefix — auto)
+router.get("/next-invoice", posController.getNextSaleInvoiceNo);
+
 // Get all sales
 router.get("/", posController.getSales);
 

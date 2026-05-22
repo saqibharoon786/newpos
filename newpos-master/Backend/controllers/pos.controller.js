@@ -209,6 +209,14 @@ const addSale = async (req, res) => {
     }
     const remainingAmount = Math.max(0, sellingPriceNum - paidAmount);
     const billTotalStr = String(sellingPriceNum);
+    const transportNum = parseFloat(transportationCost) || 0;
+    const pricePerKgBody = parseFloat(req.body.pricePerKg);
+    const sellingPricePerKg =
+      !isNaN(pricePerKgBody) && pricePerKgBody > 0
+        ? pricePerKgBody
+        : weightToSell > 0
+          ? Math.round(((sellingPriceNum + discountNum - transportNum) / weightToSell) * 100) / 100
+          : 0;
     let finalPaymentStatus = paymentStatus;
     if (!finalPaymentStatus) {
       if (paidAmount === 0) finalPaymentStatus = 'none';
@@ -261,6 +269,7 @@ const addSale = async (req, res) => {
         productionCost: String(production.totalProductionCost || production.materialCost || 0),
         costPerKg: weightToSell > 0 ? (production.totalProductionCost || 0) / weightToSell : 0,
         sellingPrice: billTotalStr,
+        sellingPricePerKg,
         discount: String(discountNum),
         finalAmount: billTotalStr,
         advancePayment: paidAmount,
@@ -345,6 +354,7 @@ const addSale = async (req, res) => {
         actualPrice,
         productionCost: "0",
         sellingPrice: billTotalStr,
+        sellingPricePerKg,
         discount: String(discountNum),
         finalAmount: billTotalStr,
         advancePayment: paidAmount,
@@ -411,6 +421,7 @@ const addSale = async (req, res) => {
         actualPrice,
         productionCost: "0",
         sellingPrice: billTotalStr,
+        sellingPricePerKg,
         discount: String(discountNum),
         finalAmount: billTotalStr,
         advancePayment: paidAmount,
@@ -645,6 +656,17 @@ const updateSale = async (req, res) => {
       });
       updateData.sellingPrice = String(billTotal);
       updateData.finalAmount = String(billTotal);
+      const pkg = parseFloat(updateData.pricePerKg);
+      const discUpd = parseFloat(updateData.discount);
+      const discN = !isNaN(discUpd) ? discUpd : parseFloat(existingSale.discount) || 0;
+      const transpUpd = parseFloat(updateData.transportationCost);
+      const transpN = !isNaN(transpUpd) ? transpUpd : parseFloat(existingSale.transportationCost) || 0;
+      if (!isNaN(pkg) && pkg > 0) {
+        updateData.sellingPricePerKg = pkg;
+      } else if (newWeight > 0) {
+        updateData.sellingPricePerKg =
+          Math.round(((billTotal + discN - transpN) / newWeight) * 100) / 100;
+      }
       const paid = parseFloat(updateData.amountPaid) ?? existingSale.amountPaid ?? 0;
       if (paid > billTotal) {
         return res.status(400).json({
@@ -913,6 +935,15 @@ const getSalesStatistics = async (req, res) => {
   }
 };
 
+const getNextSaleInvoiceNo = async (req, res) => {
+  try {
+    const invoiceNo = await generateSaleInvoiceNo();
+    res.status(200).json({ success: true, data: { invoiceNo } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 const approveSale = async (req, res) => {
   try {
     const sale = await Sale.findById(req.params.id);
@@ -927,6 +958,7 @@ const approveSale = async (req, res) => {
 
 module.exports = {
   addSale,
+  getNextSaleInvoiceNo,
   getSales,
   getSaleById,
   updateSale,

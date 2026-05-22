@@ -1,4 +1,5 @@
 const Customer = require('../models/customer.model');
+const Sale = require('../models/pos.model');
 
 // Create a new customer
 exports.createCustomer = async (req, res) => {
@@ -156,16 +157,48 @@ exports.getAllCustomers = async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
+    const ids = customers.map((c) => c._id);
+    const saleAgg =
+      ids.length > 0
+        ? await Sale.aggregate([
+            { $match: { customerId: { $in: ids } } },
+            {
+              $group: {
+                _id: '$customerId',
+                salesBalanceDue: { $sum: { $ifNull: ['$remainingAmount', 0] } },
+                advanceFromSales: { $sum: { $ifNull: ['$advancePayment', 0] } },
+              },
+            },
+          ])
+        : [];
+    const saleByCustomer = Object.fromEntries(
+      saleAgg.map((r) => [String(r._id), r])
+    );
+
+    const data = customers.map((c) => {
+      const doc = c.toObject();
+      const saleRow = saleByCustomer[String(c._id)] || {};
+      const profileDue = Math.max(0, (doc.amount || 0) - (doc.amountPaid || 0));
+      const salesDue = saleRow.salesBalanceDue || 0;
+      return {
+        ...doc,
+        salesBalanceDue: Math.round(salesDue * 100) / 100,
+        profileBalanceDue: Math.round(profileDue * 100) / 100,
+        totalBalanceDue: Math.round((salesDue + profileDue) * 100) / 100,
+        advanceCredit: Math.round((saleRow.advanceFromSales || 0) * 100) / 100,
+      };
+    });
+
     const total = await Customer.countDocuments(filter);
     const totalPages = Math.ceil(total / limit);
 
     res.status(200).json({
       success: true,
-      count: customers.length,
+      count: data.length,
       total,
       totalPages,
       currentPage: parseInt(page),
-      data: customers
+      data,
     });
 
   } catch (error) {
