@@ -3,20 +3,10 @@ import { Search, Plus, Printer, Pencil, Eye, Trash2, ChevronLeft, ChevronRight, 
 import { AddExpenseDialog } from "./AddExpenseDialog";
 import { ExpenseCategoriesPanel } from "./ExpenseCategoriesPanel";
 import { toast } from "@/hooks/use-toast";
-import axios from "axios";
+import api from "@/lib/api";
 import { exportAsCsv, exportAsWordTable, toYmd } from "@/lib/exportUtils";
 
-// Configure axios with environment variable
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-
-// Create axios instance with base URL
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-});
-
-// API endpoints
-const EXPENSES_API_URL = `${API_BASE_URL}/api/expenses`;
+const EXPENSES_API = "/api/expenses";
 
 /** YYYY-MM-DD in local calendar (toISOString shifts dates in non-UTC zones). */
 function formatLocalYmd(d: Date): string {
@@ -1362,7 +1352,7 @@ export function RoznamchaView() {
       // Month / year / day filters: fetch enough rows so the full month (etc.) is visible (was capped at 10)
       params.append("limit", dateRangeActive ? "500" : "10");
       
-      const response = await api.get(`${EXPENSES_API_URL}/get-all?${params.toString()}`);
+      const response = await api.get(`${EXPENSES_API}/get-all?${params.toString()}`);
       
       if (response.data.success) {
         const fetchedExpenses = response.data.data;
@@ -1378,8 +1368,15 @@ export function RoznamchaView() {
         setExpenses(mergedExpenses);
         setPagination(response.data.pagination);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching expenses:", error);
+      if (error.response?.status === 401) {
+        toast({
+          title: "Login required",
+          description: error.response?.data?.message || "Session expire — logout kar ke dubara login karen",
+          variant: "destructive",
+        });
+      }
       toast({
         title: "Error",
         description: "Failed to load expenses",
@@ -1426,13 +1423,20 @@ export function RoznamchaView() {
         params.append("endDate", end);
       }
       const qs = params.toString();
-      const url = qs ? `${EXPENSES_API_URL}/stats?${qs}` : `${EXPENSES_API_URL}/stats`;
+      const url = qs ? `${EXPENSES_API}/stats?${qs}` : `${EXPENSES_API}/stats`;
       const response = await api.get(url);
       if (response.data.success) {
         setStats(response.data.data);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching stats:", error);
+      if (error.response?.status === 401) {
+        toast({
+          title: "Login required",
+          description: error.response?.data?.message || "Session expire — logout kar ke dubara login karen",
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -1480,7 +1484,7 @@ export function RoznamchaView() {
         params.append("endDate", end);
       }
 
-      const response = await api.get(`${EXPENSES_API_URL}/get-all?${params.toString()}`);
+      const response = await api.get(`${EXPENSES_API}/get-all?${params.toString()}`);
       if (!response.data.success) throw new Error("Failed to fetch expenses for export");
       const allRows: ExpenseItem[] = response.data.data || [];
       if (allRows.length === 0) {
@@ -1556,7 +1560,7 @@ export function RoznamchaView() {
         });
         
         // Make API call in background
-        response = await api.put(`${EXPENSES_API_URL}/${editExpense._id}`, expenseData);
+        response = await api.put(`${EXPENSES_API}/${editExpense._id}`, expenseData);
         
         if (response.data.success) {
           // Update with server data
@@ -1607,7 +1611,7 @@ export function RoznamchaView() {
         });
         
         // Make API call in background
-        response = await api.post(`${EXPENSES_API_URL}/create-expense`, expenseData);
+        response = await api.post(`${EXPENSES_API}/create-expense`, expenseData);
         
         if (response.data.success) {
           // Replace temporary expense with real one from server
@@ -1635,7 +1639,7 @@ export function RoznamchaView() {
       if (editExpense) {
         // Refetch the original data for this expense
         try {
-          const originalResponse = await api.get(`${EXPENSES_API_URL}/${editExpense._id}`);
+          const originalResponse = await api.get(`${EXPENSES_API}/${editExpense._id}`);
           if (originalResponse.data.success) {
             setExpenses(prev => 
               prev.map(expense => 
@@ -1659,12 +1663,14 @@ export function RoznamchaView() {
         setExpenses(prev => prev.filter(expense => !expense._id.startsWith('temp-')));
       }
       
+      const msg = error.response?.data?.message || "Failed to save expense";
       toast({
         title: "Error",
-        description: error.response?.data?.message || "Failed to save expense",
+        description: msg,
         variant: "destructive",
         action: <XCircle className="w-4 h-4 text-red-500" />,
       });
+      throw new Error(msg);
     }
   };
 
@@ -1682,7 +1688,7 @@ export function RoznamchaView() {
     setExpenses(prev => prev.filter(expense => expense._id !== id));
     
     try {
-      await api.delete(`${EXPENSES_API_URL}/${id}`);
+      await api.delete(`${EXPENSES_API}/${id}`);
       
       toast({
         title: "Success",
@@ -1723,7 +1729,7 @@ export function RoznamchaView() {
   // Handle view expense
   const handleViewExpense = async (id: string) => {
     try {
-      const response = await api.get(`${EXPENSES_API_URL}/${id}`);
+      const response = await api.get(`${EXPENSES_API}/${id}`);
       if (response.data.success) {
         setViewExpense(response.data.data);
       }

@@ -26,6 +26,9 @@ router.post("/register", userValidation.register, authController.register)
 // @access  Public
 router.post("/login", authLimiter, userValidation.login, authController.login)
 
+// CMS owner login (JWT for live server — avoids CORS custom-header issues)
+router.post("/owner-session", authController.ownerSession)
+
 // @route   POST /api/v1/auth/refresh-token
 // @desc    Refresh access token
 // @access  Public

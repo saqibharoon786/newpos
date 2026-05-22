@@ -277,23 +277,27 @@ exports.createExpense = async (req, res) => {
     const priceNum = parseFloat(String(price).replace(/[^\d.]/g, '')) || 0;
     const method = paymentMethod || 'drawer';
 
+    let walletNote = null;
     if (priceNum > 0 && ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(method)) {
-      const balances = await Transaction.getBalances();
-      if ((balances[method] || 0) < priceNum) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient balance in ${method}. Available: Rs. ${balances[method] || 0}`,
-        });
+      try {
+        const balances = await Transaction.getBalances();
+        if ((balances[method] || 0) >= priceNum) {
+          await Transaction.create({
+            type: 'withdraw',
+            method,
+            amount: priceNum,
+            net: priceNum,
+            description: `Expense: ${subject}`,
+            reference: `EXP-${Date.now()}`,
+            status: 'completed',
+          });
+        } else {
+          walletNote = `Kharcha save ho gaya (wallet mein balance kam tha: ${method})`;
+        }
+      } catch (walletErr) {
+        console.warn('Expense wallet deduction skipped:', walletErr.message);
+        walletNote = 'Kharcha save ho gaya (wallet update skip)';
       }
-      await Transaction.create({
-        type: 'withdraw',
-        method,
-        amount: priceNum,
-        net: priceNum,
-        description: `Expense: ${subject}`,
-        reference: `EXP-${Date.now()}`,
-        status: 'completed',
-      });
     }
 
     const expenseData = {
@@ -313,7 +317,7 @@ exports.createExpense = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: "Expense created successfully",
+      message: walletNote || "Expense created successfully",
       data: expense,
     });
   } catch (error) {

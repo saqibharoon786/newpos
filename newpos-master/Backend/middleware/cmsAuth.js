@@ -10,6 +10,18 @@ async function cmsProtect(req, res, next) {
   if (token) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (decoded.id === 'super-admin') {
+        req.user = {
+          _id: 'super-admin',
+          email: decoded.email || 'superadmin@gmail.com',
+          role: decoded.role || 'owner',
+          username: 'owner',
+          firstName: 'Owner',
+          lastName: '',
+          isActive: true,
+        };
+        return next();
+      }
       const user = await User.findById(decoded.id).select('-password -refreshToken');
       if (user?.isActive) {
         req.user = user;

@@ -116,25 +116,30 @@ export function AddExpenseDialog({
           }
         }
       } else {
-        // Do NOT default to current date - user must select date; jo date enter kare wohi show hogi
         let hour = now.getHours();
         const minute = String(now.getMinutes()).padStart(2, '0');
         const ampm: "AM" | "PM" = hour >= 12 ? "PM" : "AM";
         const hour12 = hour % 12 || 12;
         const timeStr = `${hour12.toString().padStart(2, '0')}:${minute} ${ampm}`;
+        const dd = String(now.getDate()).padStart(2, '0');
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const yyyy = now.getFullYear();
+        const todayStr = `${dd}/${mm}/${yyyy}`;
 
         setFormData({
           subject: "",
           description: "",
-          purpose: "Car",
+          purpose: "Office",
           price: "",
           personResponsible: "HR",
-          usage: "Personal",
-          date: "",
+          usage: "Company",
+          date: todayStr,
           time: timeStr,
+          paymentMethod: "drawer",
+          category: "General",
         });
 
-        setSelectedDate(null);
+        setSelectedDate(now);
         setCurrentMonth(now.getMonth());
         setCurrentYear(now.getFullYear());
         setSelectedHour(hour12.toString().padStart(2, '0'));
@@ -156,11 +161,7 @@ export function AddExpenseDialog({
   }, [selectedDate]);
 
   useEffect(() => {
-    let h = parseInt(selectedHour);
-    if (selectedAmPm === "PM" && h < 12) h += 12;
-    if (selectedAmPm === "AM" && h === 12) h = 0;
-
-    const timeStr = `${h.toString().padStart(2, '0')}:${selectedMinute} ${selectedAmPm}`;
+    const timeStr = `${selectedHour}:${selectedMinute} ${selectedAmPm}`;
     setFormData(prev => ({ ...prev, time: timeStr }));
   }, [selectedHour, selectedMinute, selectedAmPm]);
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Printer, IndianRupee, Building2, FileText, Calendar, Package, Settings, Box, Cpu, CheckCircle, AlignLeft, Building, User, ArrowLeft, Loader2, Image, Download, Eye } from "lucide-react";
+import api, { API_BASE_URL } from "@/lib/api";
 
 interface AssetItem {
   _id: string;
@@ -28,9 +29,7 @@ interface AssetItem {
   updatedAt: string;
 }
 
-// Get base URL from environment and append /api/assets
-const BACKEND_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-const API_BASE_URL = `${BACKEND_URL}/api/assets`;
+const UPLOAD_BASE = API_BASE_URL || "";
 
 interface AssetDetailsViewProps {
   onBack: () => void;
@@ -93,7 +92,7 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
     }
     
     // Construct the URL
-    const receiptUrl = `${BACKEND_URL}/uploads/general/${cleanFilename}`;
+    const receiptUrl = `${UPLOAD_BASE}/uploads/general/${cleanFilename}`;
     console.log("📸 Final URL:", receiptUrl);
     
     return receiptUrl;
@@ -543,21 +542,9 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
       setError(null);
       
       console.log("🔍 Fetching asset ID:", assetId);
-      console.log("🔗 API URL:", `${API_BASE_URL}/${assetId}`);
-      
-      const response = await fetch(`${API_BASE_URL}/${assetId}`);
-      
-      console.log("📊 Response status:", response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("❌ API Error Response:", errorText);
-        throw new Error(`HTTP ${response.status}: Failed to fetch asset`);
-      }
-      
-      const result = await response.json();
-      console.log("✅ API Response:", result);
-      
+      const response = await api.get(`/api/assets/${assetId}`);
+      const result = response.data;
+
       if (result.success) {
         setAsset(result.data);
         console.log("📦 Asset data loaded successfully");
@@ -574,7 +561,7 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
       }
     } catch (error: any) {
       console.error("❌ Error fetching asset details:", error);
-      setError(error.message || "Failed to load asset details");
+      setError(error.response?.data?.message || error.message || "Failed to load asset details");
       setAsset(null);
     } finally {
       setLoading(false);
@@ -584,7 +571,6 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
 
   useEffect(() => {
     console.log("🎯 AssetDetailsView mounted with assetId:", assetId);
-    console.log("🌐 Using API Base URL:", API_BASE_URL);
     
     if (assetId) {
       fetchAssetDetails();
@@ -637,25 +623,18 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
 
   // Quick test button
   const testApiManually = () => {
-    console.log("🧪 Manual API test for assetId:", assetId);
-    console.log("🌐 Testing URL:", `${API_BASE_URL}/${assetId}`);
     if (assetId) {
-      fetch(`${API_BASE_URL}/${assetId}`)
-        .then(res => {
-          console.log("Manual test - Status:", res.status);
-          console.log("Manual test - Headers:", Object.fromEntries(res.headers.entries()));
-          return res.json();
-        })
-        .then(data => {
-          console.log("Manual test - Data:", data);
+      api.get(`/api/assets/${assetId}`)
+        .then((res) => {
+          const data = res.data;
           if (data.success) {
             setAsset(data.data);
             setError(null);
           } else {
-            setError(data.error || "API returned an error");
+            setError(data.error || data.message || "API returned an error");
           }
         })
-        .catch(err => {
+        .catch((err) => {
           console.error("Manual test - Error:", err);
           setError(err.message || "Failed to connect to server");
         });

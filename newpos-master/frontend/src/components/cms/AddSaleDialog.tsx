@@ -176,6 +176,17 @@ export function AddSaleDialog({
   const [weightError, setWeightError] = useState<string>("");
   const [paymentStatusError, setPaymentStatusError] = useState<string>("");
   const [apiError, setApiError] = useState<string>("");
+  const [registeredCustomers, setRegisteredCustomers] = useState<
+    {
+      _id: string;
+      customerName: string;
+      customerId: string;
+      phoneNo: string;
+      address?: string;
+      email?: string;
+    }[]
+  >([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
 
   // Calendar helper functions
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -228,9 +239,47 @@ export function AddSaleDialog({
       : null;
   const currentUser = getCurrentUser();
 
+  const fetchRegisteredCustomers = async () => {
+    try {
+      const res = await api.get("/api/customers/getall-customers");
+      if (res.data.success) {
+        setRegisteredCustomers(res.data.data || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch customers:", error);
+    }
+  };
+
+  const handleCustomerSelect = (customerId: string) => {
+    setSelectedCustomerId(customerId);
+    if (!customerId) {
+      setFormData((prev) => ({
+        ...prev,
+        buyerName: "",
+        buyerPhone: "",
+        customerId: "",
+      }));
+      return;
+    }
+    const customer = registeredCustomers.find((c) => c._id === customerId);
+    if (!customer) return;
+    setFormData((prev) => ({
+      ...prev,
+      buyerName: customer.customerName,
+      buyerPhone: customer.phoneNo || "",
+      buyerAddress: customer.address || prev.buyerAddress,
+      buyerEmail: customer.email || prev.buyerEmail,
+      customerId: customer._id,
+    }));
+    if (errors.buyerName) {
+      setErrors((prev) => ({ ...prev, buyerName: "" }));
+    }
+  };
+
   useEffect(() => {
     if (open) {
       fetchMaterials();
+      fetchRegisteredCustomers();
       
       if (isEdit && editData) {
         // Populate form for editing
@@ -352,6 +401,19 @@ export function AddSaleDialog({
       setReceiptPreview(`${API_BASE_URL}${editData.receiptImage}`);
     }
   };
+
+  useEffect(() => {
+    if (!open || !isEdit || !editData?.buyerName || registeredCustomers.length === 0) return;
+    const cid = (editData as Sale & { customerId?: string }).customerId || "";
+    if (cid) {
+      setSelectedCustomerId(cid);
+      return;
+    }
+    const match = registeredCustomers.find(
+      (c) => c.customerName.toLowerCase() === editData.buyerName.trim().toLowerCase()
+    );
+    if (match) setSelectedCustomerId(match._id);
+  }, [open, isEdit, editData, registeredCustomers]);
 
   const handlePaymentTypeChange = (type: PaymentType) => {
     setPaymentType(type);
@@ -929,6 +991,7 @@ export function AddSaleDialog({
     setWeightError("");
     setPaymentStatusError("");
     setErrors({});
+    setSelectedCustomerId("");
   };
 
   const handleClose = () => {
@@ -1146,6 +1209,94 @@ export function AddSaleDialog({
           <p className="text-xs text-muted-foreground">
             Point Of Sale / {isEdit ? 'Edit Sale' : 'Add Sale'}
           </p>
+        </div>
+
+        {/* Customer Details — sab se pehle */}
+        <div className="mb-6">
+          <h3 className="text-base font-semibold text-foreground mb-4">Customer Details</h3>
+          <div className="mb-4">
+            <label className="block text-xs text-muted-foreground mb-1.5">
+              Select Customer *
+            </label>
+            <select
+              value={selectedCustomerId}
+              onChange={(e) => handleCustomerSelect(e.target.value)}
+              className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="">Select customer...</option>
+              {registeredCustomers.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.customerName}
+                  {c.customerId ? ` (${c.customerId})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Customer Name *</label>
+              <input
+                type="text"
+                name="buyerName"
+                placeholder="Customer name"
+                value={formData.buyerName}
+                onChange={handleInputChange}
+                className={`w-full bg-cms-input-bg border ${errors.buyerName ? "border-red-500" : "border-border"} rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+              />
+              {errors.buyerName && (
+                <p className="text-xs text-red-500 mt-1">{errors.buyerName}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Phone No *</label>
+              <input
+                type="tel"
+                name="buyerPhone"
+                placeholder="e.g 03001234567"
+                value={formData.buyerPhone}
+                onChange={handleInputChange}
+                className={`w-full bg-cms-input-bg border ${errors.buyerPhone ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+              />
+              {errors.buyerPhone && (
+                <p className="text-xs text-red-500 mt-1">{errors.buyerPhone}</p>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Address</label>
+              <input
+                type="text"
+                name="buyerAddress"
+                placeholder="Optional"
+                value={formData.buyerAddress}
+                onChange={handleInputChange}
+                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Email</label>
+              <input
+                type="email"
+                name="buyerEmail"
+                placeholder="Optional"
+                value={formData.buyerEmail}
+                onChange={handleInputChange}
+                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">CNIC</label>
+              <input
+                type="text"
+                name="buyerCnic"
+                placeholder="Optional"
+                value={formData.buyerCnic}
+                onChange={handleInputChange}
+                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Debug Info - Remove in production */}
@@ -1692,90 +1843,6 @@ export function AddSaleDialog({
                 </div>
               </div>
             )}
-          </div>
-        </div>
-
-        {/* Customer Details Section */}
-        <div className="mb-6">
-          <h3 className="text-base font-semibold text-foreground mb-4">Customer Details</h3>
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Customer Name *</label>
-              <input
-                type="text"
-                name="buyerName"
-                placeholder="Type customer name"
-                value={formData.buyerName}
-                onChange={handleInputChange}
-                className={`w-full bg-cms-input-bg border ${errors.buyerName ? "border-red-500" : "border-border"} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-              />
-              {errors.buyerName && (
-                <p className="text-xs text-red-500 mt-1">{errors.buyerName}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Address</label>
-              <input
-                type="text"
-                name="buyerAddress"
-                placeholder="e.g 123 Main St"
-                value={formData.buyerAddress}
-                onChange={handleInputChange}
-                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Phone No. *</label>
-              <input
-                type="tel"
-                name="buyerPhone"
-                placeholder="e.g +92 300 1234567"
-                value={formData.buyerPhone}
-                onChange={handleInputChange}
-                className={`w-full bg-cms-input-bg border ${errors.buyerPhone ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-              />
-              {errors.buyerPhone && (
-                <p className="text-xs text-red-500 mt-1">{errors.buyerPhone}</p>
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Email Address</label>
-              <input
-                type="email"
-                name="buyerEmail"
-                placeholder="e.g john@example.com"
-                value={formData.buyerEmail}
-                onChange={handleInputChange}
-                className={`w-full bg-cms-input-bg border ${errors.buyerEmail ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
-              />
-              {errors.buyerEmail && (
-                <p className="text-xs text-red-500 mt-1">{errors.buyerEmail}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">CNIC No.</label>
-              <input
-                type="text"
-                name="buyerCnic"
-                placeholder="e.g 42101-1234567-8"
-                value={formData.buyerCnic}
-                onChange={handleInputChange}
-                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Company/Business Name</label>
-              <input
-                type="text"
-                name="buyerCompany"
-                placeholder="e.g ABC Corporation"
-                value={formData.buyerCompany}
-                onChange={handleInputChange}
-                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
           </div>
         </div>
 

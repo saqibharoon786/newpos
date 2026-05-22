@@ -30,38 +30,9 @@ import {
   Loader2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import axios from "axios";
+import api, { API_BASE_URL } from "@/lib/api";
 
-// ==================== API CONFIGURATION ====================
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-
-const createAPI = () => {
-  const instance = axios.create({
-    baseURL: API_BASE_URL,
-    timeout: 30000,
-  });
-
-  instance.interceptors.request.use(
-    (config) => {
-      if (config.url && !config.url.startsWith('/api/')) {
-        config.url = `/api${config.url.startsWith('/') ? '' : '/'}${config.url}`;
-      }
-      
-      if (config.data instanceof FormData) {
-        config.headers['Content-Type'] = 'multipart/form-data';
-      }
-      
-      return config;
-    },
-    (error) => {
-      return Promise.reject(error);
-    }
-  );
-
-  return instance;
-};
-
-const API = createAPI();
+const EMPLOYEES_API = "/api/employees";
 
 interface EmployeeType {
   _id: string;
@@ -639,7 +610,7 @@ const Employee = () => {
   const fetchEmployees = async () => {
     try {
       setIsLoading(true);
-      const response = await API.get("/employees/get-all");
+      const response = await api.get(`${EMPLOYEES_API}/get-all`);
       
       if (response.data.success) {
         const employeesData = (response.data.data || []).map((emp: any) => ({
@@ -664,7 +635,7 @@ const Employee = () => {
 
   const fetchEmployeeStats = async () => {
     try {
-      const response = await API.get("/employees/stats");
+      const response = await api.get(`${EMPLOYEES_API}/stats`);
       
       if (response.data.success) {
         const statsData = response.data.data || {};
@@ -683,16 +654,7 @@ const Employee = () => {
     try {
       console.log("Sending employee data...");
       
-      const response = await axios.post(
-        `${API_BASE_URL}/api/employees/create-employee`,
-        formDataToSend,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-          timeout: 30000,
-        }
-      );
+      const response = await api.post(`${EMPLOYEES_API}/create-employee`, formDataToSend);
       
       console.log("Create employee response:", response.data);
       
@@ -745,7 +707,7 @@ const Employee = () => {
         formDataToSend.append("cnicBackImage", files.cnicBack);
       }
 
-      const response = await API.put(`/employees/${id}`, formDataToSend);
+      const response = await api.put(`${EMPLOYEES_API}/${id}`, formDataToSend);
       
       if (response.data.success) {
         return response.data;
@@ -766,7 +728,7 @@ const Employee = () => {
         throw new Error("Invalid employee ID");
       }
       
-      const response = await API.delete(`/employees/${id}`);
+      const response = await api.delete(`${EMPLOYEES_API}/${id}`);
       
       if (response.data.success) {
         return response.data;

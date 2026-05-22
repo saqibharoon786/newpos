@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { Search, Plus, Printer, Phone, Mail, Users, Eye, Edit2, Trash2, RefreshCw, FolderOpen, Download, MoreVertical, Calendar, Loader2, DollarSign } from "lucide-react";
 import { AddCustomerDialog, CustomerFormData } from "./AddCustomerDialog";
+import { AddCustomerQuickDialog } from "./AddCustomerQuickDialog";
+import { CustomerWiseSummary } from "./CustomerWiseSummary";
 import { toast } from "sonner";
-import axios from "axios";
+import api from "@/lib/api";
 
 interface Customer {
   _id: string;
@@ -94,12 +96,23 @@ const getPaymentStatusText = (paidAmount: string) => {
   }
 };
 
-// Use environment variable for API base URL
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-const CUSTOMERS_API_URL = `${API_BASE_URL}/api/customers`;
+interface PosSale {
+  buyerName?: string;
+  finalAmount?: string;
+  sellingPrice?: string;
+  amountPaid?: number;
+  remainingAmount?: number;
+  weight?: string;
+  unit?: string;
+  quality?: string;
+  materialName?: string;
+  materialColor?: string;
+}
 
 export default function CustomersView() {
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [posSales, setPosSales] = useState<PosSale[]>([]);
+  const [loadingSales, setLoadingSales] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -109,30 +122,26 @@ export default function CustomersView() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
 
-  // Log API URL for debugging
-  useEffect(() => {
-    console.log("🌐 API Configuration:", {
-      VITE_API_BASE_URL: import.meta.env.VITE_API_BASE_URL,
-      API_BASE_URL,
-      CUSTOMERS_API_URL,
-      Mode: import.meta.env.MODE,
-    });
-  }, []);
+  const fetchPosSales = async () => {
+    try {
+      setLoadingSales(true);
+      const response = await api.get("/api/sales");
+      if (response.data.success) {
+        setPosSales(response.data.data || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch POS sales:", error);
+      setPosSales([]);
+    } finally {
+      setLoadingSales(false);
+    }
+  };
 
   // Fetch customers from backend
   const fetchCustomers = async () => {
     try {
       setIsLoading(true);
-      const apiUrl = `${API_BASE_URL}/api/customers/getall-customers`;
-      console.log("📡 Fetching customers from:", apiUrl);
-      
-      const response = await axios.get(apiUrl, {
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
-      
-      console.log("✅ Backend response:", response.data);
+      const response = await api.get("/api/customers/getall-customers");
       
       if (response.data.success) {
         // Transform backend data to match frontend interface
@@ -158,25 +167,12 @@ export default function CustomersView() {
         }));
         
         setCustomers(transformedCustomers);
-        console.log("✅ Customers fetched:", transformedCustomers.length);
-        toast.success(`Loaded ${transformedCustomers.length} customers`);
       } else {
         toast.error("Failed to fetch customers: " + (response.data.message || "Unknown error"));
       }
-    } catch (error: any) {
-      console.error("❌ Error fetching customers:", error);
-      
-      if (error.code === 'ECONNREFUSED') {
-        toast.error(`Cannot connect to backend at ${API_BASE_URL}. Please make sure server is running.`);
-      } else if (error.response) {
-        toast.error(`Server error ${error.response.status}: ${error.response.data?.message || "Failed to load customers"}`);
-      } else if (error.request) {
-        toast.error(`No response from ${API_BASE_URL}. Backend might be down.`);
-      } else {
-        toast.error("Failed to load customers from server");
-      }
-      
-      // Set empty array as fallback
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } }; message?: string };
+      toast.error(err.response?.data?.message || err.message || "Failed to load customers");
       setCustomers([]);
     } finally {
       setIsLoading(false);
@@ -184,9 +180,15 @@ export default function CustomersView() {
     }
   };
 
+  const refreshAll = async () => {
+    setIsRefreshing(true);
+    await Promise.all([fetchCustomers(), fetchPosSales()]);
+  };
+
   // Load customers on component mount
   useEffect(() => {
     fetchCustomers();
+    fetchPosSales();
   }, []);
 
   const filteredCustomers = customers.filter(customer =>
@@ -687,14 +689,14 @@ export default function CustomersView() {
   };
 
   const handleRefresh = () => {
-    setIsRefreshing(true);
-    setSearchTerm(""); // Clear search on refresh
-    fetchCustomers();
+    setSearchTerm("");
+    refreshAll();
   };
 
   // Handle customer added successfully
   const handleCustomerAdded = () => {
     fetchCustomers();
+    fetchPosSales();
     // Clear search term when adding new customer
     setSearchTerm("");
   };
@@ -972,7 +974,7 @@ export default function CustomersView() {
           </div>
           <h1 className="text-base sm:text-lg font-semibold text-foreground">Customers</h1>
           <button
-            onClick={handleRefresh}
+            onClick={refreshAll}
             disabled={isRefreshing}
             className="p-1 hover:bg-muted rounded-md transition-colors"
             title="Refresh customers"
@@ -990,13 +992,21 @@ export default function CustomersView() {
         <div className="bg-cms-card rounded-xl p-8 text-center mb-6">
           <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-muted-foreground">Loading customers...</p>
-          <p className="text-xs text-muted-foreground mt-2">Connecting to {API_BASE_URL}</p>
         </div>
       )}
 
       {/* Main Content - Show when not loading */}
       {!isLoading && (
         <>
+          {/* POS sales summary — same as POS module */}
+          {!loadingSales && posSales.length > 0 && (
+            <CustomerWiseSummary
+              sales={posSales}
+              title="Customer-wise Summary (from POS sales)"
+              exportFilePrefix="Customers_POS_Summary"
+            />
+          )}
+
           {/* Stats Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
             <div className="bg-cms-card rounded-xl p-4">
@@ -1291,12 +1301,10 @@ export default function CustomersView() {
         </>
       )}
 
-      {/* Add Customer Dialog */}
-      <AddCustomerDialog 
+      <AddCustomerQuickDialog
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
-        onCustomerAdded={handleCustomerAdded}
-        isEditMode={false}
+        onSaved={handleCustomerAdded}
       />
 
       {/* Edit Customer Dialog */}
