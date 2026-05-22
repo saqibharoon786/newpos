@@ -4,7 +4,7 @@ import { PurchaseDetailsView } from "./PurchaseDetailsView";
 import { toast } from "@/hooks/use-toast";
 import api, { API_BASE_URL } from "@/lib/api";
 import { canApprove, getCurrentUser } from "@/lib/auth";
-import { PRODUCT_CODES, getMaterialNameForCode } from "@/lib/productCodes";
+import { PRODUCT_CODES, getMaterialNameForCode, getProductByCode } from "@/lib/productCodes";
 import { exportAsCsv, exportAsExcelTable, exportAsWordTable, exportAsPdf, inDateRange, toYmd } from "@/lib/exportUtils";
 import { getPurchaseTotalPaid, getPurchaseRemainingAmount, getPurchasePaidStatus, getPurchasePrice } from "@/lib/purchasePayment";
 import { fetchCompanySettings, getLogoUrl } from "@/lib/companySettings";
@@ -106,9 +106,19 @@ interface PurchaseMaterial {
   productCode: string;
 }
 
+interface VendorMaterialProfile {
+  productCode: string;
+  materialName: string;
+  pricePerKg: number;
+  defaultWeight?: number;
+}
+
 interface VendorOption {
   _id: string;
+  vendorId?: string;
   name: string;
+  phone?: string;
+  materials?: VendorMaterialProfile[];
 }
 
 interface MaterialCatalogItem {
@@ -2533,6 +2543,34 @@ interface DialogProps {
   editData?: Purchase | null;
 }
 
+function resolveVendorMaterialWeight(m: VendorMaterialProfile): string {
+  const saved = Number(m.defaultWeight);
+  if (saved > 0) return String(saved);
+  const bagSize = getProductByCode(m.productCode || "")?.bagSize;
+  if (bagSize && bagSize > 0) return String(bagSize);
+  return "";
+}
+
+function vendorMaterialsToRows(materials: VendorMaterialProfile[]): PurchaseMaterialRow[] {
+  return materials.map((m) => ({
+    name: m.materialName || getMaterialNameForCode(m.productCode) || "",
+    weight: resolveVendorMaterialWeight(m),
+    pricePerKg: String(m.pricePerKg ?? ""),
+    productCode: m.productCode || "",
+  }));
+}
+
+function totalsFromMaterialRows(rows: PurchaseMaterialRow[]) {
+  const validRows = rows.filter((r) => r.name.trim());
+  const totalWeight = validRows.reduce((s, r) => s + (parseFloat(r.weight) || 0), 0);
+  const totalPrice = validRows.reduce(
+    (s, r) => s + (parseFloat(r.weight) || 0) * (parseFloat(r.pricePerKg) || 0),
+    0
+  );
+  const names = validRows.map((r) => r.name.trim()).join(", ");
+  return { totalWeight, totalPrice, names };
+}
+
 // PurchaseDialog Component
 function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData = null }: DialogProps) {
   const [showPurchaseCalendar, setShowPurchaseCalendar] = useState(false);
@@ -2588,6 +2626,8 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   });
 
   const [materialCatalog, setMaterialCatalog] = useState<MaterialCatalogItem[]>([]);
+  const [registeredVendors, setRegisteredVendors] = useState<VendorOption[]>([]);
+  const [selectedVendorId, setSelectedVendorId] = useState("");
   const [vendorBalance, setVendorBalance] = useState<VendorBalance | null>(null);
   const [loadingVendorBalance, setLoadingVendorBalance] = useState(false);
   const [materialRows, setMaterialRows] = useState<PurchaseMaterialRow[]>([
@@ -2643,26 +2683,43 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     }
   };
 
+  const fetchRegisteredVendors = async () => {
+    try {
+      const res = await api.get("/api/vendors");
+      if (res.data.success) {
+        setRegisteredVendors(res.data.data || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch vendors:", error);
+    }
+  };
+
   useEffect(() => {
     if (open) {
       fetchMaterialCatalog();
+      fetchRegisteredVendors();
     }
   }, [open]);
 
   useEffect(() => {
+    if (!formData.vendor.trim() || registeredVendors.length === 0) return;
+    const match = registeredVendors.find(
+      (v) => v.name.toLowerCase() === formData.vendor.trim().toLowerCase()
+    );
+    if (match && match._id !== selectedVendorId) {
+      setSelectedVendorId(match._id);
+    }
+  }, [registeredVendors, formData.vendor]);
+
+  useEffect(() => {
     const validRows = materialRows.filter((r) => r.name.trim());
     if (validRows.length === 0) return;
-    const totalWeight = validRows.reduce((s, r) => s + (parseFloat(r.weight) || 0), 0);
-    const totalPrice = validRows.reduce(
-      (s, r) => s + (parseFloat(r.weight) || 0) * (parseFloat(r.pricePerKg) || 0),
-      0
-    );
-    const names = validRows.map((r) => r.name.trim()).join(", ");
+    const { totalWeight, totalPrice, names } = totalsFromMaterialRows(materialRows);
     setFormData((prev) => ({
       ...prev,
       materialName: names,
-      weight: totalWeight > 0 ? String(totalWeight) : prev.weight,
-      price: totalPrice > 0 ? String(totalPrice) : prev.price,
+      weight: totalWeight > 0 ? String(totalWeight) : "",
+      price: totalPrice > 0 ? String(totalPrice) : "",
     }));
   }, [materialRows]);
 
@@ -2810,14 +2867,8 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           deliveryTime: deliveryTimeStr,
           receiptNo: editData.receiptNo || "",
           advancePayment: editData.advancePayment?.toString() || "",
-          amountPaid: (() => {
-            const advance = Number(editData.advancePayment) || 0;
-            const paid = Number(editData.amountPaid) || 0;
-            if (paid > advance) return String(paid - advance);
-            if (advance > 0 && paid === advance && paid < (Number(editData.price) || 0)) return "0";
-            return paid ? String(paid) : "";
-          })(),
-          paymentMethod: "cash",
+          amountPaid: editData.amountPaid?.toString() || "",
+          paymentMethod: editData.paymentMethod || "cash",
           vehicleImage: null,
         });
 
@@ -2838,7 +2889,12 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         }
         if (editData.vendor) {
           fetchVendorBalance(editData.vendor);
+          const match = registeredVendors.find(
+            (v) => v.name.toLowerCase() === (editData.vendor || "").toLowerCase()
+          );
+          setSelectedVendorId(match?._id || "");
         } else {
+          setSelectedVendorId("");
           setVendorBalance(null);
         }
         
@@ -3072,6 +3128,53 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     }
   };
 
+  const applyVendorToForm = (vendor: VendorOption) => {
+    setFormData((prev) => ({ ...prev, vendor: vendor.name }));
+    if (errors.vendor) {
+      setErrors((prev) => ({ ...prev, vendor: "" }));
+    }
+    fetchVendorBalance(vendor.name);
+    const mats = vendor.materials || [];
+    if (mats.length === 0) return;
+    const rows = vendorMaterialsToRows(mats);
+    setMaterialRows(rows);
+    const { totalWeight, totalPrice, names } = totalsFromMaterialRows(rows);
+    setFormData((prev) => ({
+      ...prev,
+      vendor: vendor.name,
+      materialName: names,
+      weight: totalWeight > 0 ? String(totalWeight) : "",
+      price: totalPrice > 0 ? String(totalPrice) : "",
+    }));
+    if (errors.materialName) {
+      setErrors((prev) => ({ ...prev, materialName: "" }));
+    }
+  };
+
+  const handleVendorSelect = async (vendorId: string) => {
+    setSelectedVendorId(vendorId);
+    if (!vendorId) {
+      setFormData((prev) => ({ ...prev, vendor: "", materialName: "", weight: "", price: "" }));
+      setMaterialRows([
+        { name: "", weight: "", pricePerKg: "", productCode: "" },
+        { name: "", weight: "", pricePerKg: "", productCode: "" },
+      ]);
+      setVendorBalance(null);
+      return;
+    }
+    try {
+      const res = await api.get(`/api/vendors/${vendorId}`);
+      if (res.data.success && res.data.data) {
+        applyVendorToForm(res.data.data);
+        return;
+      }
+    } catch (error) {
+      console.error("Failed to fetch vendor details:", error);
+    }
+    const vendor = registeredVendors.find((v) => v._id === vendorId);
+    if (vendor) applyVendorToForm(vendor);
+  };
+
   const updateMaterialRow = (index: number, field: keyof PurchaseMaterialRow, value: string) => {
     setMaterialRows((prev) => {
       const next = [...prev];
@@ -3080,6 +3183,10 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         const materialName = getMaterialNameForCode(value);
         if (materialName) {
           next[index].name = materialName;
+        }
+        const bagSize = getProductByCode(value)?.bagSize;
+        if (bagSize && bagSize > 0 && !next[index].weight.trim()) {
+          next[index].weight = String(bagSize);
         }
       }
       return next;
@@ -3202,7 +3309,9 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
 
       const financeMethod = getFinanceMethod(formData.paymentMethod);
       const shouldCheckBalance = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
-      if (shouldCheckBalance && amountPaidNum > 0) {
+      const previousAmountPaid = isEdit ? Number(editData?.amountPaid) || 0 : 0;
+      const extraPayment = Math.max(0, amountPaidNum - previousAmountPaid);
+      if (!isEdit && shouldCheckBalance && amountPaidNum > 0) {
         const currentBalance = getCurrentBalance();
         if (amountPaidNum > currentBalance) {
           toast({
@@ -3243,9 +3352,17 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         amountPaid: amountPaidNum,
         paidAmount: paidAmount,
         remainingAmount: remainingAmount > 0 ? remainingAmount : 0,
-        soldWeight: 0,
-        status: 'available'
       };
+
+      if (isEdit && editData) {
+        Object.assign(fields, {
+          soldWeight: editData.soldWeight ?? 0,
+          productionConsumedWeight: (editData as Purchase & { productionConsumedWeight?: number }).productionConsumedWeight ?? 0,
+          status: editData.status || 'available',
+        });
+      } else {
+        Object.assign(fields, { soldWeight: 0, status: 'available' });
+      }
 
       Object.entries(fields).forEach(([key, value]) => {
         if (value !== null && value !== undefined) {
@@ -3398,6 +3515,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     });
     
     setVendorBalance(null);
+    setSelectedVendorId("");
     setMaterialRows([
       { name: "", weight: "", pricePerKg: "", productCode: "" },
       { name: "", weight: "", pricePerKg: "", productCode: "" },
@@ -3671,16 +3789,37 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
             <h3 className="text-base font-semibold text-foreground mb-4">Product Details</h3>
 
             <div className="mb-4">
-              <label className="block text-xs text-muted-foreground mb-1.5">Vendor Name * (type manually)</label>
+              <label className="block text-xs text-muted-foreground mb-1.5">Vendor *</label>
+              <select
+                value={selectedVendorId}
+                onChange={(e) => handleVendorSelect(e.target.value)}
+                className={`w-full bg-cms-card border ${errors.vendor ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary mb-2`}
+              >
+                <option value="">Select registered vendor...</option>
+                {registeredVendors.map((v) => (
+                  <option key={v._id} value={v._id}>
+                    {v.name}
+                    {v.vendorId ? ` (${v.vendorId})` : ""}
+                  </option>
+                ))}
+              </select>
               <input
                 type="text"
                 name="vendor"
-                placeholder="e.g Ali Traders, Khan Plastic..."
+                placeholder="Or type vendor name manually..."
                 value={formData.vendor}
-                onChange={handleInputChange}
+                onChange={(e) => {
+                  handleInputChange(e);
+                  setSelectedVendorId("");
+                }}
                 onBlur={handleVendorBlur}
                 className={`w-full bg-cms-card border ${errors.vendor ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
               />
+              {selectedVendorId && (registeredVendors.find((v) => v._id === selectedVendorId)?.materials?.length ?? 0) > 0 && (
+                <p className="text-xs text-green-600 mt-1">
+                  Materials, weight, code & price/kg loaded from vendor — totals auto-calculated
+                </p>
+              )}
               {errors.vendor && (
                 <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>
               )}
@@ -4533,10 +4672,27 @@ export function POPView() {
     await fetchPurchases();
   };
 
-  const handleEditPurchase = (purchase: PurchaseWithRemaining) => {
-    setSelectedPurchaseForEdit(purchase);
+  const handleEditPurchase = async (purchase: PurchaseWithRemaining) => {
+    try {
+      const res = await api.get(`/api/purchases/${purchase._id}`);
+      if (res.data.success && res.data.data) {
+        setSelectedPurchaseForEdit(res.data.data);
+      } else {
+        setSelectedPurchaseForEdit(purchase);
+      }
+    } catch {
+      setSelectedPurchaseForEdit(purchase);
+    }
     setIsEditMode(true);
     setDialogOpen(true);
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setDialogOpen(open);
+    if (!open) {
+      setIsEditMode(false);
+      setSelectedPurchaseForEdit(null);
+    }
   };
 
   const handleDeletePurchase = async (id: string) => {
@@ -5186,7 +5342,7 @@ export function POPView() {
 
       <PurchaseDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={handleDialogOpenChange}
         onSave={handleAddPurchase}
         isEdit={isEditMode}
         editData={selectedPurchaseForEdit}

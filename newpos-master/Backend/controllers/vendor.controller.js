@@ -1,4 +1,24 @@
 const Vendor = require('../models/vendor.model');
+const { getMaterialNameForCode } = require('../constants/productCodes');
+
+function normalizeMaterials(materials) {
+  if (!Array.isArray(materials)) return [];
+  return materials
+    .filter((m) => m && (m.materialName?.trim() || m.productCode?.trim()))
+    .map((m) => {
+      const productCode = String(m.productCode || '').trim();
+      const materialName =
+        String(m.materialName || '').trim() ||
+        getMaterialNameForCode(productCode) ||
+        '';
+      return {
+        productCode,
+        materialName,
+        pricePerKg: Math.max(0, Number(m.pricePerKg) || 0),
+        defaultWeight: Math.max(0, Number(m.defaultWeight ?? m.weight) || 0),
+      };
+    });
+}
 
 exports.getVendors = async (req, res) => {
   try {
@@ -9,18 +29,77 @@ exports.getVendors = async (req, res) => {
   }
 };
 
+exports.getVendorById = async (req, res) => {
+  try {
+    let vendor = await Vendor.findById(req.params.id).lean();
+    if (!vendor && req.params.id.startsWith('VEND-')) {
+      vendor = await Vendor.findOne({ vendorId: req.params.id }).lean();
+    }
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Vendor not found' });
+    }
+    res.json({ success: true, data: vendor });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 exports.createVendor = async (req, res) => {
   try {
-    const { name, phone, address } = req.body;
+    const { name, phone, address, materials } = req.body;
     if (!name?.trim()) {
       return res.status(400).json({ success: false, message: 'Vendor name required' });
     }
-    const existing = await Vendor.findOne({ name: name.trim() });
+    const trimmedName = name.trim();
+    const existing = await Vendor.findOne({ name: trimmedName });
     if (existing) {
-      return res.json({ success: true, data: existing });
+      return res.json({ success: true, data: existing, message: 'Vendor already exists' });
     }
-    const vendor = await Vendor.create({ name: name.trim(), phone, address });
+    const vendor = await Vendor.create({
+      name: trimmedName,
+      phone: phone || '',
+      address: address || '',
+      materials: normalizeMaterials(materials),
+    });
     res.status(201).json({ success: true, data: vendor });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.updateVendor = async (req, res) => {
+  try {
+    const { name, phone, address, materials } = req.body;
+    const vendor = await Vendor.findById(req.params.id);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Vendor not found' });
+    }
+    if (name?.trim() && name.trim() !== vendor.name) {
+      const duplicate = await Vendor.findOne({ name: name.trim(), _id: { $ne: vendor._id } });
+      if (duplicate) {
+        return res.status(400).json({ success: false, message: 'Vendor name already in use' });
+      }
+      vendor.name = name.trim();
+    }
+    if (phone !== undefined) vendor.phone = phone || '';
+    if (address !== undefined) vendor.address = address || '';
+    if (materials !== undefined) {
+      vendor.materials = normalizeMaterials(materials);
+    }
+    await vendor.save();
+    res.json({ success: true, data: vendor });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.deleteVendor = async (req, res) => {
+  try {
+    const vendor = await Vendor.findByIdAndDelete(req.params.id);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: 'Vendor not found' });
+    }
+    res.json({ success: true, message: 'Vendor deleted' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
