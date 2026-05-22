@@ -72,6 +72,11 @@ const addPurchase = async (req, res) => {
 
     const payment = paymentCheck.payment;
 
+    const materialsCheck = validatePurchaseMaterials(req.body.materials);
+    if (!materialsCheck.ok) {
+      return res.status(400).json({ success: false, message: materialsCheck.message });
+    }
+
     const invoiceNo = await generatePurchaseInvoiceNo(new Date(purchaseDate));
     let vendorDoc = null;
     try {
@@ -119,7 +124,7 @@ const addPurchase = async (req, res) => {
       approvalStatus: 'pending',
       createdBy: req.body.createdBy || req.user?.username || 'system',
       vehicleImage,
-      materials: req.body.materials ? JSON.parse(req.body.materials) : undefined,
+      materials: materialsCheck.materials,
     });
 
     if (vendorDoc) {
@@ -281,6 +286,40 @@ function parseMaterialsField(raw, fallback) {
   }
 }
 
+function validatePurchaseMaterials(raw) {
+  if (!raw) {
+    return { ok: false, message: 'At least one material with product code is required' };
+  }
+  let materials;
+  try {
+    materials = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    return { ok: false, message: 'Invalid materials data' };
+  }
+  if (!Array.isArray(materials) || materials.length === 0) {
+    return { ok: false, message: 'At least one material with product code is required' };
+  }
+  for (let i = 0; i < materials.length; i++) {
+    const m = materials[i];
+    if (!String(m.productCode || '').trim()) {
+      return {
+        ok: false,
+        message: `Material row ${i + 1}: product code (100, 105, 110) is required`,
+      };
+    }
+    if (!(parseFloat(m.weight) > 0)) {
+      return { ok: false, message: `Material row ${i + 1}: weight (kg) is required` };
+    }
+    if (!(parseFloat(m.pricePerKg) > 0)) {
+      return { ok: false, message: `Material row ${i + 1}: price per kg is required` };
+    }
+    if (!String(m.name || m.materialName || '').trim()) {
+      return { ok: false, message: `Material row ${i + 1}: material name is required` };
+    }
+  }
+  return { ok: true, materials };
+}
+
 // Update Purchase
 const updatePurchase = async (req, res) => {
   try {
@@ -309,6 +348,11 @@ const updatePurchase = async (req, res) => {
     }
     const payment = paymentCheck.payment;
 
+    const materialsCheck = validatePurchaseMaterials(req.body.materials);
+    if (!materialsCheck.ok) {
+      return res.status(400).json({ success: false, message: materialsCheck.message });
+    }
+
     let vendorDoc = null;
     if (req.body.vendor) {
       try {
@@ -336,7 +380,7 @@ const updatePurchase = async (req, res) => {
       receiptNo: req.body.receiptNo ?? existing.receiptNo,
       billNo: req.body.billNo ?? req.body.receiptNo ?? existing.billNo,
       paymentMethod: req.body.paymentMethod ?? existing.paymentMethod,
-      materials: parseMaterialsField(req.body.materials, existing.materials),
+      materials: materialsCheck.materials,
       advancePayment: advancePaymentNum,
       amountPaid: amountPaidNum,
       totalPaid: payment.totalPaid,

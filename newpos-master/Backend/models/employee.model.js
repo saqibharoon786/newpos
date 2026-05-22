@@ -115,9 +115,7 @@ employeeSchema.virtual('schedule').get(function () {
     return `${this.startTime || '09:00'} - ${this.endTime || '17:00'}`;
 });
 
-// Indexes for better query performance
-employeeSchema.index({ employeeId: 1 });
-employeeSchema.index({ email: 1 });
+// Indexes for better query performance (employeeId/email already unique on schema)
 employeeSchema.index({ department: 1 });
 employeeSchema.index({ isActive: 1 });
 employeeSchema.index({ name: 'text', email: 'text', employeeId: 'text' });

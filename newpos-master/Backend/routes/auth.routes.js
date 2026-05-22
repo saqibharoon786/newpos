@@ -13,6 +13,7 @@ const authLimiter = rateLimit({
     success: false,
     message: "Too many authentication attempts, please try again later.",
   },
+  validate: { xForwardedForHeader: false },
 })
 
 // @route   POST /api/v1/auth/register
