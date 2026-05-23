@@ -64,6 +64,9 @@ interface VendorLinkedProfile {
     advanceBalance: number;
     payableBalance: number;
     netPayable: number;
+    remainingAdvance?: number;
+    netDisplayMode?: 'advance' | 'payable';
+    netDisplayAmount?: number;
   };
   pop: {
     purchaseCount: number;
@@ -184,6 +187,9 @@ export default function FinanceModule() {
       advanceBalance: number;
       payableBalance: number;
       netPayable: number;
+      remainingAdvance?: number;
+      netDisplayMode?: 'advance' | 'payable';
+      netDisplayAmount?: number;
       popTotalBills: number;
       popRemaining: number;
       popAdvanceOnBills: number;
@@ -1206,10 +1212,24 @@ export default function FinanceModule() {
                     <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                   ) : null}
                 </div>
-                <p className="text-3xl font-bold text-orange-600 dark:text-orange-400 mt-4">
-                  {formatCurrency(advanceSummary?.vendor.netPayable ?? 0)}
+                <p
+                  className={`text-3xl font-bold mt-4 ${
+                    advanceSummary?.vendor.netDisplayMode === 'advance'
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-orange-600 dark:text-orange-400'
+                  }`}
+                >
+                  {formatCurrency(
+                    advanceSummary?.vendor.netDisplayAmount ??
+                      advanceSummary?.vendor.netPayable ??
+                      0
+                  )}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">Net payable (POP − advance)</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {advanceSummary?.vendor.netDisplayMode === 'advance'
+                    ? 'Advance (di hui advance − POP baqi)'
+                    : 'Net Payable (POP baqi − advance)'}
+                </p>
                 <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-border">
                   <div>
                     <p className="text-xs text-muted-foreground">POP remaining</p>
@@ -1365,9 +1385,22 @@ export default function FinanceModule() {
                         <span className="font-medium text-red-600 text-right">
                           {formatCurrency(vendorLinked.pop.totalRemaining)}
                         </span>
-                        <span className="text-muted-foreground">Net payable:</span>
-                        <span className="font-bold text-right">
-                          {formatCurrency(vendorLinked.vendor.netPayable)}
+                        <span className="text-muted-foreground">
+                          {vendorLinked.vendor.netDisplayMode === 'advance'
+                            ? 'Advance (baqi):'
+                            : 'Net payable:'}
+                        </span>
+                        <span
+                          className={`font-bold text-right ${
+                            vendorLinked.vendor.netDisplayMode === 'advance'
+                              ? 'text-green-600'
+                              : 'text-orange-600'
+                          }`}
+                        >
+                          {formatCurrency(
+                            vendorLinked.vendor.netDisplayAmount ??
+                              vendorLinked.vendor.netPayable
+                          )}
                         </span>
                       </div>
                       {vendorLinked.openBills.length > 0 && (

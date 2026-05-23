@@ -2723,6 +2723,19 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     }));
   }, [materialRows]);
 
+  /** New POP: auto-apply vendor advance balance to Advance Payment (paid section) */
+  useEffect(() => {
+    if (isEdit || !open) return;
+    const price = parseFloat(formData.price) || 0;
+    const adv = vendorBalance?.advanceBalance ?? 0;
+    if (price <= 0) return;
+    const applied = adv > 0 ? Math.min(adv, price) : 0;
+    setFormData((prev) => ({
+      ...prev,
+      advancePayment: applied > 0 ? String(applied) : "",
+    }));
+  }, [isEdit, open, vendorBalance?.advanceBalance, formData.price, formData.vendor]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (purchaseCalendarRef.current && !purchaseCalendarRef.current.contains(event.target as Node)) {
@@ -3801,6 +3814,8 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   const currentBalance = getCurrentBalance();
   const showBalanceCheck = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
   const totalAmount = (parseFloat(formData.advancePayment || '0') + parseFloat(formData.amountPaid || '0'));
+  const billPrice = parseFloat(formData.price || '0') || 0;
+  const remainingPayable = Math.max(0, billPrice - totalAmount);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -3879,9 +3894,14 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                         <span className="font-medium text-red-600">Rs. {(vendorBalance.payableBalance || 0).toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Advance</span>
+                        <span className="text-muted-foreground">Advance (available)</span>
                         <span className="font-medium text-green-600">Rs. {(vendorBalance.advanceBalance || 0).toLocaleString()}</span>
                       </div>
+                      {!isEdit && billPrice > 0 && (vendorBalance.advanceBalance || 0) > 0 && (
+                        <p className="text-[11px] text-green-700 dark:text-green-400 pt-1 border-t border-border/50">
+                          Auto: Rs. {Math.min(vendorBalance.advanceBalance || 0, billPrice).toLocaleString()} advance is bill par apply ho jayegi
+                        </p>
+                      )}
                     </>
                   ) : null}
                 </div>
@@ -4175,13 +4195,15 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
 
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Advance Payment</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">
+                  Advance (vendor credit — paid)
+                </label>
                 <input
                   type="number"
                   name="advancePayment"
                   min="0"
                   step="0.01"
-                  placeholder="e.g 20000"
+                  placeholder="Auto from vendor advance"
                   value={formData.advancePayment}
                   onChange={handleInputChange}
                   className={`w-full bg-cms-card border ${errors.advancePayment ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
@@ -4190,7 +4212,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                   <p className="text-xs text-red-500 mt-1">{errors.advancePayment}</p>
                 )}
                 <p className="text-xs text-muted-foreground mt-1">
-                  Will deduct from {financeApi.getMethodLabel(financeMethod)}
+                  Pehle di hui vendor advance — bill par paid count hoti hai
                 </p>
               </div>
               <div>
@@ -4232,6 +4254,16 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
                     <span className="text-xs text-muted-foreground">Enter amounts to see status</span>
                   )}
                 </div>
+                {billPrice > 0 && (
+                  <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-amber-800 dark:text-amber-200">Remaining payable</span>
+                      <span className="font-bold text-amber-900 dark:text-amber-100">
+                        Rs. {remainingPayable.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
                 {formData.price && (formData.advancePayment || formData.amountPaid) && (
                   <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
                     <div className="flex items-center justify-between">
@@ -4739,7 +4771,11 @@ export function POPView() {
   };
 
   const handleDeletePurchase = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this purchase?')) {
+    if (
+      window.confirm(
+        'Is POP ko delete karen? Linked POS sales, production, vendor ledger aur finance amounts sab adjust ho jayengi.'
+      )
+    ) {
       try {
         const response = await api.delete(`${PURCHASES_API_URL}/${id}`);
         
@@ -4748,9 +4784,15 @@ export function POPView() {
           setAllPayments(updatedPayments);
           
           await fetchPurchases();
+          const s = response.data.summary;
+          const detail = s
+            ? `Sales: ${s.salesDeleted}, Production: ${s.productionsDeleted}, Vendor entries: ${s.vendorLedgerEntriesRemoved}, Finance reversals: ${s.financeReversals}`
+            : '';
           toast({
             title: "Success",
-            description: "Purchase deleted successfully!",
+            description: detail
+              ? `Purchase deleted. ${detail}`
+              : response.data.message || "Purchase deleted successfully!",
           });
         } else {
           throw new Error(response.data.message || 'Failed to delete purchase');

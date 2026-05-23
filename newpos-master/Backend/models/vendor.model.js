@@ -11,7 +11,7 @@ const vendorLedgerEntrySchema = new mongoose.Schema({
   date: { type: Date, default: Date.now },
   type: {
     type: String,
-    enum: ['purchase', 'payment', 'advance', 'adjustment'],
+    enum: ['purchase', 'payment', 'advance', 'apply_advance', 'adjustment'],
     required: true,
   },
   purchaseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Purchase' },

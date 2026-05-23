@@ -432,7 +432,8 @@ function formatVendorLedgerRows(ledger, startYmd, endYmd) {
 
   for (const e of sorted) {
     const ymd = parseDateField(e.date);
-    const debitPay = e.type === 'payment' || e.type === 'advance' ? num(e.credit) : 0;
+    const debitPay =
+      e.type === 'payment' || e.type === 'apply_advance' ? num(e.credit) : 0;
     const creditPurch = e.type === 'purchase' ? num(e.debit) : 0;
     const row = {
       date: ymd || parseDateField(e.date),

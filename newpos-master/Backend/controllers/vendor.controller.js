@@ -123,6 +123,16 @@ exports.getVendorByName = async (name) => {
   return vendor;
 };
 
+/** How much vendor advance to apply on a new POP bill */
+exports.resolveAdvanceForPurchase = (vendor, priceNum, requestedAdvance) => {
+  const price = parseFloat(priceNum) || 0;
+  const requested = parseFloat(requestedAdvance) || 0;
+  const available = Math.max(0, Number(vendor?.advanceBalance) || 0);
+  if (price <= 0 || available <= 0) return 0;
+  if (requested <= 0) return Math.min(available, price);
+  return Math.min(requested, available, price);
+};
+
 exports.updateVendorLedger = async (vendorName, entry) => {
   const vendor = await exports.getVendorByName(vendorName);
   const lastBalance = vendor.ledger.length
@@ -130,16 +140,26 @@ exports.updateVendorLedger = async (vendorName, entry) => {
     : vendor.payableBalance - vendor.advanceBalance;
 
   let newBalance = lastBalance;
+  const credit = Number(entry.credit) || 0;
+  const debit = Number(entry.debit) || 0;
+
   if (entry.type === 'purchase') {
-    newBalance += entry.debit || 0;
-    vendor.payableBalance += entry.debit || 0;
-  } else if (entry.type === 'payment' || entry.type === 'advance') {
-    newBalance -= entry.credit || 0;
-    if (entry.type === 'advance') {
-      vendor.advanceBalance += entry.credit || 0;
-    } else {
-      vendor.payableBalance = Math.max(0, vendor.payableBalance - (entry.credit || 0));
-    }
+    newBalance += debit;
+    vendor.payableBalance += debit;
+  } else if (entry.type === 'payment') {
+    newBalance -= credit;
+    vendor.payableBalance = Math.max(0, vendor.payableBalance - credit);
+  } else if (entry.type === 'advance') {
+    newBalance -= credit;
+    vendor.advanceBalance += credit;
+  } else if (entry.type === 'apply_advance') {
+    const applied = Math.min(credit, vendor.advanceBalance, vendor.payableBalance);
+    newBalance -= applied;
+    vendor.advanceBalance = Math.max(0, vendor.advanceBalance - applied);
+    vendor.payableBalance = Math.max(0, vendor.payableBalance - applied);
+    entry.credit = applied;
+  } else if (entry.type === 'adjustment') {
+    newBalance += debit - credit;
   }
 
   vendor.ledger.push({ ...entry, balance: newBalance });
