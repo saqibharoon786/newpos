@@ -25,6 +25,8 @@ router.get('/export', financeController.exportTransactions);
 
 // Vendor / customer advance summary
 router.get('/advance-summary', financeController.getAdvanceSummary);
+router.get('/vendor-linked/:vendorId', financeController.getVendorLinked);
+router.get('/customer-linked/:customerId', financeController.getCustomerLinked);
 
 // Vendor / customer advance payments
 router.post('/vendor-advance', financeController.recordVendorAdvance);

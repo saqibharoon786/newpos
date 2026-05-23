@@ -1,6 +1,12 @@
 const Transaction = require('../models/transaction.model');
 const Vendor = require('../models/vendor.model');
 const Customer = require('../models/customer.model');
+const vendorController = require('./vendor.controller');
+const {
+  getGlobalPartyTotals,
+  getVendorLinkedProfile,
+  getCustomerLinkedProfile,
+} = require('../utils/financePartyLink');
 
 const ADVANCE_METHODS = ['drawer', 'easypaisa', 'jazzcash', 'bank'];
 
@@ -454,35 +460,33 @@ exports.recordVendorAdvance = async (req, res) => {
       category: 'advance',
     });
 
-    const lastBalance = vendor.ledger.length
-      ? vendor.ledger[vendor.ledger.length - 1].balance
-      : vendor.payableBalance - vendor.advanceBalance;
-    const newBalance = lastBalance - amt;
-    vendor.advanceBalance += amt;
-    vendor.ledger.push({
-      date: new Date(),
+    await vendorController.updateVendorLedger(vendor.name, {
       type: 'advance',
       description: desc,
       credit: amt,
       debit: 0,
-      balance: newBalance,
       paymentMethod: method,
       reference: ref,
       transactionId: transaction._id,
     });
-    await vendor.save();
 
+    const vendorAfter = await Vendor.findById(vendorId).lean();
+    const linked = await getVendorLinkedProfile(vendorId);
     const updatedBalances = await Transaction.getBalances();
 
     res.json({
       success: true,
-      message: `Vendor ${vendor.name} ko Rs. ${amt.toLocaleString('en-PK')} advance diya`,
+      message: `Vendor ${vendor.name} ko Rs. ${amt.toLocaleString('en-PK')} advance diya (POP ledger sync)`,
       transaction,
-      vendor: {
-        _id: vendor._id,
-        name: vendor.name,
-        advanceBalance: vendor.advanceBalance,
-      },
+      vendor: vendorAfter
+        ? {
+            _id: vendorAfter._id,
+            name: vendorAfter.name,
+            advanceBalance: vendorAfter.advanceBalance,
+            payableBalance: vendorAfter.payableBalance,
+          }
+        : null,
+      linked,
       balances: updatedBalances,
     });
   } catch (error) {
@@ -554,15 +558,20 @@ exports.recordCustomerAdvance = async (req, res) => {
 
     const updatedBalances = await Transaction.getBalances();
 
+    const linked = await getCustomerLinkedProfile(customer._id);
+
     res.json({
       success: true,
-      message: `Customer ${customer.customerName} se Rs. ${amt.toLocaleString('en-PK')} advance receive hua`,
+      message: `Customer ${customer.customerName} se Rs. ${amt.toLocaleString('en-PK')} advance receive hua (POS sync)`,
       transaction,
       customer: {
         _id: customer._id,
         customerName: customer.customerName,
         financeAdvanceBalance: customer.financeAdvanceBalance,
+        totalAdvanceCredit: linked?.customer?.totalAdvanceCredit,
+        totalBalanceDue: linked?.customer?.totalBalanceDue,
       },
+      linked,
       balances: updatedBalances,
     });
   } catch (error) {
@@ -574,11 +583,12 @@ exports.recordCustomerAdvance = async (req, res) => {
   }
 };
 
-/** Totals for vendor / customer advance summary boxes */
+/** Totals linked to POP (vendors) and POS (customers) */
 exports.getAdvanceSummary = async (req, res) => {
   try {
-    const [vendorTxAgg, customerTxAgg, vendorBalAgg, customerBalAgg, vendorPayCount, customerPayCount] =
+    const [totals, vendorTxAgg, customerTxAgg, vendorPayCount, customerPayCount, totalVendors, totalCustomers] =
       await Promise.all([
+        getGlobalPartyTotals(),
         Transaction.aggregate([
           {
             $match: {
@@ -601,42 +611,41 @@ exports.getAdvanceSummary = async (req, res) => {
           },
           { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
         ]),
-        Vendor.aggregate([
-          { $group: { _id: null, total: { $sum: '$advanceBalance' }, vendors: { $sum: 1 } } },
-        ]),
-        Customer.aggregate([
-          {
-            $group: {
-              _id: null,
-              total: { $sum: '$financeAdvanceBalance' },
-              customers: { $sum: 1 },
-            },
-          },
-        ]),
         Vendor.countDocuments({ advanceBalance: { $gt: 0 } }),
         Customer.countDocuments({ financeAdvanceBalance: { $gt: 0 } }),
+        Vendor.countDocuments(),
+        Customer.countDocuments(),
       ]);
 
     const vendorTx = vendorTxAgg[0] || { total: 0, count: 0 };
     const customerTx = customerTxAgg[0] || { total: 0, count: 0 };
-    const vendorBal = vendorBalAgg[0] || { total: 0, vendors: 0 };
-    const customerBal = customerBalAgg[0] || { total: 0, customers: 0 };
 
     res.json({
       success: true,
       vendor: {
-        totalPayments: Math.round((vendorTx.total || 0) * 100) / 100,
+        financeAdvancePaid: Math.round((vendorTx.total || 0) * 100) / 100,
         paymentCount: vendorTx.count || 0,
-        outstandingAdvance: Math.round((vendorBal.total || 0) * 100) / 100,
+        advanceBalance: totals.vendorAdvanceBalance,
+        payableBalance: totals.vendorPayableBalance,
+        netPayable: totals.vendorNetPayable,
+        popTotalBills: totals.pop.totalBills,
+        popTotalPaid: totals.pop.totalPaid,
+        popRemaining: totals.pop.totalRemaining,
+        popAdvanceOnBills: totals.pop.advanceOnBills,
         vendorsWithAdvance: vendorPayCount,
-        totalVendors: vendorBal.vendors || 0,
+        totalVendors,
       },
       customer: {
-        totalPayments: Math.round((customerTx.total || 0) * 100) / 100,
+        financeAdvanceReceived: Math.round((customerTx.total || 0) * 100) / 100,
         paymentCount: customerTx.count || 0,
-        outstandingAdvance: Math.round((customerBal.total || 0) * 100) / 100,
+        financeAdvanceBalance: totals.financeAdvanceBalance,
+        posAdvanceFromSales: totals.pos.advanceOnSales,
+        posBalanceDue: totals.pos.totalRemaining,
+        profileBalanceDue: totals.profileBalanceDue,
+        totalAdvanceCredit: totals.customerTotalAdvance,
+        totalBalanceDue: totals.customerTotalDue,
         customersWithAdvance: customerPayCount,
-        totalCustomers: customerBal.customers || 0,
+        totalCustomers,
       },
     });
   } catch (error) {
@@ -647,48 +656,54 @@ exports.getAdvanceSummary = async (req, res) => {
   }
 };
 
+exports.getVendorLinked = async (req, res) => {
+  try {
+    const linked = await getVendorLinkedProfile(req.params.vendorId);
+    if (!linked) {
+      return res.status(404).json({ success: false, message: 'Vendor not found' });
+    }
+    res.json({ success: true, data: linked });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getCustomerLinked = async (req, res) => {
+  try {
+    const linked = await getCustomerLinkedProfile(req.params.customerId);
+    if (!linked) {
+      return res.status(404).json({ success: false, message: 'Customer not found' });
+    }
+    res.json({ success: true, data: linked });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 exports.getVendorAdvanceHistory = async (req, res) => {
   try {
-    const { vendorId } = req.params;
-    const vendor = await Vendor.findById(vendorId).lean();
-    if (!vendor) {
+    const linked = await getVendorLinkedProfile(req.params.vendorId);
+    if (!linked) {
       return res.status(404).json({ success: false, message: 'Vendor not found' });
     }
 
-    const ledgerEntries = (vendor.ledger || [])
-      .filter((e) => e.type === 'advance')
-      .map((e) => ({
-        date: e.date,
-        amount: e.credit || 0,
-        method: e.paymentMethod || '',
-        description: e.description || '',
-        reference: e.reference || '',
-        source: 'ledger',
-      }));
-
-    const txns = await Transaction.find({
-      partyType: 'vendor',
-      partyId: vendor._id,
-      category: 'advance',
-    })
-      .sort({ date: -1 })
-      .lean();
+    const history = linked.ledger.map((e) => ({
+      date: e.date,
+      type: e.type,
+      amount: e.type === 'purchase' ? e.debit : e.credit,
+      method: e.method,
+      description: e.description,
+      reference: e.reference,
+      balance: e.balance,
+      source: e.type === 'advance' && e.method ? 'finance' : 'pop',
+    }));
 
     res.json({
       success: true,
-      vendor: {
-        _id: vendor._id,
-        name: vendor.name,
-        advanceBalance: vendor.advanceBalance || 0,
-      },
-      history: ledgerEntries.length > 0 ? ledgerEntries : txns.map((t) => ({
-        date: t.date,
-        amount: t.amount,
-        method: t.method,
-        description: t.description,
-        reference: t.reference,
-        source: 'transaction',
-      })),
+      vendor: linked.vendor,
+      pop: linked.pop,
+      openBills: linked.openBills,
+      history,
     });
   } catch (error) {
     res.status(500).json({
@@ -700,31 +715,16 @@ exports.getVendorAdvanceHistory = async (req, res) => {
 
 exports.getCustomerAdvanceHistory = async (req, res) => {
   try {
-    const { customerId } = req.params;
-    let customer = await Customer.findById(customerId).lean();
-    if (!customer) {
-      customer = await Customer.findOne({ customerId: String(customerId) }).lean();
-    }
-    if (!customer) {
+    const linked = await getCustomerLinkedProfile(req.params.customerId);
+    if (!linked) {
       return res.status(404).json({ success: false, message: 'Customer not found' });
     }
 
-    const history = (customer.advanceLedger || []).map((e) => ({
-      date: e.date,
-      amount: e.amount,
-      method: e.method,
-      description: e.description,
-      reference: e.reference,
-    }));
-
     res.json({
       success: true,
-      customer: {
-        _id: customer._id,
-        customerName: customer.customerName,
-        financeAdvanceBalance: customer.financeAdvanceBalance || 0,
-      },
-      history,
+      customer: linked.customer,
+      pos: linked.pos,
+      history: linked.history,
     });
   } catch (error) {
     res.status(500).json({
