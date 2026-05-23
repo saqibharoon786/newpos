@@ -56,6 +56,8 @@ interface AdvanceHistoryRow {
   reference?: string;
   source?: string;
   balance?: number;
+  transactionId?: string;
+  canDelete?: boolean;
 }
 
 interface VendorLinkedProfile {
@@ -1016,8 +1018,43 @@ export default function FinanceModule() {
 
     try {
       await deleteTransaction(id);
+      fetchAdvanceSummary();
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Error deleting transaction');
+    }
+  };
+
+  const handleDeletePartyAdvance = async (transactionId: string, party: 'vendor' | 'customer') => {
+    if (
+      !confirm(
+        'Ye advance entry delete karen? Amount vendor/customer balance aur cash account se adjust ho jayegi.'
+      )
+    ) {
+      return;
+    }
+    try {
+      const res = await api.delete(`${FINANCE_API}/party-advance/${transactionId}`);
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Advance delete ho gayi');
+        if (res.data.balances) setBalances(res.data.balances);
+        if (party === 'vendor' && res.data.vendor) {
+          setVendorLinked(res.data.vendor);
+        }
+        if (party === 'customer' && res.data.customer) {
+          setCustomerLinked(res.data.customer);
+        }
+        fetchAdvanceSummary();
+        if (party === 'vendor' && vendorAdvance.vendorId) {
+          fetchVendorAdvanceHistory(vendorAdvance.vendorId);
+        }
+        if (party === 'customer' && customerAdvance.customerId) {
+          fetchCustomerAdvanceHistory(customerAdvance.customerId);
+        }
+        fetchTransactions(1);
+      }
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'Delete failed');
     }
   };
 
@@ -1490,11 +1527,12 @@ export default function FinanceModule() {
                             <th className="text-left p-3">Type</th>
                             <th className="text-left p-3">Detail</th>
                             <th className="text-right p-3">Amount</th>
+                            <th className="text-right p-3 w-16">Action</th>
                           </tr>
                         </thead>
                         <tbody>
                           {vendorAdvanceHistory.map((row, i) => (
-                            <tr key={i} className="border-t border-border">
+                            <tr key={row.transactionId || i} className="border-t border-border">
                               <td className="p-3">{formatDate(String(row.date))}</td>
                               <td className="p-3 capitalize">{row.type || '—'}</td>
                               <td className="p-3 text-xs text-muted-foreground max-w-[140px] truncate">
@@ -1502,6 +1540,22 @@ export default function FinanceModule() {
                               </td>
                               <td className="p-3 text-right font-medium">
                                 {formatCurrency(row.amount)}
+                              </td>
+                              <td className="p-3 text-right">
+                                {row.canDelete && row.transactionId ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleDeletePartyAdvance(row.transactionId!, 'vendor')
+                                    }
+                                    className="p-1.5 rounded hover:bg-destructive/10"
+                                    title="Finance advance delete"
+                                  >
+                                    <Trash2 className="w-4 h-4 text-destructive" />
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -1649,11 +1703,12 @@ export default function FinanceModule() {
                             <th className="text-left p-3">Source</th>
                             <th className="text-left p-3">Detail</th>
                             <th className="text-right p-3">Amount</th>
+                            <th className="text-right p-3 w-16">Action</th>
                           </tr>
                         </thead>
                         <tbody>
                           {customerAdvanceHistory.map((row, i) => (
-                            <tr key={i} className="border-t border-border">
+                            <tr key={row.transactionId || i} className="border-t border-border">
                               <td className="p-3">{formatDate(String(row.date))}</td>
                               <td className="p-3">{row.source === 'pos' ? 'POS sale' : 'Finance'}</td>
                               <td className="p-3 text-xs text-muted-foreground max-w-[140px] truncate">
@@ -1661,6 +1716,22 @@ export default function FinanceModule() {
                               </td>
                               <td className="p-3 text-right font-medium text-green-600">
                                 {formatCurrency(row.amount)}
+                              </td>
+                              <td className="p-3 text-right">
+                                {row.canDelete && row.transactionId && row.source === 'finance' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleDeletePartyAdvance(row.transactionId!, 'customer')
+                                    }
+                                    className="p-1.5 rounded hover:bg-destructive/10"
+                                    title="Finance advance delete"
+                                  >
+                                    <Trash2 className="w-4 h-4 text-destructive" />
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                )}
                               </td>
                             </tr>
                           ))}

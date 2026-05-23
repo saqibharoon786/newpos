@@ -33,5 +33,6 @@ router.post('/vendor-advance', financeController.recordVendorAdvance);
 router.post('/customer-advance', financeController.recordCustomerAdvance);
 router.get('/vendor-advance/:vendorId/history', financeController.getVendorAdvanceHistory);
 router.get('/customer-advance/:customerId/history', financeController.getCustomerAdvanceHistory);
+router.delete('/party-advance/:transactionId', financeController.deletePartyAdvance);
 
 module.exports = router;

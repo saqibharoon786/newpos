@@ -7,8 +7,14 @@ const {
   getVendorLinkedProfile,
   getCustomerLinkedProfile,
 } = require('../utils/financePartyLink');
+const { deletePartyAdvanceTransaction } = require('../utils/financeAdvanceDelete');
 
 const ADVANCE_METHODS = ['drawer', 'easypaisa', 'jazzcash', 'bank'];
+
+function num(v) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+}
 
 // Format currency helper
 const formatCurrency = (amount) => {
@@ -303,35 +309,83 @@ exports.updateTransaction = async (req, res) => {
   }
 };
 
-// Delete transaction
+// Delete transaction (vendor/customer advance reverses ledger + balances)
 exports.deleteTransaction = async (req, res) => {
   try {
     const { id } = req.params;
-    
     const transaction = await Transaction.findById(id);
+
     if (!transaction) {
       return res.status(404).json({
         success: false,
-        message: 'Transaction not found'
+        message: 'Transaction not found',
       });
     }
-    
+
+    if (transaction.category === 'advance' && transaction.partyType) {
+      const result = await deletePartyAdvanceTransaction(id);
+      if (!result.ok) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.message,
+        });
+      }
+      const balances = await Transaction.getBalances();
+      return res.json({
+        success: true,
+        message: result.message,
+        balances,
+      });
+    }
+
     await Transaction.findByIdAndDelete(id);
-    
-    // Get updated balances
     const balances = await Transaction.getBalances();
-    
+
     res.json({
       success: true,
       message: 'Transaction deleted successfully',
-      balances
+      balances,
     });
-    
   } catch (error) {
     res.status(500).json({
       success: false,
       message: 'Error deleting transaction',
-      error: error.message
+      error: error.message,
+    });
+  }
+};
+
+/** Delete vendor/customer advance by transaction id (Finance tabs) */
+exports.deletePartyAdvance = async (req, res) => {
+  try {
+    const txBefore = await Transaction.findById(req.params.transactionId).lean();
+    const result = await deletePartyAdvanceTransaction(req.params.transactionId);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.message,
+      });
+    }
+    const balances = await Transaction.getBalances();
+    let vendor = null;
+    let customer = null;
+    if (txBefore?.partyType === 'vendor' && txBefore.partyId) {
+      vendor = await getVendorLinkedProfile(txBefore.partyId);
+    }
+    if (txBefore?.partyType === 'customer' && txBefore.partyId) {
+      customer = await getCustomerLinkedProfile(txBefore.partyId);
+    }
+    res.json({
+      success: true,
+      message: result.message,
+      balances,
+      vendor,
+      customer,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
     });
   }
 };
@@ -690,21 +744,31 @@ exports.getVendorAdvanceHistory = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Vendor not found' });
     }
 
-    const history = linked.ledger.map((e) => ({
-      date: e.date,
-      type: e.type,
-      amount: e.type === 'purchase' ? e.debit : e.credit,
-      method: e.method,
-      description: e.description,
-      reference: e.reference,
-      balance: e.balance,
-      source:
-        e.type === 'advance' && e.method
-          ? 'finance'
-          : e.type === 'apply_advance'
-            ? 'pop_advance'
-            : 'pop',
-    }));
+    const vendorDoc = await Vendor.findById(req.params.vendorId).lean();
+    const ledgerRaw = vendorDoc?.ledger || [];
+
+    const history = ledgerRaw.map((e) => {
+      const isFinanceAdvance =
+        e.type === 'advance' && e.transactionId && !e.purchaseId;
+      return {
+        _id: e._id,
+        date: e.date,
+        type: e.type,
+        amount: e.type === 'purchase' ? num(e.debit) : num(e.credit),
+        method: e.paymentMethod || '',
+        description: e.description,
+        reference: e.reference,
+        balance: e.balance,
+        transactionId: e.transactionId ? String(e.transactionId) : undefined,
+        canDelete: !!isFinanceAdvance,
+        source:
+          e.type === 'advance' && e.transactionId
+            ? 'finance'
+            : e.type === 'apply_advance'
+              ? 'pop_advance'
+              : 'pop',
+      };
+    });
 
     res.json({
       success: true,

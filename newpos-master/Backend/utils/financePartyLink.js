@@ -195,12 +195,15 @@ async function getCustomerLinkedProfile(customerId) {
     .slice()
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .map((e) => ({
+      _id: e._id,
       date: e.date,
       type: 'finance_advance',
       amount: num(e.amount),
       method: e.method,
       description: e.description || '',
       reference: e.reference || '',
+      transactionId: e.transactionId ? String(e.transactionId) : undefined,
+      canDelete: !!e.transactionId,
       source: 'finance',
     }));
 
