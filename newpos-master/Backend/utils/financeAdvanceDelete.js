@@ -8,6 +8,41 @@ function num(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function isPartyAdvanceTransaction(transaction) {
+  if (!transaction?.partyType) return false;
+  if (transaction.category === 'advance') return true;
+  const desc = String(transaction.description || '').toLowerCase();
+  return desc.includes('advance');
+}
+
+function syncCustomerFinanceAdvance(customer) {
+  const sum = (customer.advanceLedger || []).reduce((s, e) => s + num(e.amount), 0);
+  customer.financeAdvanceBalance = Math.round(sum * 100) / 100;
+}
+
+async function findCustomerByAnyId(customerId) {
+  if (!customerId) return null;
+  let customer = await Customer.findById(customerId);
+  if (customer) return customer;
+  customer = await Customer.findOne({ customerId: String(customerId) });
+  return customer;
+}
+
+async function findCustomerForTransaction(transaction) {
+  if (transaction.partyId) {
+    const c = await Customer.findById(transaction.partyId);
+    if (c) return c;
+  }
+  if (transaction.partyName) {
+    const name = String(transaction.partyName).trim();
+    const c = await Customer.findOne({
+      customerName: { $regex: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+    });
+    if (c) return c;
+  }
+  return null;
+}
+
 /**
  * Delete a Finance-recorded vendor/customer advance and reverse balances.
  */
@@ -17,7 +52,7 @@ async function deletePartyAdvanceTransaction(transactionId) {
     return { ok: false, status: 404, message: 'Transaction not found' };
   }
 
-  if (transaction.category !== 'advance' || !transaction.partyType) {
+  if (!isPartyAdvanceTransaction(transaction)) {
     return {
       ok: false,
       status: 400,
@@ -63,38 +98,19 @@ async function deletePartyAdvanceTransaction(transactionId) {
     );
     await rebuildVendorLedger(vendor);
   } else if (transaction.partyType === 'customer') {
-    let customer = await Customer.findById(transaction.partyId);
-    if (!customer) {
-      customer = await Customer.findOne({ customerId: String(transaction.partyId) });
+    if (transaction.type !== 'deposit') {
+      return { ok: false, status: 400, message: 'Invalid customer advance transaction type' };
     }
+
+    const customer = await findCustomerForTransaction(transaction);
     if (!customer) {
       return { ok: false, status: 404, message: 'Customer not found' };
     }
 
-    const entry = (customer.advanceLedger || []).find(
-      (e) => e.transactionId && String(e.transactionId) === tid
-    );
-    if (!entry) {
-      return {
-        ok: false,
-        status: 404,
-        message: 'Customer advance ledger entry not found',
-      };
-    }
-
-    if (num(customer.financeAdvanceBalance) < amt - 0.01) {
-      return {
-        ok: false,
-        status: 400,
-        message:
-          'Ye advance POS sales par use ho chuki hai — pehle sale adjust karen, phir delete karen',
-      };
-    }
-
-    customer.advanceLedger = customer.advanceLedger.filter(
+    customer.advanceLedger = (customer.advanceLedger || []).filter(
       (e) => !(e.transactionId && String(e.transactionId) === tid)
     );
-    customer.financeAdvanceBalance = Math.max(0, num(customer.financeAdvanceBalance) - amt);
+    syncCustomerFinanceAdvance(customer);
     await customer.save();
   } else {
     return { ok: false, status: 400, message: 'Unknown party type' };
@@ -111,4 +127,48 @@ async function deletePartyAdvanceTransaction(transactionId) {
   };
 }
 
-module.exports = { deletePartyAdvanceTransaction };
+/** Delete customer finance advance by advanceLedger sub-document _id */
+async function deleteCustomerAdvanceEntry(customerId, entryId) {
+  const customer = await findCustomerByAnyId(customerId);
+  if (!customer) {
+    return { ok: false, status: 404, message: 'Customer not found' };
+  }
+
+  const entry = customer.advanceLedger.id(entryId);
+  if (!entry) {
+    return { ok: false, status: 404, message: 'Advance entry not found' };
+  }
+
+  if (entry.transactionId) {
+    return deletePartyAdvanceTransaction(String(entry.transactionId));
+  }
+
+  if (entry.reference) {
+    const tx = await Transaction.findOne({
+      reference: entry.reference,
+      partyType: 'customer',
+      type: 'deposit',
+    });
+    if (tx) {
+      return deletePartyAdvanceTransaction(String(tx._id));
+    }
+  }
+
+  const amt = num(entry.amount);
+  customer.advanceLedger.pull(entryId);
+  syncCustomerFinanceAdvance(customer);
+  await customer.save();
+
+  return {
+    ok: true,
+    message: 'Customer advance entry delete ho gayi (ledger only)',
+    amount: amt,
+    partyType: 'customer',
+    partyName: customer.customerName,
+  };
+}
+
+module.exports = {
+  deletePartyAdvanceTransaction,
+  deleteCustomerAdvanceEntry,
+};
