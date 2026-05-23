@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { 
   Factory, 
   Package, 
@@ -1468,6 +1468,8 @@ const StartProcessFormModal = ({
   const [selectedLineIndex, setSelectedLineIndex] = useState<number | undefined>(
     initialMaterial?.materialLineIndex
   );
+  /** User manually edited POP kg — bags change par dubara formula se bharega */
+  const popWeightManualRef = useRef(false);
 
   const receiptOptions = useMemo(() => {
     const opts = initialMaterial?.materialOptions;
@@ -1554,15 +1556,32 @@ const StartProcessFormModal = ({
     return getMaxBagsFromAvailableKg(productCode, popAvailableWeight);
   }, [isFromQueue, bagSizeKg, popAvailableWeight, productCode]);
 
+  const applyPopWeightFromBags = (bags: number) => {
+    if (!bagSizeKg || bags <= 0) {
+      setWeightUsedFromPOP("");
+      return;
+    }
+    const cappedBags =
+      maxBagsFromPop != null && bags > maxBagsFromPop ? maxBagsFromPop : bags;
+    let kg = calcPopWeightFromBags(productCode, cappedBags);
+    if (popAvailableWeight > 0 && kg > popAvailableWeight) {
+      kg = Math.round(popAvailableWeight * 100) / 100;
+    }
+    setWeightUsedFromPOP(String(kg));
+  };
+
   const handleTotalBagsChange = (raw: string) => {
+    popWeightManualRef.current = false;
     if (raw === "" || raw === ".") {
       setTotalBags(raw);
+      setWeightUsedFromPOP("");
       return;
     }
     const n = parseFloat(String(raw).trim().replace(",", "."));
     if (isNaN(n)) return;
     if (maxBagsFromPop != null && n > maxBagsFromPop) {
       setTotalBags(String(maxBagsFromPop));
+      applyPopWeightFromBags(maxBagsFromPop);
       toast({
         title: "Bags limit",
         description: `Maximum ${maxBagsFromPop} bags (${popAvailableWeight} kg ÷ ${bagSizeKg} kg/bag). Is se zyada allowed nahi.`,
@@ -1574,21 +1593,40 @@ const StartProcessFormModal = ({
     setTotalBags(raw);
   };
 
-  /** Total bags × code bag size → weight deducted from POP */
+  const handleWeightUsedFromPOPChange = (raw: string) => {
+    popWeightManualRef.current = true;
+    const normalized = raw.replace(",", ".");
+    if (normalized === "" || normalized === ".") {
+      setWeightUsedFromPOP(raw);
+      return;
+    }
+    const kg = parseFloat(normalized);
+    if (isNaN(kg)) {
+      setWeightUsedFromPOP(raw);
+      return;
+    }
+    if (popAvailableWeight > 0 && kg > popAvailableWeight) {
+      setWeightUsedFromPOP(String(popAvailableWeight));
+      toast({
+        title: "POP limit",
+        description: `Maximum ${popAvailableWeight} kg available is receipt se.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (kg < 0) return;
+    setWeightUsedFromPOP(raw);
+  };
+
+  /** Total bags × bag size → POP weight (jab tak user manually edit na kare) */
   useEffect(() => {
-    if (!open || !isFromQueue || !bagSizeKg) return;
+    if (!open || !isFromQueue || !bagSizeKg || popWeightManualRef.current) return;
     const bags = parseFloat(String(totalBags).trim().replace(",", "."));
     if (isNaN(bags) || bags <= 0) {
       setWeightUsedFromPOP("");
       return;
     }
-    const cappedBags =
-      maxBagsFromPop != null && bags > maxBagsFromPop ? maxBagsFromPop : bags;
-    let kg = calcPopWeightFromBags(productCode, cappedBags);
-    if (popAvailableWeight > 0 && kg > popAvailableWeight) {
-      kg = Math.round(popAvailableWeight * 100) / 100;
-    }
-    setWeightUsedFromPOP(String(kg));
+    applyPopWeightFromBags(bags);
   }, [open, isFromQueue, totalBags, productCode, bagSizeKg, popAvailableWeight, maxBagsFromPop]);
 
   const estimatedCosts = useMemo(() => {
@@ -1662,6 +1700,7 @@ const StartProcessFormModal = ({
 
   useEffect(() => {
     if (open) {
+      popWeightManualRef.current = false;
       setMaterialName(initialMaterial?.materialName ?? "");
       setQuality(initialMaterial?.quality ?? "Standard");
       setSelectedMachine(machines[0]?.id || "");
@@ -1703,15 +1742,9 @@ const StartProcessFormModal = ({
     const bags = parseFloat(String(totalBags).trim().replace(",", "."));
     const weightStr = isFromQueue ? String(machineOutputWeight).trim().replace(",", ".") : String(totalWeight).trim().replace(",", ".");
     const weight = parseFloat(weightStr);
-    let usedFromPOP = isFromQueue ? parseFloat(String(weightUsedFromPOP).trim().replace(",", ".")) : 0;
-    if (isFromQueue && bagSizeKg > 0 && !isNaN(bags) && bags > 0) {
-      const effectiveBags =
-        maxBagsFromPop != null && bags > maxBagsFromPop ? maxBagsFromPop : bags;
-      usedFromPOP = Math.min(
-        calcPopWeightFromBags(productCode, effectiveBags),
-        popAvailableWeight > 0 ? popAvailableWeight : calcPopWeightFromBags(productCode, effectiveBags)
-      );
-    }
+    const usedFromPOP = isFromQueue
+      ? parseFloat(String(weightUsedFromPOP).trim().replace(",", "."))
+      : 0;
     if (!materialName.trim()) {
       toast({ title: "Error", description: "Please enter material name", variant: "destructive" });
       return;
@@ -2053,14 +2086,28 @@ const StartProcessFormModal = ({
                       <p className="text-xs text-muted-foreground mt-1">Available from POP for this material. Remaining after use will stay in queue.</p>
                     </div>
                     <div>
-                      <label className="block text-xs text-muted-foreground mb-1.5">
-                        Weight used from POP (kg) * — auto (bags × {bagSizeKg || "?"} kg)
-                      </label>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <label className="block text-xs text-muted-foreground">
+                          Weight used from POP (kg) * — bags × {bagSizeKg || "?"} kg (editable)
+                        </label>
+                        {popWeightManualRef.current && totalBags && parseFloat(totalBags) > 0 ? (
+                          <button
+                            type="button"
+                            className="text-xs text-primary hover:underline shrink-0"
+                            onClick={() => {
+                              popWeightManualRef.current = false;
+                              applyPopWeightFromBags(parseFloat(totalBags));
+                            }}
+                          >
+                            Formula se sync
+                          </button>
+                        ) : null}
+                      </div>
                       <input
                         type="text"
                         inputMode="decimal"
-                        readOnly
                         value={weightUsedFromPOP}
+                        onChange={(e) => handleWeightUsedFromPOPChange(e.target.value)}
                         placeholder={
                           bagSizeKg && totalBags
                             ? String(
@@ -2071,10 +2118,11 @@ const StartProcessFormModal = ({
                               )
                             : `max ${popAvailableWeight}`
                         }
-                        className="w-full bg-cms-card-hover border border-border rounded-md px-3 py-2.5 text-sm text-foreground cursor-not-allowed"
+                        className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        Bags × bag size = POP weight (100→30, 105→40, 110→25 kg/bag). Remaining POP ≈{" "}
+                        Pehle bags se auto ({bagSizeKg} kg/bag). Decimal case mein kg yahan adjust kar
+                        sakte hain (max {popAvailableWeight} kg). Baqi POP ≈{" "}
                         {Math.max(
                           0,
                           Math.round(

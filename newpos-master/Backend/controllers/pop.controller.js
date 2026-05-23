@@ -347,19 +347,33 @@ const updatePurchase = async (req, res) => {
         ? parseFloat(req.body.amountPaid) || 0
         : Number(existing.amountPaid) || 0;
 
-    const paymentCheck = validatePurchasePaymentLimits({
+    const paymentInput = {
       price: priceNum,
       advancePayment: advancePaymentNum,
       amountPaid: amountPaidNum,
-    });
+    };
+    if (req.body.totalPaid !== undefined && req.body.totalPaid !== null && req.body.totalPaid !== '') {
+      paymentInput.totalPaid = parseFloat(req.body.totalPaid);
+    }
+
+    const paymentCheck = validatePurchasePaymentLimits(paymentInput);
     if (!paymentCheck.ok) {
       return res.status(400).json({ success: false, message: paymentCheck.message });
     }
     const payment = paymentCheck.payment;
 
-    const materialsCheck = validatePurchaseMaterials(req.body.materials);
-    if (!materialsCheck.ok) {
-      return res.status(400).json({ success: false, message: materialsCheck.message });
+    // Payment-only updates do not send materials — keep existing lines
+    let materialsToSave = existing.materials;
+    const hasMaterialsInBody =
+      req.body.materials !== undefined &&
+      req.body.materials !== null &&
+      req.body.materials !== '';
+    if (hasMaterialsInBody) {
+      const materialsCheck = validatePurchaseMaterials(req.body.materials);
+      if (!materialsCheck.ok) {
+        return res.status(400).json({ success: false, message: materialsCheck.message });
+      }
+      materialsToSave = materialsCheck.materials;
     }
 
     let vendorDoc = null;
@@ -389,7 +403,7 @@ const updatePurchase = async (req, res) => {
       receiptNo: req.body.receiptNo ?? existing.receiptNo,
       billNo: req.body.billNo ?? req.body.receiptNo ?? existing.billNo,
       paymentMethod: req.body.paymentMethod ?? existing.paymentMethod,
-      materials: materialsCheck.materials,
+      materials: materialsToSave,
       advancePayment: advancePaymentNum,
       amountPaid: amountPaidNum,
       totalPaid: payment.totalPaid,

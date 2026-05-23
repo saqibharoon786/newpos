@@ -291,17 +291,10 @@ const createProductionRecord = async (req, res) => {
             message: `Maximum ${maxBags} bags allowed (${availableKg} kg available ÷ ${bagSize} kg/bag). Is se zyada bags process nahi ho sakte.`,
           });
         }
-        const expectedKg = calcWeightFromBags(productCode, totalBags);
         if (weightUsedFromPOP > availableKg + 0.01) {
           return res.status(400).json({
             success: false,
             message: `POP par sirf ${availableKg} kg available hai — ${weightUsedFromPOP} kg use nahi ho sakta`,
-          });
-        }
-        if (weightUsedFromPOP > expectedKg + 0.05) {
-          return res.status(400).json({
-            success: false,
-            message: `${totalBags} bags × ${bagSize} kg = ${expectedKg} kg max. Weight POP se zyada nahi ho sakti.`,
           });
         }
       } else if (weightUsedFromPOP > availableKg + 0.01) {
