@@ -8,7 +8,14 @@ const {
   restorePopWeight,
   getPopLinePricing,
   buildProcessingQueueItems,
+  getAvailableKgForLine,
+  resolveMaterialLineIndex,
 } = require("../utils/popMaterialConsumption");
+const {
+  getBagSizeForCode,
+  getMaxBagsFromAvailableKg,
+  calcWeightFromBags,
+} = require("../constants/productCodes");
 
 function parsePurchaseDate(purchase) {
   const d = purchase.purchaseDate;
@@ -196,7 +203,7 @@ const createProductionRecord = async (req, res) => {
     const totalWeight = parseFloat(
       productionData.totalWeight ?? productionData.outputWeight ?? productionData.machineOutputWeight
     );
-    const totalBags = parseInt(productionData.totalBags, 10);
+    const totalBags = parseFloat(productionData.totalBags);
 
     if (!productionData.materialName?.trim()) {
       return res.status(400).json({ success: false, message: "Material name is required" });
@@ -216,8 +223,8 @@ const createProductionRecord = async (req, res) => {
     if (!totalWeight || totalWeight <= 0) {
       return res.status(400).json({ success: false, message: "Machine output weight must be greater than 0" });
     }
-    if (!totalBags || totalBags < 1) {
-      return res.status(400).json({ success: false, message: "Number of bags must be at least 1" });
+    if (!totalBags || totalBags <= 0) {
+      return res.status(400).json({ success: false, message: "Number of bags must be greater than 0" });
     }
     if (!Array.isArray(productionData.employees) || productionData.employees.length === 0) {
       return res.status(400).json({ success: false, message: "Please select at least one employee" });
@@ -255,6 +262,55 @@ const createProductionRecord = async (req, res) => {
         productionData.materialLineIndex != null
           ? parseInt(productionData.materialLineIndex, 10)
           : undefined;
+
+      const pop = await Purchase.findById(purchaseId).lean();
+      if (!pop) {
+        return res.status(404).json({ success: false, message: "POP not found" });
+      }
+
+      let availableKg = 0;
+      const mats = pop.materials || [];
+      if (mats.length > 0) {
+        const idx = resolveMaterialLineIndex(pop, productCode, lineIdx);
+        if (idx >= 0) {
+          const line = mats[idx];
+          const w = parseFloat(line.weight) || 0;
+          const c = parseFloat(line.productionConsumedWeight) || 0;
+          availableKg = Math.max(0, w - c);
+        }
+      } else {
+        availableKg = getAvailableKgForLine(pop, productCode);
+      }
+
+      const bagSize = getBagSizeForCode(productCode);
+      if (bagSize > 0 && totalBags > 0) {
+        const maxBags = getMaxBagsFromAvailableKg(productCode, availableKg);
+        if (totalBags > maxBags + 0.0001) {
+          return res.status(400).json({
+            success: false,
+            message: `Maximum ${maxBags} bags allowed (${availableKg} kg available ÷ ${bagSize} kg/bag). Is se zyada bags process nahi ho sakte.`,
+          });
+        }
+        const expectedKg = calcWeightFromBags(productCode, totalBags);
+        if (weightUsedFromPOP > availableKg + 0.01) {
+          return res.status(400).json({
+            success: false,
+            message: `POP par sirf ${availableKg} kg available hai — ${weightUsedFromPOP} kg use nahi ho sakta`,
+          });
+        }
+        if (weightUsedFromPOP > expectedKg + 0.05) {
+          return res.status(400).json({
+            success: false,
+            message: `${totalBags} bags × ${bagSize} kg = ${expectedKg} kg max. Weight POP se zyada nahi ho sakti.`,
+          });
+        }
+      } else if (weightUsedFromPOP > availableKg + 0.01) {
+        return res.status(400).json({
+          success: false,
+          message: `POP par sirf ${availableKg} kg available hai`,
+        });
+      }
+
       const result = await deductPopWeight(purchaseId, {
         productCode,
         weight: weightUsedFromPOP,

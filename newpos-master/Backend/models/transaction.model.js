@@ -34,7 +34,23 @@ const TransactionSchema = new mongoose.Schema({
     default: 'completed'
   },
   description: String,
-  reference: String
+  reference: String,
+  /** vendor | customer — advance / linked payments */
+  partyType: {
+    type: String,
+    enum: ['vendor', 'customer'],
+    required: false,
+  },
+  partyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    required: false,
+  },
+  partyName: { type: String, trim: true },
+  category: {
+    type: String,
+    enum: ['general', 'advance'],
+    default: 'general',
+  },
 }, {
   timestamps: true
 });

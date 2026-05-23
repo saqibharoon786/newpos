@@ -83,7 +83,23 @@ const customerSchema = new mongoose.Schema({
     type: String,
     enum: ['partial', 'fully', 'none'],
     default: 'none'
-  }
+  },
+  /** Advance received via Finance (drawer / easypaisa / jazzcash / bank) */
+  financeAdvanceBalance: { type: Number, default: 0, min: 0 },
+  advanceLedger: [
+    {
+      date: { type: Date, default: Date.now },
+      amount: { type: Number, required: true, min: 0 },
+      method: {
+        type: String,
+        enum: ['drawer', 'easypaisa', 'jazzcash', 'bank'],
+        required: true,
+      },
+      description: { type: String, default: '' },
+      reference: { type: String, default: '' },
+      transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
+    },
+  ],
 }, {
   timestamps: true
 });

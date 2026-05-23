@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Wallet, Smartphone, Building, Edit, Trash2, Plus, Download, Search, X, Printer, BanknoteIcon, DollarSign, Clock, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Loader2 } from 'lucide-react';
+import { AlertCircle, Wallet, Smartphone, Building, Edit, Trash2, Plus, Download, Search, X, Printer, BanknoteIcon, DollarSign, Clock, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Loader2, Users, Truck } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from "sonner";
@@ -26,9 +26,41 @@ interface Transaction {
   status: string;
   description: string;
   reference?: string;
+  partyType?: 'vendor' | 'customer' | null;
+  partyName?: string;
+  category?: string;
   createdAt?: string;
   updatedAt?: string;
 }
+
+interface VendorOption {
+  _id: string;
+  name: string;
+  advanceBalance?: number;
+}
+
+interface CustomerOption {
+  _id: string;
+  customerName: string;
+  customerId?: string;
+  financeAdvanceBalance?: number;
+  advanceCredit?: number;
+}
+
+interface AdvanceHistoryRow {
+  date: string;
+  amount: number;
+  method: string;
+  description?: string;
+  reference?: string;
+}
+
+const ADVANCE_PAYMENT_METHODS = [
+  { value: 'drawer', label: 'Cash Drawer' },
+  { value: 'easypaisa', label: 'Easypaisa' },
+  { value: 'jazzcash', label: 'JazzCash' },
+  { value: 'bank', label: 'Bank Account' },
+] as const;
 
 interface Balances {
   drawer: number;
@@ -73,6 +105,51 @@ export default function FinanceModule() {
     initial: true
   });
   const [plReport, setPlReport] = useState<any>(null);
+  const [financeTab, setFinanceTab] = useState<'general' | 'vendor' | 'customer'>('general');
+
+  const [vendors, setVendors] = useState<VendorOption[]>([]);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [vendorAdvance, setVendorAdvance] = useState({
+    vendorId: '',
+    method: 'drawer',
+    amount: '',
+    description: '',
+    reference: '',
+  });
+  const [customerAdvance, setCustomerAdvance] = useState({
+    customerId: '',
+    method: 'drawer',
+    amount: '',
+    description: '',
+    reference: '',
+  });
+  const [vendorAdvanceHistory, setVendorAdvanceHistory] = useState<AdvanceHistoryRow[]>([]);
+  const [customerAdvanceHistory, setCustomerAdvanceHistory] = useState<AdvanceHistoryRow[]>([]);
+  const [selectedVendorAdvanceBalance, setSelectedVendorAdvanceBalance] = useState(0);
+  const [selectedCustomerAdvanceBalance, setSelectedCustomerAdvanceBalance] = useState(0);
+  const [loadingAdvance, setLoadingAdvance] = useState({
+    vendors: false,
+    customers: false,
+    vendorSubmit: false,
+    customerSubmit: false,
+    vendorHistory: false,
+    customerHistory: false,
+    summary: false,
+  });
+  const [advanceSummary, setAdvanceSummary] = useState<{
+    vendor: {
+      totalPayments: number;
+      paymentCount: number;
+      outstandingAdvance: number;
+      vendorsWithAdvance: number;
+    };
+    customer: {
+      totalPayments: number;
+      paymentCount: number;
+      outstandingAdvance: number;
+      customersWithAdvance: number;
+    };
+  } | null>(null);
 
   useEffect(() => {
     api.get('/api/reports/profit-loss').then((r) => setPlReport(r.data.data)).catch(() => {});
@@ -278,7 +355,187 @@ export default function FinanceModule() {
   // ==================== LIFECYCLE ====================
   useEffect(() => {
     fetchInitialData();
+    fetchVendorsList();
+    fetchCustomersList();
+    fetchAdvanceSummary();
   }, []);
+
+  const fetchAdvanceSummary = async () => {
+    setLoadingAdvance((p) => ({ ...p, summary: true }));
+    try {
+      const res = await api.get(`${FINANCE_API}/advance-summary`);
+      if (res.data?.success) {
+        setAdvanceSummary({
+          vendor: res.data.vendor,
+          customer: res.data.customer,
+        });
+      }
+    } catch {
+      /* optional */
+    } finally {
+      setLoadingAdvance((p) => ({ ...p, summary: false }));
+    }
+  };
+
+  const fetchVendorsList = async () => {
+    setLoadingAdvance((p) => ({ ...p, vendors: true }));
+    try {
+      const res = await api.get('/api/vendors');
+      if (res.data?.success) {
+        setVendors(res.data.data || []);
+      }
+    } catch {
+      toast.error('Vendors load nahi ho sakay');
+    } finally {
+      setLoadingAdvance((p) => ({ ...p, vendors: false }));
+    }
+  };
+
+  const fetchCustomersList = async () => {
+    setLoadingAdvance((p) => ({ ...p, customers: true }));
+    try {
+      const res = await api.get('/api/customers/getall-customers', {
+        params: { limit: 500 },
+      });
+      if (res.data?.success) {
+        setCustomers(res.data.data || []);
+      }
+    } catch {
+      toast.error('Customers load nahi ho sakay');
+    } finally {
+      setLoadingAdvance((p) => ({ ...p, customers: false }));
+    }
+  };
+
+  const fetchVendorAdvanceHistory = async (vendorId: string) => {
+    if (!vendorId) {
+      setVendorAdvanceHistory([]);
+      setSelectedVendorAdvanceBalance(0);
+      return;
+    }
+    setLoadingAdvance((p) => ({ ...p, vendorHistory: true }));
+    try {
+      const res = await api.get(`${FINANCE_API}/vendor-advance/${vendorId}/history`);
+      if (res.data?.success) {
+        setVendorAdvanceHistory(res.data.history || []);
+        setSelectedVendorAdvanceBalance(res.data.vendor?.advanceBalance || 0);
+      }
+    } catch {
+      setVendorAdvanceHistory([]);
+    } finally {
+      setLoadingAdvance((p) => ({ ...p, vendorHistory: false }));
+    }
+  };
+
+  const fetchCustomerAdvanceHistory = async (customerId: string) => {
+    if (!customerId) {
+      setCustomerAdvanceHistory([]);
+      setSelectedCustomerAdvanceBalance(0);
+      return;
+    }
+    setLoadingAdvance((p) => ({ ...p, customerHistory: true }));
+    try {
+      const res = await api.get(`${FINANCE_API}/customer-advance/${customerId}/history`);
+      if (res.data?.success) {
+        setCustomerAdvanceHistory(res.data.history || []);
+        setSelectedCustomerAdvanceBalance(res.data.customer?.financeAdvanceBalance || 0);
+      }
+    } catch {
+      setCustomerAdvanceHistory([]);
+    } finally {
+      setLoadingAdvance((p) => ({ ...p, customerHistory: false }));
+    }
+  };
+
+  const handleVendorAdvanceSubmit = async () => {
+    const amt = parseFloat(vendorAdvance.amount);
+    if (!vendorAdvance.vendorId) {
+      toast.error('Vendor select karen');
+      return;
+    }
+    if (!amt || amt <= 0) {
+      toast.error('Valid amount enter karen');
+      return;
+    }
+    setLoadingAdvance((p) => ({ ...p, vendorSubmit: true }));
+    try {
+      const res = await api.post(`${FINANCE_API}/vendor-advance`, {
+        vendorId: vendorAdvance.vendorId,
+        method: vendorAdvance.method,
+        amount: amt,
+        description: vendorAdvance.description,
+        reference: vendorAdvance.reference,
+      });
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Vendor advance saved');
+        setVendorAdvance((prev) => ({
+          ...prev,
+          amount: '',
+          description: '',
+          reference: '',
+        }));
+        if (res.data.balances) setBalances(res.data.balances);
+        await Promise.all([
+          fetchTransactions(1),
+          fetchBalances(),
+          fetchVendorAdvanceHistory(vendorAdvance.vendorId),
+          fetchVendorsList(),
+          fetchAdvanceSummary(),
+        ]);
+      } else {
+        toast.error(res.data?.message || 'Failed');
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Vendor advance failed');
+    } finally {
+      setLoadingAdvance((p) => ({ ...p, vendorSubmit: false }));
+    }
+  };
+
+  const handleCustomerAdvanceSubmit = async () => {
+    const amt = parseFloat(customerAdvance.amount);
+    if (!customerAdvance.customerId) {
+      toast.error('Customer select karen');
+      return;
+    }
+    if (!amt || amt <= 0) {
+      toast.error('Valid amount enter karen');
+      return;
+    }
+    setLoadingAdvance((p) => ({ ...p, customerSubmit: true }));
+    try {
+      const res = await api.post(`${FINANCE_API}/customer-advance`, {
+        customerId: customerAdvance.customerId,
+        method: customerAdvance.method,
+        amount: amt,
+        description: customerAdvance.description,
+        reference: customerAdvance.reference,
+      });
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Customer advance saved');
+        setCustomerAdvance((prev) => ({
+          ...prev,
+          amount: '',
+          description: '',
+          reference: '',
+        }));
+        if (res.data.balances) setBalances(res.data.balances);
+        await Promise.all([
+          fetchTransactions(1),
+          fetchBalances(),
+          fetchCustomerAdvanceHistory(customerAdvance.customerId),
+          fetchCustomersList(),
+          fetchAdvanceSummary(),
+        ]);
+      } else {
+        toast.error(res.data?.message || 'Failed');
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Customer advance failed');
+    } finally {
+      setLoadingAdvance((p) => ({ ...p, customerSubmit: false }));
+    }
+  };
 
   useEffect(() => {
     filterTransactions();
@@ -826,8 +1083,446 @@ export default function FinanceModule() {
         </div>
       )}
 
+      <div className="px-3 sm:px-4 md:px-6 py-3 border-b border-border bg-card/50">
+        <div className="max-w-screen-2xl mx-auto flex flex-wrap gap-2">
+          {(
+            [
+              { id: 'general' as const, label: 'General Finance', icon: BanknoteIcon },
+              { id: 'vendor' as const, label: 'Vendor Advance', icon: Truck },
+              { id: 'customer' as const, label: 'Customer Advance', icon: Users },
+            ]
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setFinanceTab(tab.id)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ${
+                financeTab === tab.id
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-secondary text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="px-3 sm:px-4 md:px-6 py-4 sm:py-6 overflow-x-hidden">
         <div className="max-w-screen-2xl mx-auto space-y-4 sm:space-y-6">
+
+          {/* Vendor & Customer advance summary boxes */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card
+              className={`border-2 overflow-hidden transition-all ${
+                financeTab === 'vendor'
+                  ? 'border-orange-500/50 bg-orange-500/5'
+                  : 'border-border bg-card hover:border-orange-500/30'
+              }`}
+            >
+              <CardContent className="pt-6 pb-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-orange-500/15 flex items-center justify-center">
+                      <Truck className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Vendor Payments</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Hum ne vendors ko di hui advance (total)
+                      </p>
+                    </div>
+                  </div>
+                  {loadingAdvance.summary ? (
+                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                  ) : null}
+                </div>
+                <p className="text-3xl font-bold text-orange-600 dark:text-orange-400 mt-4">
+                  {formatCurrency(advanceSummary?.vendor.totalPayments ?? 0)}
+                </p>
+                <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-border">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Payments (count)</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {advanceSummary?.vendor.paymentCount ?? 0}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Abhi advance baqi</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {formatCurrency(advanceSummary?.vendor.outstandingAdvance ?? 0)}
+                    </p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs text-muted-foreground">
+                      {advanceSummary?.vendor.vendorsWithAdvance ?? 0} vendors par advance hai
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant={financeTab === 'vendor' ? 'default' : 'outline'}
+                  size="sm"
+                  className="w-full mt-4"
+                  onClick={() => setFinanceTab('vendor')}
+                >
+                  Vendor advance record karen
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card
+              className={`border-2 overflow-hidden transition-all ${
+                financeTab === 'customer'
+                  ? 'border-green-500/50 bg-green-500/5'
+                  : 'border-border bg-card hover:border-green-500/30'
+              }`}
+            >
+              <CardContent className="pt-6 pb-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-green-500/15 flex items-center justify-center">
+                      <Users className="w-6 h-6 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Customer Payments</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Customers se receive hui advance (total)
+                      </p>
+                    </div>
+                  </div>
+                  {loadingAdvance.summary ? (
+                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                  ) : null}
+                </div>
+                <p className="text-3xl font-bold text-green-600 dark:text-green-400 mt-4">
+                  {formatCurrency(advanceSummary?.customer.totalPayments ?? 0)}
+                </p>
+                <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-border">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Payments (count)</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {advanceSummary?.customer.paymentCount ?? 0}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Abhi advance balance</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {formatCurrency(advanceSummary?.customer.outstandingAdvance ?? 0)}
+                    </p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs text-muted-foreground">
+                      {advanceSummary?.customer.customersWithAdvance ?? 0} customers ne advance di
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant={financeTab === 'customer' ? 'default' : 'outline'}
+                  size="sm"
+                  className="w-full mt-4"
+                  onClick={() => setFinanceTab('customer')}
+                >
+                  Customer advance record karen
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {financeTab === 'vendor' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="bg-card border-border">
+                <CardHeader className="border-b border-border">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Truck className="w-5 h-5 text-primary" />
+                    Vendor Advance Payment
+                  </CardTitle>
+                  <CardDescription>
+                    Vendor ko advance den — drawer / Easypaisa / JazzCash / Bank se
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-5 space-y-4">
+                  <div className="space-y-2">
+                    <Label>Vendor *</Label>
+                    <Select
+                      value={vendorAdvance.vendorId}
+                      onValueChange={(id) => {
+                        setVendorAdvance((p) => ({ ...p, vendorId: id }));
+                        const v = vendors.find((x) => x._id === id);
+                        setSelectedVendorAdvanceBalance(v?.advanceBalance || 0);
+                        fetchVendorAdvanceHistory(id);
+                      }}
+                      disabled={loadingAdvance.vendors}
+                    >
+                      <SelectTrigger className="bg-secondary border-border">
+                        <SelectValue placeholder={loadingAdvance.vendors ? 'Loading...' : 'Select vendor'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vendors.map((v) => (
+                          <SelectItem key={v._id} value={v._id}>
+                            {v.name}
+                            {(v.advanceBalance || 0) > 0
+                              ? ` — advance: Rs. ${(v.advanceBalance || 0).toLocaleString()}`
+                              : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {vendorAdvance.vendorId && (
+                    <p className="text-sm text-muted-foreground">
+                      Total advance is vendor par:{' '}
+                      <span className="font-semibold text-green-600">
+                        Rs. {selectedVendorAdvanceBalance.toLocaleString()}
+                      </span>
+                    </p>
+                  )}
+                  <div className="space-y-2">
+                    <Label>Payment method *</Label>
+                    <Select
+                      value={vendorAdvance.method}
+                      onValueChange={(method) => setVendorAdvance((p) => ({ ...p, method }))}
+                    >
+                      <SelectTrigger className="bg-secondary border-border">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ADVANCE_PAYMENT_METHODS.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>
+                            {m.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Amount (PKR) *</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={vendorAdvance.amount}
+                      onChange={(e) => setVendorAdvance((p) => ({ ...p, amount: e.target.value }))}
+                      className="bg-secondary border-border"
+                      placeholder="Advance amount"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Description</Label>
+                    <Input
+                      value={vendorAdvance.description}
+                      onChange={(e) => setVendorAdvance((p) => ({ ...p, description: e.target.value }))}
+                      className="bg-secondary border-border"
+                      placeholder="Optional note"
+                    />
+                  </div>
+                  <Button
+                    className="w-full"
+                    onClick={handleVendorAdvanceSubmit}
+                    disabled={loadingAdvance.vendorSubmit || !vendorAdvance.vendorId}
+                  >
+                    {loadingAdvance.vendorSubmit ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Plus className="w-4 h-4 mr-2" />
+                    )}
+                    Save Vendor Advance
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card className="bg-card border-border">
+                <CardHeader className="border-b border-border">
+                  <CardTitle className="text-lg">Vendor advance history</CardTitle>
+                  <CardDescription>
+                    {vendorAdvance.vendorId
+                      ? vendors.find((v) => v._id === vendorAdvance.vendorId)?.name
+                      : 'Pehle vendor select karen'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {loadingAdvance.vendorHistory ? (
+                    <div className="py-12 text-center text-muted-foreground">
+                      <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                      Loading...
+                    </div>
+                  ) : vendorAdvanceHistory.length === 0 ? (
+                    <p className="py-12 text-center text-muted-foreground text-sm">
+                      {vendorAdvance.vendorId ? 'Abhi koi advance record nahi' : 'Vendor select karen'}
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr>
+                            <th className="text-left p-3">Date</th>
+                            <th className="text-left p-3">Method</th>
+                            <th className="text-right p-3">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {vendorAdvanceHistory.map((row, i) => (
+                            <tr key={i} className="border-t border-border">
+                              <td className="p-3">{formatDate(String(row.date))}</td>
+                              <td className="p-3">{getMethodLabel(row.method)}</td>
+                              <td className="p-3 text-right font-medium text-green-600">
+                                {formatCurrency(row.amount)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {financeTab === 'customer' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="bg-card border-border">
+                <CardHeader className="border-b border-border">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Users className="w-5 h-5 text-primary" />
+                    Customer Advance Payment
+                  </CardTitle>
+                  <CardDescription>
+                    Customer se advance receive — drawer / Easypaisa / JazzCash / Bank
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-5 space-y-4">
+                  <div className="space-y-2">
+                    <Label>Customer *</Label>
+                    <Select
+                      value={customerAdvance.customerId}
+                      onValueChange={(id) => {
+                        setCustomerAdvance((p) => ({ ...p, customerId: id }));
+                        fetchCustomerAdvanceHistory(id);
+                      }}
+                      disabled={loadingAdvance.customers}
+                    >
+                      <SelectTrigger className="bg-secondary border-border">
+                        <SelectValue placeholder={loadingAdvance.customers ? 'Loading...' : 'Select customer'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {customers.map((c) => (
+                          <SelectItem key={c._id} value={c._id}>
+                            {c.customerName}
+                            {c.customerId ? ` (${c.customerId})` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {customerAdvance.customerId && (
+                    <p className="text-sm text-muted-foreground">
+                      Finance se advance receive:{' '}
+                      <span className="font-semibold text-green-600">
+                        Rs. {selectedCustomerAdvanceBalance.toLocaleString()}
+                      </span>
+                    </p>
+                  )}
+                  <div className="space-y-2">
+                    <Label>Payment method *</Label>
+                    <Select
+                      value={customerAdvance.method}
+                      onValueChange={(method) => setCustomerAdvance((p) => ({ ...p, method }))}
+                    >
+                      <SelectTrigger className="bg-secondary border-border">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ADVANCE_PAYMENT_METHODS.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>
+                            {m.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Amount (PKR) *</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={customerAdvance.amount}
+                      onChange={(e) => setCustomerAdvance((p) => ({ ...p, amount: e.target.value }))}
+                      className="bg-secondary border-border"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Description</Label>
+                    <Input
+                      value={customerAdvance.description}
+                      onChange={(e) => setCustomerAdvance((p) => ({ ...p, description: e.target.value }))}
+                      className="bg-secondary border-border"
+                    />
+                  </div>
+                  <Button
+                    className="w-full bg-success hover:bg-success/90"
+                    onClick={handleCustomerAdvanceSubmit}
+                    disabled={loadingAdvance.customerSubmit || !customerAdvance.customerId}
+                  >
+                    {loadingAdvance.customerSubmit ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Plus className="w-4 h-4 mr-2" />
+                    )}
+                    Save Customer Advance
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card className="bg-card border-border">
+                <CardHeader className="border-b border-border">
+                  <CardTitle className="text-lg">Customer advance history</CardTitle>
+                  <CardDescription>
+                    {customerAdvance.customerId
+                      ? customers.find((c) => c._id === customerAdvance.customerId)?.customerName
+                      : 'Pehle customer select karen'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {loadingAdvance.customerHistory ? (
+                    <div className="py-12 text-center text-muted-foreground">
+                      <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                      Loading...
+                    </div>
+                  ) : customerAdvanceHistory.length === 0 ? (
+                    <p className="py-12 text-center text-muted-foreground text-sm">
+                      {customerAdvance.customerId ? 'Abhi koi advance record nahi' : 'Customer select karen'}
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr>
+                            <th className="text-left p-3">Date</th>
+                            <th className="text-left p-3">Method</th>
+                            <th className="text-right p-3">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {customerAdvanceHistory.map((row, i) => (
+                            <tr key={i} className="border-t border-border">
+                              <td className="p-3">{formatDate(String(row.date))}</td>
+                              <td className="p-3">{getMethodLabel(row.method)}</td>
+                              <td className="p-3 text-right font-medium text-green-600">
+                                {formatCurrency(row.amount)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {financeTab === 'general' && (
+            <>
           {/* Stats Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
             {[
@@ -1231,6 +1926,11 @@ export default function FinanceModule() {
                                   <div className={`font-bold ${transaction.type === 'deposit' ? 'text-success' : 'text-destructive'}`}>
                                     {transaction.type === 'deposit' ? '+' : '-'}{formatCurrency(transaction.amount)}
                                   </div>
+                                  {transaction.category === 'advance' && transaction.partyName && (
+                                    <div className="text-xs text-primary font-medium">
+                                      {transaction.partyType === 'vendor' ? 'Vendor' : 'Customer'}: {transaction.partyName}
+                                    </div>
+                                  )}
                                   {transaction.description && (
                                     <div className="text-xs text-muted-foreground truncate max-w-[150px]">
                                       {transaction.description}
@@ -1332,6 +2032,8 @@ export default function FinanceModule() {
               </Card>
             </div>
           </div>
+            </>
+          )}
         </div>
       </div>
 
