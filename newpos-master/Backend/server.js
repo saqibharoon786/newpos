@@ -38,6 +38,7 @@ const notificationRoutes = require("./routes/notification.route");
 const vendorRoutes = require("./routes/vendor.route");
 const investmentRoutes = require("./routes/investment.route");
 const reportRoutes = require("./routes/report.route");
+const ledgerRoutes = require("./routes/ledger.route");
 const materialCatalogRoutes = require("./routes/materialCatalog.route");
 const expenseCategoryRoutes = require("./routes/expenseCategory.route");
 const cmsUsersRoutes = require("./routes/cmsUsers.route");
@@ -202,6 +203,7 @@ app.use("/api/notifications", cmsProtect, notificationRoutes);
 app.use("/api/vendors", cmsProtect, vendorRoutes);
 app.use("/api/investment", cmsProtect, investmentRoutes);
 app.use("/api/reports", cmsProtect, reportRoutes);
+app.use("/api/ledger", cmsProtect, ledgerRoutes);
 
 // Test endpoints
 app.get("/api/test-upload/:filename", (req, res) => {

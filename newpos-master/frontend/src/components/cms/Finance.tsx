@@ -50,9 +50,51 @@ interface CustomerOption {
 interface AdvanceHistoryRow {
   date: string;
   amount: number;
-  method: string;
+  method?: string;
+  type?: string;
   description?: string;
   reference?: string;
+  source?: string;
+  balance?: number;
+}
+
+interface VendorLinkedProfile {
+  vendor: {
+    name: string;
+    advanceBalance: number;
+    payableBalance: number;
+    netPayable: number;
+  };
+  pop: {
+    purchaseCount: number;
+    totalBills: number;
+    totalPaid: number;
+    totalRemaining: number;
+    advanceOnBills: number;
+  };
+  openBills: Array<{
+    invoiceNo?: string;
+    materialName?: string;
+    price: number;
+    remainingAmount: number;
+    purchaseDate?: string;
+  }>;
+}
+
+interface CustomerLinkedProfile {
+  customer: {
+    customerName: string;
+    financeAdvanceBalance: number;
+    profileBalanceDue: number;
+    totalAdvanceCredit: number;
+    totalBalanceDue: number;
+  };
+  pos: {
+    saleCount: number;
+    totalSales: number;
+    totalRemaining: number;
+    advanceOnSales: number;
+  };
 }
 
 const ADVANCE_PAYMENT_METHODS = [
@@ -125,8 +167,8 @@ export default function FinanceModule() {
   });
   const [vendorAdvanceHistory, setVendorAdvanceHistory] = useState<AdvanceHistoryRow[]>([]);
   const [customerAdvanceHistory, setCustomerAdvanceHistory] = useState<AdvanceHistoryRow[]>([]);
-  const [selectedVendorAdvanceBalance, setSelectedVendorAdvanceBalance] = useState(0);
-  const [selectedCustomerAdvanceBalance, setSelectedCustomerAdvanceBalance] = useState(0);
+  const [vendorLinked, setVendorLinked] = useState<VendorLinkedProfile | null>(null);
+  const [customerLinked, setCustomerLinked] = useState<CustomerLinkedProfile | null>(null);
   const [loadingAdvance, setLoadingAdvance] = useState({
     vendors: false,
     customers: false,
@@ -138,15 +180,23 @@ export default function FinanceModule() {
   });
   const [advanceSummary, setAdvanceSummary] = useState<{
     vendor: {
-      totalPayments: number;
-      paymentCount: number;
-      outstandingAdvance: number;
+      financeAdvancePaid: number;
+      advanceBalance: number;
+      payableBalance: number;
+      netPayable: number;
+      popTotalBills: number;
+      popRemaining: number;
+      popAdvanceOnBills: number;
       vendorsWithAdvance: number;
     };
     customer: {
-      totalPayments: number;
-      paymentCount: number;
-      outstandingAdvance: number;
+      financeAdvanceReceived: number;
+      financeAdvanceBalance: number;
+      posAdvanceFromSales: number;
+      posBalanceDue: number;
+      profileBalanceDue: number;
+      totalAdvanceCredit: number;
+      totalBalanceDue: number;
       customersWithAdvance: number;
     };
   } | null>(null);
@@ -410,18 +460,24 @@ export default function FinanceModule() {
   const fetchVendorAdvanceHistory = async (vendorId: string) => {
     if (!vendorId) {
       setVendorAdvanceHistory([]);
-      setSelectedVendorAdvanceBalance(0);
+      setVendorLinked(null);
       return;
     }
     setLoadingAdvance((p) => ({ ...p, vendorHistory: true }));
     try {
-      const res = await api.get(`${FINANCE_API}/vendor-advance/${vendorId}/history`);
-      if (res.data?.success) {
-        setVendorAdvanceHistory(res.data.history || []);
-        setSelectedVendorAdvanceBalance(res.data.vendor?.advanceBalance || 0);
+      const [histRes, linkRes] = await Promise.all([
+        api.get(`${FINANCE_API}/vendor-advance/${vendorId}/history`),
+        api.get(`${FINANCE_API}/vendor-linked/${vendorId}`),
+      ]);
+      if (histRes.data?.success) {
+        setVendorAdvanceHistory(histRes.data.history || []);
+      }
+      if (linkRes.data?.success) {
+        setVendorLinked(linkRes.data.data);
       }
     } catch {
       setVendorAdvanceHistory([]);
+      setVendorLinked(null);
     } finally {
       setLoadingAdvance((p) => ({ ...p, vendorHistory: false }));
     }
@@ -430,18 +486,30 @@ export default function FinanceModule() {
   const fetchCustomerAdvanceHistory = async (customerId: string) => {
     if (!customerId) {
       setCustomerAdvanceHistory([]);
-      setSelectedCustomerAdvanceBalance(0);
+      setCustomerLinked(null);
       return;
     }
     setLoadingAdvance((p) => ({ ...p, customerHistory: true }));
     try {
-      const res = await api.get(`${FINANCE_API}/customer-advance/${customerId}/history`);
-      if (res.data?.success) {
-        setCustomerAdvanceHistory(res.data.history || []);
-        setSelectedCustomerAdvanceBalance(res.data.customer?.financeAdvanceBalance || 0);
+      const [histRes, linkRes] = await Promise.all([
+        api.get(`${FINANCE_API}/customer-advance/${customerId}/history`),
+        api.get(`${FINANCE_API}/customer-linked/${customerId}`),
+      ]);
+      if (histRes.data?.success) {
+        setCustomerAdvanceHistory(histRes.data.history || []);
+        if (histRes.data.customer) {
+          setCustomerLinked({
+            customer: histRes.data.customer,
+            pos: histRes.data.pos || { saleCount: 0, totalSales: 0, totalRemaining: 0, advanceOnSales: 0 },
+          });
+        }
+      }
+      if (linkRes.data?.success) {
+        setCustomerLinked(linkRes.data.data);
       }
     } catch {
       setCustomerAdvanceHistory([]);
+      setCustomerLinked(null);
     } finally {
       setLoadingAdvance((p) => ({ ...p, customerHistory: false }));
     }
@@ -1128,9 +1196,9 @@ export default function FinanceModule() {
                       <Truck className="w-6 h-6 text-orange-600 dark:text-orange-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-muted-foreground">Vendor Payments</p>
+                      <p className="text-sm font-medium text-muted-foreground">Vendor (POP linked)</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Hum ne vendors ko di hui advance (total)
+                        POP bills, advance aur baqi payment
                       </p>
                     </div>
                   </div>
@@ -1139,24 +1207,32 @@ export default function FinanceModule() {
                   ) : null}
                 </div>
                 <p className="text-3xl font-bold text-orange-600 dark:text-orange-400 mt-4">
-                  {formatCurrency(advanceSummary?.vendor.totalPayments ?? 0)}
+                  {formatCurrency(advanceSummary?.vendor.netPayable ?? 0)}
                 </p>
+                <p className="text-xs text-muted-foreground mt-1">Net payable (POP − advance)</p>
                 <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-border">
                   <div>
-                    <p className="text-xs text-muted-foreground">Payments (count)</p>
-                    <p className="text-sm font-semibold text-foreground">
-                      {advanceSummary?.vendor.paymentCount ?? 0}
+                    <p className="text-xs text-muted-foreground">POP remaining</p>
+                    <p className="text-sm font-semibold text-red-600">
+                      {formatCurrency(advanceSummary?.vendor.popRemaining ?? 0)}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Abhi advance baqi</p>
-                    <p className="text-sm font-semibold text-foreground">
-                      {formatCurrency(advanceSummary?.vendor.outstandingAdvance ?? 0)}
+                    <p className="text-xs text-muted-foreground">Advance balance</p>
+                    <p className="text-sm font-semibold text-green-600">
+                      {formatCurrency(advanceSummary?.vendor.advanceBalance ?? 0)}
                     </p>
                   </div>
-                  <div className="col-span-2">
-                    <p className="text-xs text-muted-foreground">
-                      {advanceSummary?.vendor.vendorsWithAdvance ?? 0} vendors par advance hai
+                  <div>
+                    <p className="text-xs text-muted-foreground">Finance se advance</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {formatCurrency(advanceSummary?.vendor.financeAdvancePaid ?? 0)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">POP par advance</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {formatCurrency(advanceSummary?.vendor.popAdvanceOnBills ?? 0)}
                     </p>
                   </div>
                 </div>
@@ -1186,9 +1262,9 @@ export default function FinanceModule() {
                       <Users className="w-6 h-6 text-green-600 dark:text-green-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-muted-foreground">Customer Payments</p>
+                      <p className="text-sm font-medium text-muted-foreground">Customer (POS linked)</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Customers se receive hui advance (total)
+                        Sales balance, advance aur receive
                       </p>
                     </div>
                   </div>
@@ -1197,24 +1273,32 @@ export default function FinanceModule() {
                   ) : null}
                 </div>
                 <p className="text-3xl font-bold text-green-600 dark:text-green-400 mt-4">
-                  {formatCurrency(advanceSummary?.customer.totalPayments ?? 0)}
+                  {formatCurrency(advanceSummary?.customer.totalBalanceDue ?? 0)}
                 </p>
+                <p className="text-xs text-muted-foreground mt-1">Total balance due (POS + profile)</p>
                 <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-border">
                   <div>
-                    <p className="text-xs text-muted-foreground">Payments (count)</p>
-                    <p className="text-sm font-semibold text-foreground">
-                      {advanceSummary?.customer.paymentCount ?? 0}
+                    <p className="text-xs text-muted-foreground">POS pending</p>
+                    <p className="text-sm font-semibold text-red-600">
+                      {formatCurrency(advanceSummary?.customer.posBalanceDue ?? 0)}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Abhi advance balance</p>
-                    <p className="text-sm font-semibold text-foreground">
-                      {formatCurrency(advanceSummary?.customer.outstandingAdvance ?? 0)}
+                    <p className="text-xs text-muted-foreground">Total advance credit</p>
+                    <p className="text-sm font-semibold text-green-600">
+                      {formatCurrency(advanceSummary?.customer.totalAdvanceCredit ?? 0)}
                     </p>
                   </div>
-                  <div className="col-span-2">
-                    <p className="text-xs text-muted-foreground">
-                      {advanceSummary?.customer.customersWithAdvance ?? 0} customers ne advance di
+                  <div>
+                    <p className="text-xs text-muted-foreground">Finance advance</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {formatCurrency(advanceSummary?.customer.financeAdvanceBalance ?? 0)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">POS sale advance</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {formatCurrency(advanceSummary?.customer.posAdvanceFromSales ?? 0)}
                     </p>
                   </div>
                 </div>
@@ -1250,8 +1334,6 @@ export default function FinanceModule() {
                       value={vendorAdvance.vendorId}
                       onValueChange={(id) => {
                         setVendorAdvance((p) => ({ ...p, vendorId: id }));
-                        const v = vendors.find((x) => x._id === id);
-                        setSelectedVendorAdvanceBalance(v?.advanceBalance || 0);
                         fetchVendorAdvanceHistory(id);
                       }}
                       disabled={loadingAdvance.vendors}
@@ -1271,13 +1353,29 @@ export default function FinanceModule() {
                       </SelectContent>
                     </Select>
                   </div>
-                  {vendorAdvance.vendorId && (
-                    <p className="text-sm text-muted-foreground">
-                      Total advance is vendor par:{' '}
-                      <span className="font-semibold text-green-600">
-                        Rs. {selectedVendorAdvanceBalance.toLocaleString()}
-                      </span>
-                    </p>
+                  {vendorLinked && (
+                    <div className="rounded-lg border border-orange-200 bg-orange-50/50 dark:bg-orange-950/20 p-3 space-y-2 text-sm">
+                      <p className="font-semibold text-foreground">{vendorLinked.vendor.name} — POP summary</p>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <span className="text-muted-foreground">Advance balance:</span>
+                        <span className="font-medium text-green-600 text-right">
+                          {formatCurrency(vendorLinked.vendor.advanceBalance)}
+                        </span>
+                        <span className="text-muted-foreground">POP remaining:</span>
+                        <span className="font-medium text-red-600 text-right">
+                          {formatCurrency(vendorLinked.pop.totalRemaining)}
+                        </span>
+                        <span className="text-muted-foreground">Net payable:</span>
+                        <span className="font-bold text-right">
+                          {formatCurrency(vendorLinked.vendor.netPayable)}
+                        </span>
+                      </div>
+                      {vendorLinked.openBills.length > 0 && (
+                        <p className="text-xs text-amber-700">
+                          {vendorLinked.openBills.length} open POP bill(s)
+                        </p>
+                      )}
+                    </div>
                   )}
                   <div className="space-y-2">
                     <Label>Payment method *</Label>
@@ -1356,7 +1454,8 @@ export default function FinanceModule() {
                         <thead className="bg-muted/50 sticky top-0">
                           <tr>
                             <th className="text-left p-3">Date</th>
-                            <th className="text-left p-3">Method</th>
+                            <th className="text-left p-3">Type</th>
+                            <th className="text-left p-3">Detail</th>
                             <th className="text-right p-3">Amount</th>
                           </tr>
                         </thead>
@@ -1364,8 +1463,11 @@ export default function FinanceModule() {
                           {vendorAdvanceHistory.map((row, i) => (
                             <tr key={i} className="border-t border-border">
                               <td className="p-3">{formatDate(String(row.date))}</td>
-                              <td className="p-3">{getMethodLabel(row.method)}</td>
-                              <td className="p-3 text-right font-medium text-green-600">
+                              <td className="p-3 capitalize">{row.type || '—'}</td>
+                              <td className="p-3 text-xs text-muted-foreground max-w-[140px] truncate">
+                                {row.description || row.source}
+                              </td>
+                              <td className="p-3 text-right font-medium">
                                 {formatCurrency(row.amount)}
                               </td>
                             </tr>
@@ -1415,13 +1517,26 @@ export default function FinanceModule() {
                       </SelectContent>
                     </Select>
                   </div>
-                  {customerAdvance.customerId && (
-                    <p className="text-sm text-muted-foreground">
-                      Finance se advance receive:{' '}
-                      <span className="font-semibold text-green-600">
-                        Rs. {selectedCustomerAdvanceBalance.toLocaleString()}
-                      </span>
-                    </p>
+                  {customerLinked && (
+                    <div className="rounded-lg border border-green-200 bg-green-50/50 dark:bg-green-950/20 p-3 space-y-2 text-sm">
+                      <p className="font-semibold text-foreground">
+                        {customerLinked.customer.customerName} — POS summary
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <span className="text-muted-foreground">Total advance:</span>
+                        <span className="font-medium text-green-600 text-right">
+                          {formatCurrency(customerLinked.customer.totalAdvanceCredit)}
+                        </span>
+                        <span className="text-muted-foreground">POS pending:</span>
+                        <span className="font-medium text-red-600 text-right">
+                          {formatCurrency(customerLinked.pos.totalRemaining)}
+                        </span>
+                        <span className="text-muted-foreground">Total due:</span>
+                        <span className="font-bold text-right">
+                          {formatCurrency(customerLinked.customer.totalBalanceDue)}
+                        </span>
+                      </div>
+                    </div>
                   )}
                   <div className="space-y-2">
                     <Label>Payment method *</Label>
@@ -1498,7 +1613,8 @@ export default function FinanceModule() {
                         <thead className="bg-muted/50 sticky top-0">
                           <tr>
                             <th className="text-left p-3">Date</th>
-                            <th className="text-left p-3">Method</th>
+                            <th className="text-left p-3">Source</th>
+                            <th className="text-left p-3">Detail</th>
                             <th className="text-right p-3">Amount</th>
                           </tr>
                         </thead>
@@ -1506,7 +1622,10 @@ export default function FinanceModule() {
                           {customerAdvanceHistory.map((row, i) => (
                             <tr key={i} className="border-t border-border">
                               <td className="p-3">{formatDate(String(row.date))}</td>
-                              <td className="p-3">{getMethodLabel(row.method)}</td>
+                              <td className="p-3">{row.source === 'pos' ? 'POS sale' : 'Finance'}</td>
+                              <td className="p-3 text-xs text-muted-foreground max-w-[140px] truncate">
+                                {row.description || '—'}
+                              </td>
                               <td className="p-3 text-right font-medium text-green-600">
                                 {formatCurrency(row.amount)}
                               </td>
