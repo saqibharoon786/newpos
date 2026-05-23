@@ -254,7 +254,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Sale Details - ${sale?.invoiceNo || 'Invoice'}</title>
+        <title>Sale Invoice - ${sale?.invoiceNo || 'Invoice'}</title>
         <style>
           @media print {
             @page {
@@ -427,17 +427,12 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
       <body>
         <div class="print-container">
           <div class="print-header">
-            <h1>Sale Record Details</h1>
-            <div class="subtitle">Complete details for sale invoice #${sale?.invoiceNo || 'N/A'}</div>
+            <h1>Sale Invoice</h1>
+            <div class="subtitle">Invoice #${sale?.invoiceNo || 'N/A'}</div>
             <div class="print-badges">
               <span class="print-badge">Invoice: ${sale?.invoiceNo || 'N/A'}</span>
               <span class="print-badge">Sale Date: ${formatDate(sale?.purchaseDate || '')}</span>
-              <span class="print-badge ${profit.amount >= 0 ? 'profit-positive' : 'profit-negative'}">
-                Profit: ${profit.amount >= 0 ? '+' : ''}${formatCurrency(profit.amount.toString())}
-              </span>
               ${hasVehicleData ? '<span class="print-badge">Vehicle: Assigned</span>' : ''}
-              ${sale?.purchaseId ? '<span class="print-badge">Linked to Purchase</span>' : ''}
-              ${sale?.receiptImage ? '<span class="print-badge">Receipt: Available</span>' : ''}
             </div>
           </div>
           
@@ -450,12 +445,12 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                 <span class="print-value">${sale?.materialName || 'N/A'}</span>
               </div>
               <div class="print-row">
-                <span class="print-label">Weight:</span>
-                <span class="print-value">${sale?.weight || '0'}</span>
+                <span class="print-label">Weight (kg):</span>
+                <span class="print-value">${sale?.weight || '0'} kg</span>
               </div>
               <div class="print-row">
-                <span class="print-label">Units:</span>
-                <span class="print-value">${sale?.unit || '0'} units</span>
+                <span class="print-label">Bags:</span>
+                <span class="print-value">${sale?.unit || '0'}</span>
               </div>
               <div class="print-row">
                 <span class="print-label">Color:</span>
@@ -464,14 +459,11 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                   ${getColorName(sale?.materialColor || '')}
                 </span>
               </div>
-              <div class="print-row">
-                <span class="print-label">Supplier:</span>
-                <span class="print-value">${sale?.supplierName || 'N/A'}</span>
-              </div>
+              ${sale?.branch ? `
               <div class="print-row">
                 <span class="print-label">Branch:</span>
-                <span class="print-value">${sale?.branch || 'N/A'}</span>
-              </div>
+                <span class="print-value">${sale.branch}</span>
+              </div>` : ''}
               <div class="print-row">
                 <span class="print-label">Invoice Number:</span>
                 <span class="print-value">${sale?.invoiceNo || 'N/A'}</span>
@@ -480,11 +472,6 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                 <span class="print-label">Sale Date:</span>
                 <span class="print-value">${formatDate(sale?.purchaseDate || '')}</span>
               </div>
-              ${sale?.purchaseId ? `
-              <div class="print-row">
-                <span class="print-label">Linked Purchase ID:</span>
-                <span class="print-value">${sale.purchaseId}</span>
-              </div>` : ''}
             </div>
             
             <!-- Pricing Details -->
@@ -498,45 +485,14 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                 <span class="print-label">Discount:</span>
                 <span class="print-value">${formatCurrency(sale?.discount || '0')}</span>
               </div>
+              ${parseFloat(String(sale?.transportationCost)) > 0 ? `
               <div class="print-row">
-                <span class="print-label">Final Amount:</span>
-                <span class="print-value">${formatCurrency(sale?.finalAmount || sale?.sellingPrice || '0')}</span>
-              </div>
+                <span class="print-label">Transportation:</span>
+                <span class="print-value">${formatCurrency(String(sale.transportationCost))}</span>
+              </div>` : ''}
               <div class="print-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee;">
-                <span class="print-label">Profit/Loss:</span>
-                <span class="print-value ${profit.amount >= 0 ? 'profit-positive' : 'profit-negative'}">
-                  ${profit.amount >= 0 ? '+' : ''}${formatCurrency(profit.amount.toString())}
-                  <span style="display: block; font-size: 9px; color: #666;">
-                    (${profit.percentage >= 0 ? '+' : ''}${profit.percentage.toFixed(2)}%)
-                  </span>
-                </span>
-              </div>
-            </div>
-            
-            <!-- Receipt Image -->
-            <div class="print-section">
-              <h3>Receipt Image</h3>
-              ${receiptUrl && !receiptUrl.toLowerCase().endsWith('.pdf') ? 
-                `<div class="print-image-container">
-                  <img src="${receiptUrl}" alt="Receipt" class="print-image" onerror="this.style.display='none';this.parentElement.innerHTML='<p>Image not available</p>';" />
-                </div>` : 
-                `<div class="print-image-container">
-                  <p>${sale?.receiptImage ? 'Image not available for printing' : 'No receipt was uploaded'}</p>
-                </div>`
-              }
-              <div style="margin-top: 10px;">
-                <div class="print-row">
-                  <span class="print-label">Invoice:</span>
-                  <span class="print-value">${sale?.invoiceNo || 'N/A'}</span>
-                </div>
-                <div class="print-row">
-                  <span class="print-label">File:</span>
-                  <span class="print-value">${sale?.receiptImage ? sale.receiptImage.split('/').pop() : 'N/A'}</span>
-                </div>
-                <div class="print-row">
-                  <span class="print-label">Uploaded:</span>
-                  <span class="print-value">${formatDate(sale?.createdAt || '')}</span>
-                </div>
+                <span class="print-label">Total Amount:</span>
+                <span class="print-value" style="font-weight: bold; font-size: 13px;">${formatCurrency(sale?.finalAmount || sale?.sellingPrice || '0')}</span>
               </div>
             </div>
           </div>
@@ -584,15 +540,6 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                 </div>` : ''}
               </div>
             </div>
-            <div class="print-row" style="margin-top: 5px;">
-              <span class="print-label">Source:</span>
-              <span class="print-value">
-                ${vehicleData?.source === 'purchase' ? 'From Linked Purchase' : 
-                 vehicleData?.source === 'sale-vehicleDetails' ? 'From Sale (Nested)' : 
-                 vehicleData?.source === 'material-match' ? 'From Material Match' :
-                 'From Sale (Direct)'}
-              </span>
-            </div>
           </div>` : ''}
           
           <!-- Customer Information -->
@@ -631,25 +578,6 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                   <span class="print-label">Address:</span>
                   <span class="print-value" style="text-align: right;">${sale.buyerAddress}</span>
                 </div>` : ''}
-              </div>
-            </div>
-          </div>
-          
-          <!-- Additional Information -->
-          <div class="print-additional">
-            <h3 style="font-size: 13px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Additional Information</h3>
-            <div class="print-additional-grid">
-              <div>
-                <div class="print-label">Record Created</div>
-                <div class="print-value" style="font-size: 11px;">${formatDate(sale?.createdAt || '')}</div>
-              </div>
-              <div>
-                <div class="print-label">Last Updated</div>
-                <div class="print-value" style="font-size: 11px;">${formatDate(sale?.updatedAt || '')}</div>
-              </div>
-              <div>
-                <div class="print-label">Database ID</div>
-                <div class="print-value" style="font-size: 10px; font-family: monospace;">${sale?._id}</div>
               </div>
             </div>
           </div>

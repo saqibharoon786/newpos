@@ -13,6 +13,13 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import api, { API_BASE_URL } from "@/lib/api";
 import { getCurrentUser, canApprove } from "@/lib/auth";
+import {
+  resolveProductCode,
+  getBagSizeForCode,
+  calcPopWeightFromBags,
+  calcBagsFromKg,
+  getProductCodeLabel,
+} from "@/lib/productCodes";
 
 type PaymentType = "cash" | "credit" | "advance";
 
@@ -582,9 +589,29 @@ export function AddSaleDialog({
       if (name === "buyerName") {
         next.customerId = "";
       }
+      if (name === "weight" || name === "unit") {
+        const code = resolveProductCode(next.materialName);
+        const bagSize = getBagSizeForCode(code);
+        if (bagSize > 0) {
+          if (name === "weight") {
+            const kg = parseFloat(String(value).replace(/,/g, "")) || 0;
+            if (kg > 0) {
+              const bags = calcBagsFromKg(code, kg);
+              if (bags > 0) next.unit = String(bags);
+            }
+          } else {
+            const bags = parseFloat(String(value).replace(/,/g, "")) || 0;
+            if (bags > 0) {
+              const kg = calcPopWeightFromBags(code, bags);
+              if (kg > 0) next.weight = String(kg);
+            }
+          }
+        }
+      }
       if (
         name === "amountPaid" ||
         name === "weight" ||
+        name === "unit" ||
         name === "sellingPrice" ||
         name === "discount" ||
         name === "transportationCost"
@@ -608,8 +635,18 @@ export function AddSaleDialog({
     }
     
     // Validate weight when changed
-    if (name === 'weight' && selectedMaterialInfo) {
-      const saleWeight = parseFloat(value);
+    if ((name === "weight" || name === "unit") && selectedMaterialInfo) {
+      let saleWeight = 0;
+      if (name === "weight") {
+        saleWeight = parseFloat(value) || 0;
+      } else {
+        const code = resolveProductCode(formData.materialName);
+        const bags = parseFloat(String(value).replace(/,/g, "")) || 0;
+        saleWeight =
+          bags > 0 && getBagSizeForCode(code) > 0
+            ? calcPopWeightFromBags(code, bags)
+            : parseFloat(String(formData.weight).replace(/,/g, "")) || 0;
+      }
       if (saleWeight > selectedMaterialInfo.availableWeight) {
         setWeightError(`Warning: Sale weight exceeds available weight. Available: ${selectedMaterialInfo.availableWeight} kg`);
       } else {
@@ -618,7 +655,13 @@ export function AddSaleDialog({
     }
     
     // Validate amount paid
-    if (name === "weight" || name === "sellingPrice" || name === "discount" || name === "transportationCost") {
+    if (
+      name === "weight" ||
+      name === "unit" ||
+      name === "sellingPrice" ||
+      name === "discount" ||
+      name === "transportationCost"
+    ) {
       const total = calculateTotalAmount();
       const paid = parseFloat(formData.amountPaid) || 0;
       if (total > 0 && paid > total) {
@@ -685,7 +728,7 @@ export function AddSaleDialog({
         productionCost: String(productionCost),
       }));
     }
-    setFormData(prev => ({ ...prev, weight: "" }));
+    setFormData((prev) => ({ ...prev, weight: "", unit: "" }));
     setWeightError("");
   };
 
@@ -1533,16 +1576,35 @@ export function AddSaleDialog({
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Bags *</label>
               <input
-                type="text"
+                type="number"
                 name="unit"
-                placeholder="e.g. 3, 5, 7"
+                placeholder="e.g. 3"
                 value={formData.unit}
                 onChange={handleInputChange}
+                min="0"
+                step="0.01"
                 className={`w-full bg-cms-input-bg border ${errors.unit ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
               />
               {errors.unit && (
                 <p className="text-xs text-red-500 mt-1">{errors.unit}</p>
               )}
+              {(() => {
+                const code = resolveProductCode(formData.materialName);
+                const bagSize = getBagSizeForCode(code);
+                if (!formData.materialName.trim()) return null;
+                if (bagSize > 0) {
+                  return (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {getProductCodeLabel(code)}: {bagSize} kg/bag — kg aur bags khud sync honge
+                    </p>
+                  );
+                }
+                return (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Is material ka standard bag size nahi — kg ya bags manually likhein
+                  </p>
+                );
+              })()}
             </div>
 
             <div>

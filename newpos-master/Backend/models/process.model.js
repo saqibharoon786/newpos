@@ -127,6 +127,11 @@ const productionDataSchema = new mongoose.Schema(
     laborCostPerKg: { type: Number, default: 0, min: 0 },
     materialCost: { type: Number, default: 0, min: 0 },
     totalProductionCost: { type: Number, default: 0, min: 0 },
+    /** POP line rate at production time — purani/nayi receipt alag costing */
+    popCostPerKg: { type: Number, default: 0, min: 0 },
+    popLinePurchasePrice: { type: Number, default: 0, min: 0 },
+    popLinePurchaseWeight: { type: Number, default: 0, min: 0 },
+    receiptNo: { type: String },
     weightUsedFromPOP: {
       type: Number,
       required: false,
