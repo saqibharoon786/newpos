@@ -7,7 +7,10 @@ const {
   getVendorLinkedProfile,
   getCustomerLinkedProfile,
 } = require('../utils/financePartyLink');
-const { deletePartyAdvanceTransaction } = require('../utils/financeAdvanceDelete');
+const {
+  deletePartyAdvanceTransaction,
+  deleteCustomerAdvanceEntry,
+} = require('../utils/financeAdvanceDelete');
 
 const ADVANCE_METHODS = ['drawer', 'easypaisa', 'jazzcash', 'bank'];
 
@@ -322,7 +325,11 @@ exports.deleteTransaction = async (req, res) => {
       });
     }
 
-    if (transaction.category === 'advance' && transaction.partyType) {
+    const isPartyAdvance =
+      transaction.partyType &&
+      (transaction.category === 'advance' ||
+        String(transaction.description || '').toLowerCase().includes('advance'));
+    if (isPartyAdvance) {
       const result = await deletePartyAdvanceTransaction(id);
       if (!result.ok) {
         return res.status(result.status || 400).json({
@@ -782,6 +789,31 @@ exports.getVendorAdvanceHistory = async (req, res) => {
       success: false,
       message: error.message,
     });
+  }
+};
+
+exports.deleteCustomerAdvanceEntry = async (req, res) => {
+  try {
+    const result = await deleteCustomerAdvanceEntry(
+      req.params.customerId,
+      req.params.entryId
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.message,
+      });
+    }
+    const balances = await Transaction.getBalances();
+    const customer = await getCustomerLinkedProfile(req.params.customerId);
+    res.json({
+      success: true,
+      message: result.message,
+      balances,
+      customer,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

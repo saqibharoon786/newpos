@@ -57,6 +57,7 @@ interface AdvanceHistoryRow {
   source?: string;
   balance?: number;
   transactionId?: string;
+  ledgerEntryId?: string;
   canDelete?: boolean;
 }
 
@@ -1024,7 +1025,54 @@ export default function FinanceModule() {
     }
   };
 
+  const handleDeleteCustomerAdvanceRow = async (row: AdvanceHistoryRow) => {
+    if (
+      !confirm(
+        'Ye customer advance delete karen? Balance aur cash account adjust ho jayega.'
+      )
+    ) {
+      return;
+    }
+    try {
+      let res;
+      if (row.transactionId) {
+        res = await api.delete(`${FINANCE_API}/party-advance/${row.transactionId}`);
+      } else if (row.ledgerEntryId && customerAdvance.customerId) {
+        res = await api.delete(
+          `${FINANCE_API}/customer-advance/${customerAdvance.customerId}/entry/${row.ledgerEntryId}`
+        );
+      } else {
+        toast.error('Is entry ko delete nahi kar sakte — transaction link missing');
+        return;
+      }
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Advance delete ho gayi');
+        if (res.data.balances) setBalances(res.data.balances);
+        if (res.data.customer) {
+          setCustomerLinked({
+            customer: res.data.customer.customer,
+            pos: res.data.customer.pos,
+          });
+        }
+        fetchAdvanceSummary();
+        if (customerAdvance.customerId) {
+          fetchCustomerAdvanceHistory(customerAdvance.customerId);
+        }
+        fetchTransactions(1);
+      } else {
+        toast.error(res.data?.message || 'Delete failed');
+      }
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || 'Delete failed');
+    }
+  };
+
   const handleDeletePartyAdvance = async (transactionId: string, party: 'vendor' | 'customer') => {
+    if (party === 'customer') {
+      await handleDeleteCustomerAdvanceRow({ transactionId, amount: 0, date: '' });
+      return;
+    }
     if (
       !confirm(
         'Ye advance entry delete karen? Amount vendor/customer balance aur cash account se adjust ho jayegi.'
@@ -1037,20 +1085,16 @@ export default function FinanceModule() {
       if (res.data?.success) {
         toast.success(res.data.message || 'Advance delete ho gayi');
         if (res.data.balances) setBalances(res.data.balances);
-        if (party === 'vendor' && res.data.vendor) {
+        if (res.data.vendor) {
           setVendorLinked(res.data.vendor);
         }
-        if (party === 'customer' && res.data.customer) {
-          setCustomerLinked(res.data.customer);
-        }
         fetchAdvanceSummary();
-        if (party === 'vendor' && vendorAdvance.vendorId) {
+        if (vendorAdvance.vendorId) {
           fetchVendorAdvanceHistory(vendorAdvance.vendorId);
         }
-        if (party === 'customer' && customerAdvance.customerId) {
-          fetchCustomerAdvanceHistory(customerAdvance.customerId);
-        }
         fetchTransactions(1);
+      } else {
+        toast.error(res.data?.message || 'Delete failed');
       }
     } catch (e: unknown) {
       const err = e as { response?: { data?: { message?: string } } };
@@ -1718,12 +1762,10 @@ export default function FinanceModule() {
                                 {formatCurrency(row.amount)}
                               </td>
                               <td className="p-3 text-right">
-                                {row.canDelete && row.transactionId && row.source === 'finance' ? (
+                                {row.source === 'finance' && row.canDelete ? (
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      handleDeletePartyAdvance(row.transactionId!, 'customer')
-                                    }
+                                    onClick={() => handleDeleteCustomerAdvanceRow(row)}
                                     className="p-1.5 rounded hover:bg-destructive/10"
                                     title="Finance advance delete"
                                   >

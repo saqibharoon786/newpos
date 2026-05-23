@@ -203,7 +203,8 @@ async function getCustomerLinkedProfile(customerId) {
       description: e.description || '',
       reference: e.reference || '',
       transactionId: e.transactionId ? String(e.transactionId) : undefined,
-      canDelete: !!e.transactionId,
+      ledgerEntryId: e._id ? String(e._id) : undefined,
+      canDelete: true,
       source: 'finance',
     }));
 

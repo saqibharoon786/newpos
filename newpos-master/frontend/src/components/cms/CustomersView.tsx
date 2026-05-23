@@ -22,10 +22,39 @@ interface Customer {
   amount: number;
   amountPaid: number;
   paidAmount: string;
+  financeAdvanceBalance?: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
+
+interface CustomerAdvanceRow {
+  date: string;
+  amount: number;
+  method?: string;
+  description?: string;
+  reference?: string;
+  source?: string;
+  transactionId?: string;
+  ledgerEntryId?: string;
+  canDelete?: boolean;
+}
+
+interface CustomerFinanceSummary {
+  financeAdvanceBalance: number;
+  totalAdvanceCredit: number;
+  totalBalanceDue: number;
+  posPending: number;
+}
+
+const FINANCE_API = "/api/finance";
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  drawer: "Cash Drawer",
+  easypaisa: "Easypaisa",
+  jazzcash: "JazzCash",
+  bank: "Bank",
+};
 
 // Helper function to get month name
 const getMonthName = (monthNumber: number): string => {
@@ -121,6 +150,11 @@ export default function CustomersView() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [customerAdvanceRows, setCustomerAdvanceRows] = useState<CustomerAdvanceRow[]>([]);
+  const [customerFinanceSummary, setCustomerFinanceSummary] =
+    useState<CustomerFinanceSummary | null>(null);
+  const [loadingCustomerAdvance, setLoadingCustomerAdvance] = useState(false);
+  const [deletingAdvanceId, setDeletingAdvanceId] = useState<string | null>(null);
 
   const fetchPosSales = async () => {
     try {
@@ -161,6 +195,7 @@ export default function CustomersView() {
           amount: customer.amount || 0,
           amountPaid: customer.amountPaid || 0,
           paidAmount: customer.paidAmount || 'none',
+          financeAdvanceBalance: customer.financeAdvanceBalance || 0,
           isActive: customer.isActive !== undefined ? customer.isActive : true,
           createdAt: customer.createdAt || new Date().toISOString(),
           updatedAt: customer.updatedAt || new Date().toISOString(),
@@ -190,6 +225,91 @@ export default function CustomersView() {
     fetchCustomers();
     fetchPosSales();
   }, []);
+
+  const fetchCustomerFinanceData = async (customerId: string) => {
+    setLoadingCustomerAdvance(true);
+    try {
+      const [histRes, linkRes] = await Promise.all([
+        api.get(`${FINANCE_API}/customer-advance/${customerId}/history`),
+        api.get(`${FINANCE_API}/customer-linked/${customerId}`),
+      ]);
+      if (histRes.data?.success) {
+        const all = (histRes.data.history || []) as CustomerAdvanceRow[];
+        setCustomerAdvanceRows(all.filter((r) => r.source === "finance"));
+      } else {
+        setCustomerAdvanceRows([]);
+      }
+      if (linkRes.data?.success && linkRes.data.data?.customer) {
+        const c = linkRes.data.data.customer;
+        const pos = linkRes.data.data.pos || {};
+        setCustomerFinanceSummary({
+          financeAdvanceBalance: c.financeAdvanceBalance || 0,
+          totalAdvanceCredit: c.totalAdvanceCredit || 0,
+          totalBalanceDue: c.totalBalanceDue || 0,
+          posPending: pos.totalRemaining || 0,
+        });
+        setSelectedCustomer((prev) =>
+          prev && prev._id === customerId
+            ? { ...prev, financeAdvanceBalance: c.financeAdvanceBalance || 0 }
+            : prev
+        );
+      }
+    } catch {
+      setCustomerAdvanceRows([]);
+      setCustomerFinanceSummary(null);
+    } finally {
+      setLoadingCustomerAdvance(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedCustomer?._id) {
+      fetchCustomerFinanceData(selectedCustomer._id);
+    } else {
+      setCustomerAdvanceRows([]);
+      setCustomerFinanceSummary(null);
+    }
+  }, [selectedCustomer?._id]);
+
+  const handleDeleteCustomerAdvance = async (row: CustomerAdvanceRow) => {
+    if (
+      !selectedCustomer ||
+      !window.confirm(
+        "Ye finance advance entry delete karen? Cash account aur customer balance adjust ho jayega."
+      )
+    ) {
+      return;
+    }
+    const deleteKey = row.transactionId || row.ledgerEntryId || "";
+    setDeletingAdvanceId(deleteKey);
+    try {
+      let res;
+      if (row.transactionId) {
+        res = await api.delete(`${FINANCE_API}/party-advance/${row.transactionId}`);
+      } else if (row.ledgerEntryId) {
+        res = await api.delete(
+          `${FINANCE_API}/customer-advance/${selectedCustomer._id}/entry/${row.ledgerEntryId}`
+        );
+      } else {
+        toast.error("Delete nahi ho sakta — entry link missing");
+        return;
+      }
+      if (res.data?.success) {
+        toast.success(res.data.message || "Advance delete ho gayi");
+        await Promise.all([
+          fetchCustomerFinanceData(selectedCustomer._id),
+          fetchCustomers(),
+        ]);
+      } else {
+        toast.error(res.data?.message || "Delete failed");
+      }
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || "Delete failed");
+    } finally {
+      setDeletingAdvanceId(null);
+    }
+  };
 
   const filteredCustomers = customers.filter(customer =>
     customer.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -658,27 +778,28 @@ export default function CustomersView() {
   };
 
   const handleDeleteCustomer = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this customer?")) {
+    if (
+      !window.confirm(
+        "Poora customer record delete karen? Is ke finance advance entries bhi hat jayengi."
+      )
+    ) {
       return;
     }
 
     try {
-      const response = await axios.delete(`${CUSTOMERS_API_URL}/${id}`);
-      
+      const response = await api.delete(`/api/customers/${id}`);
+
       if (response.data.success) {
         toast.success("Customer deleted successfully");
-        // Refresh customer list
         fetchCustomers();
-        // Close detail view if open
         setSelectedCustomer(null);
-        // Clear search term
         setSearchTerm("");
       } else {
         toast.error(response.data.message || "Failed to delete customer");
       }
-    } catch (error: any) {
-      console.error("❌ Error deleting customer:", error);
-      toast.error(error.response?.data?.message || "Failed to delete customer");
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error(err.response?.data?.message || "Failed to delete customer");
     }
   };
 
@@ -783,6 +904,30 @@ export default function CustomersView() {
             </button>
           </div>
         </div>
+
+        {/* Finance / POS linked balances */}
+        {customerFinanceSummary && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <div className="bg-green-500/10 border border-green-500/20 p-4 rounded-lg">
+              <p className="text-xs text-muted-foreground">Finance Advance (receive)</p>
+              <p className="text-lg font-bold text-green-600">
+                {formatCurrency(customerFinanceSummary.financeAdvanceBalance)}
+              </p>
+            </div>
+            <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-lg">
+              <p className="text-xs text-muted-foreground">Total Advance Credit</p>
+              <p className="text-lg font-bold text-foreground">
+                {formatCurrency(customerFinanceSummary.totalAdvanceCredit)}
+              </p>
+            </div>
+            <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-lg">
+              <p className="text-xs text-muted-foreground">Balance Due (POS)</p>
+              <p className="text-lg font-bold text-red-600">
+                {formatCurrency(customerFinanceSummary.totalBalanceDue)}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Financial Summary */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
@@ -926,6 +1071,92 @@ export default function CustomersView() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Finance advance history — galat entry delete */}
+        <div className="bg-cms-sidebar p-4 rounded-lg mb-6 border border-border">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Finance Advance History</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Galat amount Finance se record hui ho to yahan se delete karen
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                selectedCustomer._id && fetchCustomerFinanceData(selectedCustomer._id)
+              }
+              disabled={loadingCustomerAdvance}
+              className="p-2 hover:bg-muted rounded-md"
+              title="Refresh"
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${loadingCustomerAdvance ? "animate-spin" : ""}`}
+              />
+            </button>
+          </div>
+          {loadingCustomerAdvance ? (
+            <div className="py-8 text-center text-muted-foreground text-sm flex items-center justify-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Loading...
+            </div>
+          ) : customerAdvanceRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              Koi finance advance record nahi — Finance module se add karen
+            </p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left p-3">Date</th>
+                    <th className="text-left p-3">Method</th>
+                    <th className="text-left p-3">Description</th>
+                    <th className="text-right p-3">Amount</th>
+                    <th className="text-center p-3 w-20">Delete</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customerAdvanceRows.map((row, i) => {
+                    const rowKey = row.transactionId || row.ledgerEntryId || String(i);
+                    const isDeleting = deletingAdvanceId === rowKey;
+                    return (
+                      <tr key={rowKey} className="border-t border-border">
+                        <td className="p-3 whitespace-nowrap">
+                          {formatDateWithMonthName(row.date)}
+                        </td>
+                        <td className="p-3">
+                          {PAYMENT_METHOD_LABELS[row.method || ""] || row.method || "—"}
+                        </td>
+                        <td className="p-3 text-muted-foreground max-w-[200px] truncate">
+                          {row.description || row.reference || "—"}
+                        </td>
+                        <td className="p-3 text-right font-medium text-green-600">
+                          {formatCurrency(row.amount)}
+                        </td>
+                        <td className="p-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCustomerAdvance(row)}
+                            disabled={isDeleting}
+                            className="p-2 rounded-md hover:bg-destructive/10 text-destructive disabled:opacity-50"
+                            title="Delete advance"
+                          >
+                            {isDeleting ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Documents Preview */}
