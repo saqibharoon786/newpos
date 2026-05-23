@@ -8,6 +8,32 @@ function num(v) {
   return isNaN(n) ? 0 : n;
 }
 
+/**
+ * POP remaining vs vendor advance:
+ * - advance > POP due → show remaining advance (e.g. 1L advance, 70k purchase → 30k advance)
+ * - POP due > advance → show net payable (e.g. 1L advance, 1.5L purchase → 50k payable)
+ */
+function calcVendorNetDisplay(popRemaining, advanceBalance) {
+  const pop = num(popRemaining);
+  const adv = num(advanceBalance);
+  if (adv > pop) {
+    const remaining = Math.round((adv - pop) * 100) / 100;
+    return {
+      mode: 'advance',
+      amount: remaining,
+      netPayable: 0,
+      remainingAdvance: remaining,
+    };
+  }
+  const payable = Math.round((pop - adv) * 100) / 100;
+  return {
+    mode: 'payable',
+    amount: payable,
+    netPayable: payable,
+    remainingAdvance: 0,
+  };
+}
+
 function sumPopPurchases(purchases) {
   let totalBills = 0;
   let totalPaid = 0;
@@ -83,12 +109,15 @@ async function getGlobalPartyTotals() {
     profileDue += Math.max(0, num(c.amount) - num(c.amountPaid));
   }
 
+  const vendorNet = calcVendorNetDisplay(pop.totalRemaining, vendorAdvanceBalance);
+
   return {
     pop,
     pos,
     vendorAdvanceBalance: Math.round(vendorAdvanceBalance * 100) / 100,
     vendorPayableBalance: Math.round(vendorPayableBalance * 100) / 100,
-    vendorNetPayable: Math.round((vendorPayableBalance - vendorAdvanceBalance) * 100) / 100,
+    vendorNetPayable: vendorNet.netPayable,
+    vendorNetDisplay: vendorNet,
     financeAdvanceBalance: Math.round(financeAdvanceBalance * 100) / 100,
     profileBalanceDue: Math.round(profileDue * 100) / 100,
     customerTotalDue: Math.round((pos.totalRemaining + profileDue) * 100) / 100,
@@ -118,13 +147,18 @@ async function getVendorLinkedProfile(vendorId) {
       reference: e.reference || '',
     }));
 
+  const vendorNet = calcVendorNetDisplay(pop.totalRemaining, vendor.advanceBalance);
+
   return {
     vendor: {
       _id: vendor._id,
       name: vendor.name,
       advanceBalance: num(vendor.advanceBalance),
       payableBalance: num(vendor.payableBalance),
-      netPayable: Math.round((num(vendor.payableBalance) - num(vendor.advanceBalance)) * 100) / 100,
+      netPayable: vendorNet.netPayable,
+      remainingAdvance: vendorNet.remainingAdvance,
+      netDisplayMode: vendorNet.mode,
+      netDisplayAmount: vendorNet.amount,
     },
     pop,
     openBills: purchases
@@ -204,6 +238,7 @@ async function getCustomerLinkedProfile(customerId) {
 }
 
 module.exports = {
+  calcVendorNetDisplay,
   getGlobalPartyTotals,
   getVendorLinkedProfile,
   getCustomerLinkedProfile,

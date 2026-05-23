@@ -11,6 +11,7 @@ const vendorController = require("./vendor.controller");
 const { logActivity } = require("../utils/activityLogger");
 const notificationController = require("./notification.controller");
 const { getPurchaseDisplayWeights } = require("../utils/popMaterialConsumption");
+const { cascadeDeletePurchase } = require("../utils/purchaseCascadeDelete");
 
 // Add Purchase
 const addPurchase = async (req, res) => {
@@ -62,6 +63,26 @@ const addPurchase = async (req, res) => {
       amountPaidNum = parseFloat(amountPaid) || 0;
     }
 
+    const materialsCheck = validatePurchaseMaterials(req.body.materials);
+    if (!materialsCheck.ok) {
+      return res.status(400).json({ success: false, message: materialsCheck.message });
+    }
+
+    let vendorDoc = null;
+    try {
+      vendorDoc = await vendorController.getVendorByName(vendor);
+    } catch (e) {
+      console.error('Vendor lookup:', e.message);
+    }
+
+    if (vendorDoc) {
+      advancePaymentNum = vendorController.resolveAdvanceForPurchase(
+        vendorDoc,
+        priceNum,
+        advancePaymentNum
+      );
+    }
+
     const paymentCheck = validatePurchasePaymentLimits({
       price: priceNum,
       advancePayment: advancePaymentNum,
@@ -73,18 +94,7 @@ const addPurchase = async (req, res) => {
 
     const payment = paymentCheck.payment;
 
-    const materialsCheck = validatePurchaseMaterials(req.body.materials);
-    if (!materialsCheck.ok) {
-      return res.status(400).json({ success: false, message: materialsCheck.message });
-    }
-
     const invoiceNo = await generatePurchaseInvoiceNo(new Date(purchaseDate));
-    let vendorDoc = null;
-    try {
-      vendorDoc = await vendorController.getVendorByName(vendor);
-    } catch (e) {
-      console.error('Vendor lookup:', e.message);
-    }
 
     console.log("Payment calculations:");
     console.log("Total Price:", priceNum);
@@ -147,11 +157,11 @@ const addPurchase = async (req, res) => {
       }
       if (advancePaymentNum > 0) {
         await vendorController.updateVendorLedger(vendor, {
-          type: 'advance',
+          type: 'apply_advance',
           purchaseId: purchase._id,
-          description: `Advance applied on ${invoiceNo}`,
+          description: `Vendor advance applied on ${invoiceNo}`,
           debit: 0,
-          credit: Math.min(advancePaymentNum, priceNum),
+          credit: advancePaymentNum,
         });
       }
     }
@@ -207,8 +217,12 @@ const addPurchase = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: "Purchase added successfully",
-      data: purchase,
+      message:
+        advancePaymentNum > 0
+          ? `Purchase added — Rs. ${advancePaymentNum.toLocaleString('en-PK')} vendor advance auto-applied`
+          : 'Purchase added successfully',
+      data: withComputedPayment(purchase.toObject()),
+      advanceApplied: advancePaymentNum,
     });
 
   } catch (error) {
@@ -419,16 +433,33 @@ const updatePurchase = async (req, res) => {
   }
 };
 
-// Delete Purchase
+// Delete Purchase — cascade linked sales, process, vendor ledger, finance
 const deletePurchase = async (req, res) => {
   try {
-    await Purchase.findByIdAndDelete(req.params.id);
+    const result = await cascadeDeletePurchase(req.params.id);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.message,
+      });
+    }
+
+    await logActivity({
+      userId: req.user?._id,
+      userName: req.user?.username || 'system',
+      action: 'Delete',
+      module: 'POP',
+      recordId: result.summary.purchaseId,
+      beforeValues: result.purchase,
+      afterValues: { cascade: result.summary },
+      req,
+    });
 
     res.status(200).json({
       success: true,
-      message: "Purchase deleted successfully",
+      message: result.message,
+      summary: result.summary,
     });
-
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

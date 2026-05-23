@@ -627,7 +627,10 @@ exports.getAdvanceSummary = async (req, res) => {
         paymentCount: vendorTx.count || 0,
         advanceBalance: totals.vendorAdvanceBalance,
         payableBalance: totals.vendorPayableBalance,
-        netPayable: totals.vendorNetPayable,
+        netPayable: totals.vendorNetDisplay?.netPayable ?? totals.vendorNetPayable,
+        remainingAdvance: totals.vendorNetDisplay?.remainingAdvance ?? 0,
+        netDisplayMode: totals.vendorNetDisplay?.mode ?? 'payable',
+        netDisplayAmount: totals.vendorNetDisplay?.amount ?? 0,
         popTotalBills: totals.pop.totalBills,
         popTotalPaid: totals.pop.totalPaid,
         popRemaining: totals.pop.totalRemaining,
@@ -695,7 +698,12 @@ exports.getVendorAdvanceHistory = async (req, res) => {
       description: e.description,
       reference: e.reference,
       balance: e.balance,
-      source: e.type === 'advance' && e.method ? 'finance' : 'pop',
+      source:
+        e.type === 'advance' && e.method
+          ? 'finance'
+          : e.type === 'apply_advance'
+            ? 'pop_advance'
+            : 'pop',
     }));
 
     res.json({
