@@ -37,6 +37,19 @@ function findLineIndexByCodeOnly(purchase, productCode) {
   return mats.findIndex((m) => normCode(m.productCode) === code);
 }
 
+/** Exact POP line — materialLineIndex when provided, else first matching code */
+function resolveMaterialLineIndex(purchase, productCode, materialLineIndex) {
+  const mats = purchase.materials || [];
+  if (!mats.length) return -1;
+  const code = normCode(productCode);
+  if (!code) return -1;
+  const idx = parseInt(materialLineIndex, 10);
+  if (!isNaN(idx) && idx >= 0 && idx < mats.length && normCode(mats[idx].productCode) === code) {
+    return idx;
+  }
+  return findLineIndexByCodeOnly(purchase, code);
+}
+
 /** Totals after line-level deduct */
 async function recalcPurchaseTotals(purchaseId) {
   const purchase = await Purchase.findById(purchaseId);
@@ -89,7 +102,7 @@ function getAvailableKgForLine(purchase, productCode) {
 /**
  * Deduct weight — ONLY the materials[] row whose productCode matches (positional $)
  */
-async function deductPopWeight(purchaseId, { productCode, weight }) {
+async function deductPopWeight(purchaseId, { productCode, weight, materialLineIndex }) {
   const amt = parseFloat(weight) || 0;
   const code = normCode(productCode);
   if (amt <= 0) return { ok: true, deducted: 0 };
@@ -103,7 +116,7 @@ async function deductPopWeight(purchaseId, { productCode, weight }) {
   const mats = purchase.materials || [];
 
   if (mats.length > 0) {
-    const idx = findLineIndexByCodeOnly(purchase, code);
+    const idx = resolveMaterialLineIndex(purchase, code, materialLineIndex);
     if (idx < 0) {
       return {
         ok: false,
@@ -116,13 +129,13 @@ async function deductPopWeight(purchaseId, { productCode, weight }) {
     if (amt > available + 0.01) {
       return {
         ok: false,
-        message: `Code ${code}: sirf ${available} kg bacha hai`,
+        message: `Code ${code}: sirf ${available} kg bacha hai (is receipt ki line par)`,
       };
     }
 
     const lineUpdate = await Purchase.updateOne(
-      { _id: purchaseId, "materials.productCode": code },
-      { $inc: { "materials.$.productionConsumedWeight": amt } }
+      { _id: purchaseId },
+      { $inc: { [`materials.${idx}.productionConsumedWeight`]: amt } }
     );
 
     if (!lineUpdate.matchedCount || !lineUpdate.modifiedCount) {
@@ -156,7 +169,7 @@ async function deductPopWeight(purchaseId, { productCode, weight }) {
   return { ok: true, deducted: amt, productCode: code };
 }
 
-async function restorePopWeight(purchaseId, { productCode, weight }) {
+async function restorePopWeight(purchaseId, { productCode, weight, materialLineIndex }) {
   const amt = parseFloat(weight) || 0;
   const code = normCode(productCode);
   if (amt <= 0 || !isValidCode(code)) return { ok: true };
@@ -166,7 +179,7 @@ async function restorePopWeight(purchaseId, { productCode, weight }) {
 
   const mats = purchase.materials || [];
   if (mats.length > 0) {
-    const idx = findLineIndexByCodeOnly(purchase, code);
+    const idx = resolveMaterialLineIndex(purchase, code, materialLineIndex);
     if (idx < 0) return { ok: false, message: "Line not found" };
 
     const line = mats[idx];
@@ -175,8 +188,8 @@ async function restorePopWeight(purchaseId, { productCode, weight }) {
     if (restore <= 0) return { ok: true };
 
     await Purchase.updateOne(
-      { _id: purchaseId, "materials.productCode": code },
-      { $inc: { "materials.$.productionConsumedWeight": -restore } }
+      { _id: purchaseId },
+      { $inc: { [`materials.${idx}.productionConsumedWeight`]: -restore } }
     );
     const ccKey = `codeConsumption.${code}`;
     await Purchase.updateOne({ _id: purchaseId }, { $inc: { [ccKey]: -restore } });
@@ -197,11 +210,11 @@ async function restorePopWeight(purchaseId, { productCode, weight }) {
   return { ok: true };
 }
 
-function getPopLinePricing(purchase, productCode) {
+function getPopLinePricing(purchase, productCode, materialLineIndex) {
   const code = normCode(productCode);
   const mats = purchase.materials || [];
   if (mats.length > 0 && code) {
-    const idx = findLineIndexByCodeOnly(purchase, code);
+    const idx = resolveMaterialLineIndex(purchase, code, materialLineIndex);
     if (idx >= 0) {
       const line = mats[idx];
       const w = getLineWeight(line);
@@ -273,6 +286,11 @@ function buildProcessingQueueItems(purchases) {
         const totalAmount = parseFloat(m.totalAmount) || 0;
         const linePrice = totalAmount > 0 ? totalAmount : pricePerKg * matWeight;
 
+        const linePricePerKg =
+          matWeight > 0 && linePrice > 0
+            ? Math.round((linePrice / matWeight) * 100) / 100
+            : pricePerKg;
+
         items.push({
           _id: `${purchase._id}-${code}-${idx}`,
           ...base,
@@ -282,6 +300,7 @@ function buildProcessingQueueItems(purchases) {
           originalWeight: matWeight,
           availableWeight: Math.round(available * 10) / 10,
           purchasePrice: linePrice > 0 ? linePrice : base.purchasePrice,
+          pricePerKg: linePricePerKg,
         });
       });
     } else {
@@ -324,4 +343,5 @@ module.exports = {
   getPurchaseDisplayWeights,
   buildProcessingQueueItems,
   findLineIndexByCodeOnly,
+  resolveMaterialLineIndex,
 };

@@ -251,9 +251,14 @@ const createProductionRecord = async (req, res) => {
           message: "POP purchase required for queue production",
         });
       }
+      const lineIdx =
+        productionData.materialLineIndex != null
+          ? parseInt(productionData.materialLineIndex, 10)
+          : undefined;
       const result = await deductPopWeight(purchaseId, {
         productCode,
         weight: weightUsedFromPOP,
+        materialLineIndex: lineIdx,
       });
       if (!result.ok) {
         return res.status(400).json({ success: false, message: result.message });
@@ -278,12 +283,23 @@ const createProductionRecord = async (req, res) => {
     const laborCostPerKg = parseFloat(productionData.laborCostPerKg) || 0;
     let purchasePrice = 0;
     let purchaseWeight = 0;
+    let popCostPerKg = 0;
+    let receiptNo = "";
+    const lineIdx =
+      productionData.materialLineIndex != null
+        ? parseInt(productionData.materialLineIndex, 10)
+        : undefined;
     if (purchaseId) {
       const pop = await Purchase.findById(purchaseId).lean();
       if (pop) {
-        const pricing = getPopLinePricing(pop, productCode);
+        const pricing = getPopLinePricing(pop, productCode, lineIdx);
         purchasePrice = pricing.purchasePrice;
         purchaseWeight = pricing.purchaseWeight;
+        popCostPerKg =
+          purchaseWeight > 0
+            ? Math.round((purchasePrice / purchaseWeight) * 100) / 100
+            : 0;
+        receiptNo = pop.receiptNo || pop.invoiceNo || "";
       }
     }
     const costs = computeProductionCosts({
@@ -305,6 +321,11 @@ const createProductionRecord = async (req, res) => {
       availableWeight: productionData.availableWeight ?? totalWeight,
       weightUsedFromPOP: weightUsedFromPOP || 0,
       purchaseId: purchaseId || undefined,
+      materialLineIndex: !isNaN(lineIdx) ? lineIdx : productionData.materialLineIndex,
+      popCostPerKg,
+      popLinePurchasePrice: purchasePrice,
+      popLinePurchaseWeight: purchaseWeight,
+      receiptNo: receiptNo || productionData.receiptNo,
       wasteWeight,
       wasteCost,
       laborCostPerKg,
@@ -482,10 +503,20 @@ const getProductionData = async (req, res) => {
       let laborCost = 0;
       let totalProductionCost = doc.totalProductionCost || 0;
       const laborCostPerKg = doc.laborCostPerKg || 0;
-      if (pop) {
+      if (doc.materialCost != null && doc.totalProductionCost != null && doc.totalProductionCost > 0) {
+        materialCost = doc.materialCost || 0;
+        wasteCost = doc.wasteCost || 0;
+        laborCost = laborCostPerKg * (doc.totalWeight || 0);
+        totalProductionCost = doc.totalProductionCost;
+      } else if (pop) {
+        const pricing = getPopLinePricing(
+          pop,
+          doc.productCode,
+          doc.materialLineIndex
+        );
         const computed = computeProductionCosts({
-          purchasePrice: parseFloat(pop.price) || 0,
-          purchaseWeight: parseFloat(pop.weight) || 0,
+          purchasePrice: pricing.purchasePrice,
+          purchaseWeight: pricing.purchaseWeight,
           weightUsedFromPOP: doc.weightUsedFromPOP || 0,
           outputWeight: doc.totalWeight || 0,
           wasteWeight: doc.wasteWeight || 0,
@@ -525,10 +556,21 @@ const getProductionData = async (req, res) => {
         materialCost,
         totalProductionCost,
         laborCost,
-        purchasePrice: pop ? parseFloat(pop.price) || 0 : undefined,
-        purchaseWeight: pop ? parseFloat(pop.weight) || 0 : undefined,
+        purchasePrice:
+          doc.popLinePurchasePrice > 0
+            ? doc.popLinePurchasePrice
+            : pop
+              ? parseFloat(pop.price) || 0
+              : undefined,
+        purchaseWeight:
+          doc.popLinePurchaseWeight > 0
+            ? doc.popLinePurchaseWeight
+            : pop
+              ? parseFloat(pop.weight) || 0
+              : undefined,
+        popCostPerKg: doc.popCostPerKg || 0,
         vendor: pop?.vendor,
-        receiptNo: pop?.receiptNo || pop?.invoiceNo,
+        receiptNo: doc.receiptNo || pop?.receiptNo || pop?.invoiceNo,
         efficiency: doc.totalWeight
           ? Math.round(((doc.totalWeight - (doc.wasteWeight || 0)) / doc.totalWeight) * 100)
           : 0,
@@ -715,12 +757,27 @@ const updateProduction = async (req, res) => {
         const diff = newUsedFromPOP - oldUsedFromPOP;
         if (code) {
           if (diff > 0) {
-            const result = await deductPopWeight(purchaseId, { productCode: code, weight: diff });
+            const lineIdx =
+              updateData.materialLineIndex != null
+                ? parseInt(updateData.materialLineIndex, 10)
+                : currentProduction.materialLineIndex;
+            const result = await deductPopWeight(purchaseId, {
+              productCode: code,
+              weight: diff,
+              materialLineIndex: lineIdx,
+            });
             if (!result.ok) {
               return res.status(400).json({ success: false, message: result.message });
             }
           } else if (diff < 0) {
-            await restorePopWeight(purchaseId, { productCode: code, weight: -diff });
+            await restorePopWeight(purchaseId, {
+              productCode: code,
+              weight: -diff,
+              materialLineIndex:
+                updateData.materialLineIndex != null
+                  ? parseInt(updateData.materialLineIndex, 10)
+                  : currentProduction.materialLineIndex,
+            });
           }
         }
       }
@@ -771,6 +828,7 @@ const deleteProduction = async (req, res) => {
       await restorePopWeight(production.purchaseId, {
         productCode: production.productCode,
         weight: production.weightUsedFromPOP,
+        materialLineIndex: production.materialLineIndex,
       });
     }
 

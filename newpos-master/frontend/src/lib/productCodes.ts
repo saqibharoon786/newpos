@@ -66,6 +66,13 @@ export function calcPopWeightFromBags(code: string, bags: number): number {
   return Math.round(bags * bagSize * 100) / 100;
 }
 
+/** Bags from kg for POS sale (inverse of calcPopWeightFromBags) */
+export function calcBagsFromKg(code: string, kg: number): number {
+  const bagSize = getBagSizeForCode(code);
+  if (!bagSize || !Number.isFinite(kg) || kg <= 0) return 0;
+  return Math.round((kg / bagSize) * 100) / 100;
+}
+
 type PopMaterialLine = {
   name?: string;
   weight?: number;
@@ -81,12 +88,19 @@ export function getPopLinePricingFromPurchase(
     weight?: number | string;
     materials?: PopMaterialLine[];
   },
-  productCode: string
+  productCode: string,
+  materialLineIndex?: number
 ): { purchasePrice: number; purchaseWeight: number } {
   const mats = pop.materials || [];
   const code = String(productCode || '').trim();
   if (mats.length > 0 && code) {
-    const line = mats.find((m) => String(m.productCode || '').trim() === code);
+    let line: PopMaterialLine | undefined;
+    const idx = materialLineIndex;
+    if (idx != null && idx >= 0 && idx < mats.length && String(mats[idx].productCode || '').trim() === code) {
+      line = mats[idx];
+    } else {
+      line = mats.find((m) => String(m.productCode || '').trim() === code);
+    }
     if (line) {
       const w = parseFloat(String(line.weight)) || 0;
       const pricePerKg = parseFloat(String(line.pricePerKg)) || 0;
