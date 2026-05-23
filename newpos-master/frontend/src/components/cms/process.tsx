@@ -45,6 +45,7 @@ import {
   getBagSizeForCode,
   getProductByCode,
   calcPopWeightFromBags,
+  getMaxBagsFromAvailableKg,
   getPopLinePricingFromPurchase,
 } from "@/lib/productCodes";
 import {
@@ -1548,20 +1549,47 @@ const StartProcessFormModal = ({
 
   const bagSizeKg = getBagSizeForCode(productCode);
 
+  const maxBagsFromPop = useMemo(() => {
+    if (!isFromQueue || !bagSizeKg || popAvailableWeight <= 0) return null;
+    return getMaxBagsFromAvailableKg(productCode, popAvailableWeight);
+  }, [isFromQueue, bagSizeKg, popAvailableWeight, productCode]);
+
+  const handleTotalBagsChange = (raw: string) => {
+    if (raw === "" || raw === ".") {
+      setTotalBags(raw);
+      return;
+    }
+    const n = parseFloat(String(raw).trim().replace(",", "."));
+    if (isNaN(n)) return;
+    if (maxBagsFromPop != null && n > maxBagsFromPop) {
+      setTotalBags(String(maxBagsFromPop));
+      toast({
+        title: "Bags limit",
+        description: `Maximum ${maxBagsFromPop} bags (${popAvailableWeight} kg ÷ ${bagSizeKg} kg/bag). Is se zyada allowed nahi.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (n < 0) return;
+    setTotalBags(raw);
+  };
+
   /** Total bags × code bag size → weight deducted from POP */
   useEffect(() => {
     if (!open || !isFromQueue || !bagSizeKg) return;
-    const bags = parseInt(String(totalBags).trim(), 10);
+    const bags = parseFloat(String(totalBags).trim().replace(",", "."));
     if (isNaN(bags) || bags <= 0) {
       setWeightUsedFromPOP("");
       return;
     }
-    let kg = calcPopWeightFromBags(productCode, bags);
+    const cappedBags =
+      maxBagsFromPop != null && bags > maxBagsFromPop ? maxBagsFromPop : bags;
+    let kg = calcPopWeightFromBags(productCode, cappedBags);
     if (popAvailableWeight > 0 && kg > popAvailableWeight) {
       kg = Math.round(popAvailableWeight * 100) / 100;
     }
     setWeightUsedFromPOP(String(kg));
-  }, [open, isFromQueue, totalBags, productCode, bagSizeKg, popAvailableWeight]);
+  }, [open, isFromQueue, totalBags, productCode, bagSizeKg, popAvailableWeight, maxBagsFromPop]);
 
   const estimatedCosts = useMemo(() => {
     const usedPop = parseFloat(String(weightUsedFromPOP).trim().replace(",", ".")) || 0;
@@ -1672,14 +1700,16 @@ const StartProcessFormModal = ({
   };
 
   const handleSubmit = async () => {
-    const bags = parseInt(totalBags, 10);
+    const bags = parseFloat(String(totalBags).trim().replace(",", "."));
     const weightStr = isFromQueue ? String(machineOutputWeight).trim().replace(",", ".") : String(totalWeight).trim().replace(",", ".");
     const weight = parseFloat(weightStr);
     let usedFromPOP = isFromQueue ? parseFloat(String(weightUsedFromPOP).trim().replace(",", ".")) : 0;
     if (isFromQueue && bagSizeKg > 0 && !isNaN(bags) && bags > 0) {
+      const effectiveBags =
+        maxBagsFromPop != null && bags > maxBagsFromPop ? maxBagsFromPop : bags;
       usedFromPOP = Math.min(
-        calcPopWeightFromBags(productCode, bags),
-        popAvailableWeight > 0 ? popAvailableWeight : calcPopWeightFromBags(productCode, bags)
+        calcPopWeightFromBags(productCode, effectiveBags),
+        popAvailableWeight > 0 ? popAvailableWeight : calcPopWeightFromBags(productCode, effectiveBags)
       );
     }
     if (!materialName.trim()) {
@@ -1688,6 +1718,14 @@ const StartProcessFormModal = ({
     }
     if (isNaN(bags) || bags <= 0) {
       toast({ title: "Error", description: "Please enter number of bags", variant: "destructive" });
+      return;
+    }
+    if (isFromQueue && maxBagsFromPop != null && bags > maxBagsFromPop + 0.0001) {
+      toast({
+        title: "Bags zyada hain",
+        description: `Maximum ${maxBagsFromPop} bags (${popAvailableWeight} kg ÷ ${bagSizeKg} kg/bag).`,
+        variant: "destructive",
+      });
       return;
     }
     const wasteKg = parseFloat(String(wasteWeight).trim().replace(",", ".")) || 0;
@@ -1757,7 +1795,10 @@ const StartProcessFormModal = ({
       const payload: Record<string, unknown> = {
         materialName: materialName.trim(),
         machine: selectedMachine,
-        totalBags: bags,
+        totalBags:
+          isFromQueue && maxBagsFromPop != null && bags > maxBagsFromPop
+            ? maxBagsFromPop
+            : bags,
         totalWeight: machineOutput,
         productionDate: productionDate || getLocalDateString(),
         quality: quality.trim() || "Standard",
@@ -1971,18 +2012,31 @@ const StartProcessFormModal = ({
                   <label className="block text-xs text-muted-foreground mb-1.5">Total Bags *</label>
                   <input
                     type="number"
-                    min={1}
+                    min={0.01}
+                    max={maxBagsFromPop ?? undefined}
+                    step={0.01}
                     value={totalBags}
-                    onChange={(e) => setTotalBags(e.target.value)}
-                    placeholder="e.g. 15 or 20"
+                    onChange={(e) => handleTotalBagsChange(e.target.value)}
+                    placeholder={
+                      maxBagsFromPop != null ? `max ${maxBagsFromPop}` : "e.g. 3.33"
+                    }
                     className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                   {isFromQueue && bagSizeKg > 0 && (
                     <p className="text-xs text-primary mt-1">
-                      Code {productCode}: {bagSizeKg} kg per bag
-                      {totalBags && parseInt(totalBags, 10) > 0
-                        ? ` → ${calcPopWeightFromBags(productCode, parseInt(totalBags, 10))} kg POP se minus hoga`
+                      Code {productCode}: {bagSizeKg} kg/bag —{" "}
+                      <strong>
+                        max {maxBagsFromPop ?? "—"} bags
+                      </strong>{" "}
+                      ({popAvailableWeight} kg available)
+                      {totalBags && parseFloat(totalBags) > 0
+                        ? ` → ${calcPopWeightFromBags(productCode, parseFloat(totalBags))} kg POP se minus`
                         : ""}
+                    </p>
+                  )}
+                  {isFromQueue && maxBagsFromPop != null && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                      Example: {popAvailableWeight} kg ÷ {bagSizeKg} kg = {maxBagsFromPop} bags — is se zyada nahi
                     </p>
                   )}
                 </div>
@@ -2005,14 +2059,19 @@ const StartProcessFormModal = ({
                       <input
                         type="text"
                         inputMode="decimal"
+                        readOnly
                         value={weightUsedFromPOP}
-                        onChange={(e) => setWeightUsedFromPOP(e.target.value)}
                         placeholder={
                           bagSizeKg && totalBags
-                            ? String(calcPopWeightFromBags(productCode, parseInt(totalBags, 10) || 0))
+                            ? String(
+                                calcPopWeightFromBags(
+                                  productCode,
+                                  parseFloat(totalBags) || 0
+                                )
+                              )
                             : `max ${popAvailableWeight}`
                         }
-                        className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        className="w-full bg-cms-card-hover border border-border rounded-md px-3 py-2.5 text-sm text-foreground cursor-not-allowed"
                       />
                       <p className="text-xs text-muted-foreground mt-1">
                         Bags × bag size = POP weight (100→30, 105→40, 110→25 kg/bag). Remaining POP ≈{" "}
@@ -2250,6 +2309,9 @@ const StartProcessFormModal = ({
                 !materialName.trim() ||
                 !totalBags ||
                 selectedEmployees.length === 0 ||
+                (isFromQueue &&
+                  maxBagsFromPop != null &&
+                  parseFloat(String(totalBags).replace(",", ".")) > maxBagsFromPop + 0.0001) ||
                 (isFromQueue
                   ? !weightUsedFromPOP.trim() ||
                     parseFloat(String(weightUsedFromPOP).replace(",", ".")) <= 0 ||

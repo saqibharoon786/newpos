@@ -23,4 +23,13 @@ router.delete('/transactions/:id', financeController.deleteTransaction);
 // Export transactions
 router.get('/export', financeController.exportTransactions);
 
+// Vendor / customer advance summary
+router.get('/advance-summary', financeController.getAdvanceSummary);
+
+// Vendor / customer advance payments
+router.post('/vendor-advance', financeController.recordVendorAdvance);
+router.post('/customer-advance', financeController.recordCustomerAdvance);
+router.get('/vendor-advance/:vendorId/history', financeController.getVendorAdvanceHistory);
+router.get('/customer-advance/:customerId/history', financeController.getCustomerAdvanceHistory);
+
 module.exports = router;

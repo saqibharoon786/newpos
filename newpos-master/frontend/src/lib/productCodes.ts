@@ -73,6 +73,11 @@ export function calcBagsFromKg(code: string, kg: number): number {
   return Math.round((kg / bagSize) * 100) / 100;
 }
 
+/** Max bags process kar sakte hain — POP available kg ÷ bag size (e.g. 100÷30 = 3.33) */
+export function getMaxBagsFromAvailableKg(code: string, availableKg: number): number {
+  return calcBagsFromKg(code, availableKg);
+}
+
 type PopMaterialLine = {
   name?: string;
   weight?: number;

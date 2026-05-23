@@ -19,6 +19,12 @@ const vendorLedgerEntrySchema = new mongoose.Schema({
   debit: { type: Number, default: 0 },
   credit: { type: Number, default: 0 },
   balance: { type: Number, default: 0 },
+  paymentMethod: {
+    type: String,
+    enum: ['drawer', 'easypaisa', 'jazzcash', 'bank'],
+  },
+  reference: { type: String, default: '' },
+  transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
 });
 
 const vendorSchema = new mongoose.Schema(

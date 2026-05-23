@@ -27,4 +27,29 @@ function getMaterialNameForCode(code) {
   return product?.materialName || product?.name || '';
 }
 
-module.exports = { PRODUCT_CODES, getMaterialNameForCode };
+function getBagSizeForCode(code) {
+  const product = PRODUCT_CODES.find((p) => p.code === String(code || '').trim());
+  return product?.bagSize || 0;
+}
+
+function getMaxBagsFromAvailableKg(code, availableKg) {
+  const bagSize = getBagSizeForCode(code);
+  const kg = parseFloat(availableKg);
+  if (!bagSize || !kg || kg <= 0) return 0;
+  return Math.round((kg / bagSize) * 100) / 100;
+}
+
+function calcWeightFromBags(code, bags) {
+  const bagSize = getBagSizeForCode(code);
+  const b = parseFloat(bags);
+  if (!bagSize || !b || b <= 0) return 0;
+  return Math.round(b * bagSize * 100) / 100;
+}
+
+module.exports = {
+  PRODUCT_CODES,
+  getMaterialNameForCode,
+  getBagSizeForCode,
+  getMaxBagsFromAvailableKg,
+  calcWeightFromBags,
+};

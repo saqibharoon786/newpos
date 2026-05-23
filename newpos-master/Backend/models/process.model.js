@@ -83,7 +83,7 @@ const productionDataSchema = new mongoose.Schema(
     totalBags: {
       type: Number,
       required: true,
-      min: 1,
+      min: 0.01,
     },
     machine: {
       type: String,
