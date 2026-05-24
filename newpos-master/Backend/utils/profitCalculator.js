@@ -24,9 +24,9 @@ async function calculateNetProfit({ startDate, endDate } = {}) {
       {
         $group: {
           _id: null,
-          total: { $sum: { $toDouble: { $ifNull: ['$finalAmount', '$sellingPrice'] } } } },
-        },
-      },
+          total: { $sum: { $toDouble: { $ifNull: ['$finalAmount', '$sellingPrice'] } } }
+        }
+      }
     ]),
     Purchase.aggregate([
       ...(Object.keys(purchaseMatch).length ? [{ $match: purchaseMatch }] : []),
