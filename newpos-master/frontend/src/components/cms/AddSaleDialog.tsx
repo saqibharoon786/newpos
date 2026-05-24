@@ -198,6 +198,20 @@ export function AddSaleDialog({
       salesBalanceDue?: number;
       profileBalanceDue?: number;
       advanceCredit?: number;
+      financeAdvanceBalance?: number;
+    }[]
+  >([]);
+  const [cartLines, setCartLines] = useState<
+    {
+      materialName: string;
+      quality: string;
+      materialColor: string;
+      weight: number;
+      sellingPricePerKg: number;
+      discount: number;
+      transportationCost: number;
+      amount: number;
+      actualCostPerKg: number;
     }[]
   >([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
@@ -290,7 +304,9 @@ export function AddSaleDialog({
     setCustomerBalanceInfo({
       totalBalanceDue: customer.totalBalanceDue ?? 0,
       salesBalanceDue: customer.salesBalanceDue ?? 0,
-      advanceCredit: customer.advanceCredit ?? 0,
+      advanceCredit:
+        customer.advanceCredit ??
+        (customer.financeAdvanceBalance ?? 0),
     });
     setFormData((prev) => ({
       ...prev,
@@ -469,12 +485,45 @@ export function AddSaleDialog({
 
   const handlePaymentTypeChange = (type: PaymentType) => {
     setPaymentType(type);
+    const cust = registeredCustomers.find((c) => c._id === selectedCustomerId);
+    const financeAdv = cust?.financeAdvanceBalance ?? cust?.advanceCredit ?? 0;
     setFormData((prev) => ({
       ...prev,
       paymentMethod: type,
-      amountPaid: type === "credit" ? "0" : prev.amountPaid,
+      amountPaid:
+        type === "credit"
+          ? "0"
+          : type === "advance" && financeAdv > 0
+            ? String(Math.min(financeAdv, calculateTotalAmount()))
+            : prev.amountPaid,
     }));
     setPaymentStatusError("");
+  };
+
+  const addCurrentLineToCart = () => {
+    if (!formData.materialName || !formData.weight || !formData.sellingPrice) {
+      alert("Material, weight aur selling price zaroori hain");
+      return;
+    }
+    const w = parseFloat(formData.weight) || 0;
+    const rate = parseFloat(formData.sellingPrice.replace(/,/g, "")) || 0;
+    if (w <= 0 || rate <= 0) return;
+    const lineAmount = calculateTotalAmount();
+    setCartLines((prev) => [
+      ...prev,
+      {
+        materialName: formData.materialName,
+        quality: selectedMaterialInfo?.quality || "Standard",
+        materialColor: selectedColor,
+        weight: w,
+        sellingPricePerKg: rate,
+        discount: parseFloat(formData.discount) || 0,
+        transportationCost: parseFloat(formData.transportationCost) || 0,
+        amount: lineAmount,
+        actualCostPerKg: parseFloat(costPerKgDisplay || "0") || 0,
+      },
+    ]);
+    alert("Product line added. Add more products or save the invoice.");
   };
 
   // Fetch materials from Production List – aggregated by material+quality+color (total weight per option)
@@ -496,11 +545,13 @@ export function AddSaleDialog({
         const totalCost = parseFloat(item.totalProductionCost) || 0;
         const outputW = parseFloat(item.totalOutputWeight) || totalAvailable;
         const costPerKg =
-          item.costPerKg != null && item.costPerKg > 0
-            ? parseFloat(item.costPerKg)
-            : outputW > 0 && totalCost > 0
-              ? totalCost / outputW
-              : 0;
+          item.actualCostPerKg != null && item.actualCostPerKg > 0
+            ? parseFloat(item.actualCostPerKg)
+            : item.costPerKg != null && item.costPerKg > 0
+              ? parseFloat(item.costPerKg)
+              : outputW > 0 && totalCost > 0
+                ? totalCost / outputW
+                : 0;
         return {
           _id: compositeId,
           materialName,
@@ -1027,7 +1078,16 @@ export function AddSaleDialog({
       formDataToSend.append('buyerAddress', fd.buyerAddress || '');
       formDataToSend.append('buyerCnic', fd.buyerCnic || '');
       formDataToSend.append('buyerCompany', fd.buyerCompany || '');
-      formDataToSend.append('finalAmount', finalAmount);
+      const cartTotal = cartLines.reduce((s, l) => s + l.amount, 0);
+      const combinedTotal = cartLines.length > 0 ? cartTotal : totalBill;
+      formDataToSend.append('finalAmount', String(combinedTotal));
+      formDataToSend.append('sellingPrice', String(combinedTotal));
+      if (cartLines.length > 0) {
+        formDataToSend.append('lineItems', JSON.stringify(cartLines));
+        const totalKg = cartLines.reduce((s, l) => s + l.weight, 0);
+        formDataToSend.set('sellingWeight', String(totalKg));
+        formDataToSend.set('weight', String(totalKg));
+      }
 
       // Add receipt file
       if (receiptFile) {
@@ -1099,6 +1159,7 @@ export function AddSaleDialog({
     setSelectedColor("#FFFFFF");
     setSelectedDate(new Date());
     setSelectedMaterialInfo(null);
+    setCartLines([]);
     setPaymentType("cash");
     setReceiptFile(null);
     setReceiptPreview(null);
@@ -1471,7 +1532,7 @@ export function AddSaleDialog({
                   <p className="text-lg font-bold text-green-600">{selectedMaterialInfo.availableWeight} kg</p>
                 </div>
                 <div className="text-center p-2 bg-white rounded border">
-                  <p className="text-xs text-gray-600">Cost per kg</p>
+                  <p className="text-xs text-gray-600">Actual cost per kg</p>
                   <p className="text-lg font-bold text-indigo-700">
                     {costPerKgDisplay ? `Rs. ${costPerKgDisplay}` : "—"}
                   </p>
@@ -1479,6 +1540,33 @@ export function AddSaleDialog({
               </div>
             </div>
           )}
+
+          {cartLines.length > 0 && (
+            <div className="mb-4 p-3 border border-primary/30 rounded-md bg-primary/5">
+              <p className="text-sm font-medium mb-2">Invoice lines ({cartLines.length})</p>
+              <ul className="text-xs space-y-1">
+                {cartLines.map((line, i) => (
+                  <li key={i}>
+                    {line.materialName} — {line.weight} kg @ Rs.{line.sellingPricePerKg}/kg = Rs.
+                    {line.amount.toLocaleString()}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-sm font-bold mt-2">
+                Cart total: Rs. {cartLines.reduce((s, l) => s + l.amount, 0).toLocaleString()}
+              </p>
+            </div>
+          )}
+
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={addCurrentLineToCart}
+              className="px-3 py-2 text-sm border border-primary text-primary rounded-md hover:bg-primary/10"
+            >
+              + Add another product to this invoice
+            </button>
+          </div>
 
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
@@ -1829,7 +1917,7 @@ export function AddSaleDialog({
 
             {paymentType === "advance" && (
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Advance Amount</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Advance Received (from Finance)</label>
                 <input
                   type="number"
                   name="advancePayment"
@@ -1853,7 +1941,7 @@ export function AddSaleDialog({
               <p className="text-lg font-bold text-primary">Rs. {calculateTotalAmount().toLocaleString()}</p>
             </div>
             <div className="bg-green-50 border border-green-200 rounded-md p-3">
-              <p className="text-xs text-green-700 mb-1">Customer Paid</p>
+              <p className="text-xs text-green-700 mb-1">Amount/Payment Received</p>
               <p className="text-lg font-bold text-green-800">Rs. {parseFloat(formData.amountPaid || "0").toLocaleString()}</p>
             </div>
             <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">

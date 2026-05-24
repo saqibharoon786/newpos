@@ -943,10 +943,22 @@ const getProductionForPOS = async (req, res) => {
     const data = Array.from(groups.values()).map((g) => {
       const totalW = g.totalOutputWeight || g.totalAvailableWeight || 0;
       const totalCost = g.totalProductionCost || 0;
-      const costPerKg =
+      const avgCostPerKg =
         totalW > 0 && totalCost > 0
           ? Math.round((totalCost / totalW) * 100) / 100
           : 0;
+      let actualCostPerKg = avgCostPerKg;
+      const oldestId = g.productionIds[0];
+      if (oldestId) {
+        const oldest = withAvailable.find((d) => String(d._id) === String(oldestId));
+        if (oldest) {
+          const tw = parseFloat(oldest.totalWeight) || 0;
+          const tc = parseFloat(oldest.totalProductionCost) || 0;
+          if (tw > 0 && tc > 0) {
+            actualCostPerKg = Math.round((tc / tw) * 100) / 100;
+          }
+        }
+      }
       return {
         materialName: g.materialName,
         quality: g.quality,
@@ -954,7 +966,9 @@ const getProductionForPOS = async (req, res) => {
         totalAvailableWeight: g.totalAvailableWeight,
         totalProductionCost: totalCost,
         totalOutputWeight: totalW,
-        costPerKg,
+        costPerKg: actualCostPerKg,
+        actualCostPerKg,
+        averageCostPerKg: avgCostPerKg,
         productionIds: g.productionIds,
       };
     });

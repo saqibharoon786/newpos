@@ -75,14 +75,23 @@ exports.getTransactions = async (req, res) => {
     
     const skip = (parseInt(page) - 1) * parseInt(limit);
     
-    const [transactions, total] = await Promise.all([
+    const [transactions, total, allForBalance] = await Promise.all([
       Transaction.find(query)
         .sort({ date: -1 })
         .skip(skip)
         .limit(parseInt(limit))
         .lean(),
-      Transaction.countDocuments(query)
+      Transaction.countDocuments(query),
+      Transaction.find(query).sort({ date: 1, createdAt: 1 }).lean(),
     ]);
+
+    let running = 0;
+    const balanceById = new Map();
+    for (const t of allForBalance) {
+      if (t.type === 'deposit') running += t.amount;
+      else running -= t.amount;
+      balanceById.set(String(t._id), Math.round(running * 100) / 100);
+    }
     
     // Format transactions for frontend
     const formattedTransactions = transactions.map(transaction => ({
@@ -102,6 +111,7 @@ exports.getTransactions = async (req, res) => {
       partyId: transaction.partyId || null,
       partyName: transaction.partyName || '',
       category: transaction.category || 'general',
+      runningBalance: balanceById.get(String(transaction._id)) ?? 0,
     }));
     
     res.json({

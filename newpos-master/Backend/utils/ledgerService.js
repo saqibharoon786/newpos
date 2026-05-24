@@ -220,10 +220,12 @@ async function getRmDetail(code, query) {
   entries.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.sortKey).localeCompare(String(b.sortKey)));
 
   let closing = summary.openingQty;
-  const lines = entries.map((e) => {
+  const linesAsc = entries.map((e) => {
     closing = round2(closing + e.purchasedQty - e.issuedQty);
     return { ...e, closingQty: closing };
   });
+
+  const lines = [...linesAsc].reverse();
 
   return {
     startDate,
@@ -232,7 +234,7 @@ async function getRmDetail(code, query) {
     itemName: `${code} — ${getMaterialNameForCode(code)} (RM)`,
     openingQty: summary.openingQty,
     lines,
-    closingQty: lines.length ? lines[lines.length - 1].closingQty : summary.openingQty,
+    closingQty: linesAsc.length ? linesAsc[linesAsc.length - 1].closingQty : summary.openingQty,
   };
 }
 
@@ -361,64 +363,84 @@ async function getFpDetail(code, query) {
 
 async function getPurchaseTransactionLedger(query) {
   const { startDate, endDate } = resolveRange(query);
-  const purchases = await Purchase.find().sort({ purchaseDate: 1 }).lean();
+  const purchases = await Purchase.find().sort({ purchaseDate: 1, createdAt: 1 }).lean();
 
-  let closing = 0;
-  const rows = [];
+  let openingBalance = 0;
+  const periodRows = [];
 
   for (const p of purchases) {
     const ymd = parseYmd(p.purchaseDate);
-    if (!inRange(ymd, startDate, endDate)) continue;
     const amount = num(p.price);
     const paid = num(p.amountPaid) || num(p.totalPaid);
     const qty = num(p.weight);
     const rate = qty > 0 ? round2(amount / qty) : 0;
-    closing = round2(closing + amount - paid);
-    rows.push({
+    const row = {
       date: ymd,
       invoiceNo: p.invoiceNo || p.receiptNo || '—',
-      description: p.materialName,
+      description: `${p.materialName || ''} — ${p.vendor || ''}`.trim(),
       vendor: p.vendor,
       qty: round2(qty),
       rate,
+      debit: round2(paid),
+      credit: round2(amount),
       amount: round2(amount),
       paid: round2(paid),
-      closing: closing,
-    });
+    };
+    if (ymd && startDate && ymd < startDate) {
+      openingBalance = round2(openingBalance + amount - paid);
+    } else if (inRange(ymd, startDate, endDate)) {
+      periodRows.push(row);
+    }
   }
 
-  return { startDate, endDate, rows };
+  let balance = openingBalance;
+  const rows = periodRows.map((row) => {
+    balance = round2(balance + row.credit - row.debit);
+    return { ...row, balance, closing: balance };
+  });
+
+  return { startDate, endDate, openingBalance: round2(openingBalance), rows, closingBalance: balance };
 }
 
 async function getSalesTransactionLedger(query) {
   const { startDate, endDate } = resolveRange(query);
   const sales = await Sale.find().sort({ purchaseDate: 1, createdAt: 1 }).lean();
 
-  let closing = 0;
-  const rows = [];
+  let openingBalance = 0;
+  const periodRows = [];
 
   for (const s of sales) {
     const ymd = parseYmd(s.purchaseDate);
-    if (!inRange(ymd, startDate, endDate)) continue;
     const amount = num(s.finalAmount) || num(s.sellingPrice);
     const paid = num(s.amountPaid);
     const qty = num(s.weight);
     const rate = qty > 0 ? round2(amount / qty) : num(s.sellingPricePerKg);
-    closing = round2(closing + amount - paid);
-    rows.push({
+    const row = {
       date: ymd,
       invoiceNo: s.invoiceNo || '—',
-      description: s.materialName,
+      description: `${s.materialName || ''} — ${s.buyerName || ''}`.trim(),
       customer: s.buyerName || '—',
       qty: round2(qty),
       rate,
+      debit: round2(amount),
+      credit: round2(paid),
       amount: round2(amount),
       paid: round2(paid),
-      closing,
-    });
+    };
+    if (ymd && startDate && ymd < startDate) {
+      openingBalance = round2(openingBalance + amount - paid);
+    } else if (inRange(ymd, startDate, endDate)) {
+      periodRows.push(row);
+    }
   }
 
-  return { startDate, endDate, rows };
+  let balance = openingBalance;
+  const rows = periodRows.map((row) => {
+    balance = round2(balance + row.debit - row.credit);
+    return { ...row, balance, closing: balance };
+  });
+
+  return { startDate, endDate, openingBalance: round2(openingBalance), rows, closingBalance: balance };
 }
 
 function formatVendorLedgerRows(ledger, startYmd, endYmd) {

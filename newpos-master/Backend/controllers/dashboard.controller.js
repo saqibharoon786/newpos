@@ -7,6 +7,7 @@ const Employee = require("../models/employee.model");
 const Expense = require("../models/expense.model");
 const Asset = require('../models/assets.model');
 const { ProductionData } = require('../models/process.model');
+const { calculateNetProfit } = require('../utils/profitCalculator');
 
 class DashboardController {
   // Get date range for period (daily, weekly, monthly, yearly). Optional year, month for custom month.
@@ -136,18 +137,18 @@ class DashboardController {
         totalAssetValue += amount;
       });
 
-      // Extract values from aggregation results
-      const salesRevenue = totalSalesRevenue[0]?.total || 0;
-      const purchaseCost = totalPurchaseCost[0]?.total || 0;
-      const productionCost = productionCostAgg[0]?.total || 0;
-      const wasteCost = wasteCostAgg[0]?.total || 0;
-      const expensesAmount = totalExpensesAmount[0]?.total || 0;
-      const totalMaterialCost = purchaseCost + productionCost + wasteCost;
-      
-      // Gross Profit = Sales Revenue - (Raw Materials + Production + Wastage)
-      // Net Profit = Gross Profit - Kharcha Expenses
-      const grossProfit = salesRevenue - totalMaterialCost;
-      const netProfit = grossProfit - expensesAmount;
+      // Profit figures — same formula as Finance P&L (/api/reports/profit-loss)
+      const profitData = await calculateNetProfit(
+        startDate && endDate ? { startDate, endDate } : {}
+      );
+      const salesRevenue = profitData.totalRevenue;
+      const purchaseCost = profitData.rawMaterialCost;
+      const productionCost = profitData.productionCost;
+      const wasteCost = profitData.wasteCost;
+      const expensesAmount = profitData.totalExpenses;
+      const totalMaterialCost = profitData.totalMaterialCost;
+      const grossProfit = profitData.grossProfit;
+      const netProfit = profitData.netProfit;
 
       console.log('\n=== FINAL CALCULATIONS ===');
       console.log('Total Sales Revenue:', salesRevenue);

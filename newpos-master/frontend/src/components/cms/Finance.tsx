@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from "sonner";
 import api from '@/lib/api';
+import { exportAsCsv, exportAsExcelTable, exportAsPdf } from '@/lib/exportUtils';
 
 const FINANCE_API = '/api/finance';
 
@@ -29,6 +30,7 @@ interface Transaction {
   partyType?: 'vendor' | 'customer' | null;
   partyName?: string;
   category?: string;
+  runningBalance?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -233,6 +235,7 @@ export default function FinanceModule() {
   const [editTransaction, setEditTransaction] = useState<Transaction | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
+  const [filterMethod, setFilterMethod] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState('');
   const [pagination, setPagination] = useState({
     page: 1,
@@ -363,12 +366,15 @@ export default function FinanceModule() {
         transaction.method?.toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchesType = filterType === 'all' || transaction.type === filterType;
+      const matchesMethod =
+        filterMethod === 'all' ||
+        transaction.method?.toLowerCase() === filterMethod.toLowerCase();
 
-      return matchesSearch && matchesType;
+      return matchesSearch && matchesType && matchesMethod;
     });
     
     setFilteredTransactions(filtered);
-  }, [transactions, searchQuery, filterType]);
+  }, [transactions, searchQuery, filterType, filterMethod]);
 
   // Calculate total balance from balances
   const totalBalance = Object.values(balances).reduce((sum, balance) => sum + balance, 0);
@@ -616,7 +622,7 @@ export default function FinanceModule() {
 
   useEffect(() => {
     filterTransactions();
-  }, [transactions, searchQuery, filterType]);
+  }, [transactions, searchQuery, filterType, filterMethod]);
 
   const isFirstRender = useRef(true);
   useEffect(() => {
@@ -654,6 +660,7 @@ export default function FinanceModule() {
 
       if (searchQuery) params.search = searchQuery;
       if (filterType !== 'all') params.type = filterType;
+      if (filterMethod !== 'all') params.method = filterMethod;
 
       if (selectedMonth) {
         const [year, month] = selectedMonth.split('-');
@@ -1104,7 +1111,32 @@ export default function FinanceModule() {
 
   const handleSearch = useCallback(() => {
     fetchTransactions(1);
-  }, [searchQuery, filterType, selectedMonth]);
+  }, [searchQuery, filterType, filterMethod, selectedMonth]);
+
+  const exportFinanceTable = (format: 'csv' | 'excel' | 'pdf') => {
+    const rows = filteredTransactions.map((t) => ({
+      Date: t.date,
+      Type: t.type,
+      Method: t.fromTo || getMethodLabel(t.method),
+      Amount: t.amount,
+      Balance: t.runningBalance ?? 0,
+      Description: t.description || '',
+      Reference: t.reference || '',
+    }));
+    const headers = ['Date', 'Type', 'Method', 'Amount', 'Balance', 'Description', 'Reference'];
+    const name = `Finance_${selectedMonth || 'all'}_${Date.now()}`;
+    if (format === 'csv') exportAsCsv(`${name}.csv`, headers, rows);
+    else if (format === 'excel') exportAsExcelTable(`${name}.xls`, 'Finance Transactions', headers, rows);
+    else {
+      const body = `<table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows
+        .map(
+          (r) =>
+            `<tr>${headers.map((h) => `<td>${r[h as keyof typeof r] ?? ''}</td>`).join('')}</tr>`
+        )
+        .join('')}</tbody></table>`;
+      exportAsPdf('Finance Transactions', body);
+    }
+  };
 
   const handlePrintReceipt = (transaction: Transaction) => {
     const printWindow = window.open('', '_blank');
@@ -1889,6 +1921,24 @@ export default function FinanceModule() {
               />
             </div>
             <Select 
+              value={filterMethod} 
+              onValueChange={(value) => {
+                setFilterMethod(value);
+                fetchTransactions(1);
+              }}
+              disabled={loading.transactions}
+            >
+              <SelectTrigger className="w-44 bg-card border-border">
+                <SelectValue placeholder="Payment method" />
+              </SelectTrigger>
+              <SelectContent className="bg-popover border-border">
+                <SelectItem value="all">All Methods</SelectItem>
+                {ADVANCE_PAYMENT_METHODS.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select 
               value={filterType} 
               onValueChange={(value) => {
                 setFilterType(value);
@@ -1905,6 +1955,12 @@ export default function FinanceModule() {
                 <SelectItem value="withdraw">Withdrawals</SelectItem>
               </SelectContent>
             </Select>
+            <Button variant="outline" size="sm" onClick={() => exportFinanceTable('pdf')} disabled={!filteredTransactions.length}>
+              PDF
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => exportFinanceTable('excel')} disabled={!filteredTransactions.length}>
+              Excel
+            </Button>
             <Button
               variant="outline"
               onClick={handleSearch}
@@ -2160,6 +2216,7 @@ export default function FinanceModule() {
                               <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
                               <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Method</th>
                               <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Amount</th>
+                              <th className="py-3 px-4 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Balance</th>
                               <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
                             </tr>
                           </thead>
@@ -2201,6 +2258,11 @@ export default function FinanceModule() {
                                       {transaction.description}
                                     </div>
                                   )}
+                                </td>
+                                <td className="py-4 px-4 text-right">
+                                  <div className="font-semibold text-foreground">
+                                    {formatCurrency(transaction.runningBalance ?? 0)}
+                                  </div>
                                 </td>
                                 <td className="py-4 px-4">
                                   <div className="flex items-center gap-1">

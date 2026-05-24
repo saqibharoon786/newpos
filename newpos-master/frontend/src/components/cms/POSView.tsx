@@ -457,7 +457,7 @@ const PaymentModal = ({
                 </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Amount Paid</p>
+                <p className="text-xs text-muted-foreground">Amount/Payment Received</p>
                 <p className="text-lg font-semibold text-green-600">
                   Rs. {sale.amountPaid.toLocaleString()}
                 </p>
@@ -856,7 +856,7 @@ const PaymentHistoryModal = ({
                 </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Amount Paid</p>
+                <p className="text-xs text-muted-foreground">Amount/Payment Received</p>
                 <p className="text-lg font-semibold text-green-600">
                   Rs. {sale.amountPaid.toLocaleString()}
                 </p>
@@ -1491,7 +1491,7 @@ export function POSView() {
       "Weight (kg)",
       "Units",
       "Total Amount",
-      "Amount Paid",
+      "Amount/Payment Received",
       "Remaining Amount",
       "Payment Status",
     ];
@@ -1503,7 +1503,7 @@ export function POSView() {
       "Weight (kg)": sale.weight || "0",
       "Units": sale.unit || "0",
       "Total Amount": parseFloat(sale.finalAmount || sale.sellingPrice) || 0,
-      "Amount Paid": sale.amountPaid || 0,
+      "Amount/Payment Received": sale.amountPaid || 0,
       "Remaining Amount": sale.remainingAmount || 0,
       "Payment Status": sale.paymentStatus || "none",
     }));
@@ -1774,7 +1774,7 @@ export function POSView() {
         <div className="bg-cms-card rounded-lg p-4 border border-border">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">Amount Paid</p>
+              <p className="text-sm text-muted-foreground">Amount/Payment Received</p>
               <p className="text-2xl font-semibold text-green-600">
                 Rs. {formatCurrency(totals.totalAmountPaid)}
               </p>
@@ -2065,7 +2065,7 @@ export function POSView() {
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight (kg)</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Units</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total Amount</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Amount Paid</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Amount/Payment Received</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining Amount</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Payment Status</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
