@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { exportAsCsv } from '@/lib/exportUtils';
+import { exportAsCsv, exportAsExcelTable, exportAsPdf } from '@/lib/exportUtils';
 import {
   BookOpen,
   Loader2,
@@ -348,26 +348,36 @@ export default function LedgerView() {
         invoiceNo: r.invoiceNo,
         description: r.description,
         party: isPurchase ? r.vendor : r.customer,
-        qty: fmtKg(r.qty as number),
-        rate: fmtRs(r.rate as number),
-        amount: fmtRs(r.amount as number),
-        paid: fmtRs(r.paid as number),
-        closing: fmtRs(r.closing as number),
+        debit: r.debit ? fmtRs(r.debit as number) : '—',
+        credit: r.credit ? fmtRs(r.credit as number) : '—',
+        balance: fmtRs((r.balance ?? r.closing) as number),
       }));
-      return renderTable(
-        [
-          { key: 'date', label: 'Date' },
-          { key: 'invoiceNo', label: 'Invoice #' },
-          { key: 'description', label: 'Description' },
-          { key: 'party', label: isPurchase ? 'Vendor' : 'Customer' },
-          { key: 'qty', label: 'Qty', align: 'right' },
-          { key: 'rate', label: 'Rate', align: 'right' },
-          { key: 'amount', label: 'Amount', align: 'right' },
-          { key: 'paid', label: 'Paid', align: 'right' },
-          { key: 'closing', label: 'Closing (Rs)', align: 'right' },
-        ],
-        rows,
-        'No transactions'
+      return (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3 text-sm max-w-md">
+            <div className="rounded border p-2">
+              <span className="text-muted-foreground">Opening</span>
+              <p className="font-bold">{fmtRs(data.openingBalance as number)}</p>
+            </div>
+            <div className="rounded border p-2">
+              <span className="text-muted-foreground">Closing</span>
+              <p className="font-bold">{fmtRs(data.closingBalance as number)}</p>
+            </div>
+          </div>
+          {renderTable(
+            [
+              { key: 'date', label: 'Date' },
+              { key: 'invoiceNo', label: 'Invoice #' },
+              { key: 'description', label: 'Particulars' },
+              { key: 'party', label: isPurchase ? 'Vendor' : 'Customer' },
+              { key: 'debit', label: 'Debit (Rs)', align: 'right' },
+              { key: 'credit', label: 'Credit (Rs)', align: 'right' },
+              { key: 'balance', label: 'Balance (Rs)', align: 'right' },
+            ],
+            rows,
+            'No transactions'
+          )}
+        </div>
       );
     }
 

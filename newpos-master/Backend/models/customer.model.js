@@ -9,12 +9,6 @@ const customerSchema = new mongoose.Schema({
   customerId: {
     type: String,
     unique: true,
-    default: function() {
-      const date = new Date();
-      const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
-      const random = Math.floor(10000 + Math.random() * 90000);
-      return `CUST-${dateStr}-${random}`;
-    }
   },
   phoneNo: {
     type: String,
@@ -25,7 +19,7 @@ const customerSchema = new mongoose.Schema({
     type: String,
     trim: true,
     lowercase: true,
-    default: ''
+    default: undefined,
   },
   cnicNo: {
     type: String,
@@ -102,6 +96,30 @@ const customerSchema = new mongoose.Schema({
   ],
 }, {
   timestamps: true
+});
+
+customerSchema.pre('save', async function(next) {
+  if (!this.customerId) {
+    const Customer = this.constructor;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const date = new Date();
+      const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+      const random = Math.floor(10000 + Math.random() * 90000);
+      const candidate = `CUST-${dateStr}-${random}`;
+      const exists = await Customer.exists({ customerId: candidate });
+      if (!exists) {
+        this.customerId = candidate;
+        break;
+      }
+    }
+    if (!this.customerId) {
+      return next(new Error('Could not generate unique customer ID'));
+    }
+  }
+  if (this.email === '' || this.email == null) {
+    this.email = undefined;
+  }
+  next();
 });
 
 // FIXED: Middleware to automatically update paidAmount status based on amount and amountPaid

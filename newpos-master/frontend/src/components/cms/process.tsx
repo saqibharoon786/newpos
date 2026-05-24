@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
-import { exportAsCsv, exportAsWordTable, inDateRange, toYmd } from "@/lib/exportUtils";
+import { exportAsCsv, exportAsWordTable, exportAsExcelTable, exportAsPdf, inDateRange, toYmd } from "@/lib/exportUtils";
 import {
   PRODUCT_CODES,
   getProductCodeLabel,
@@ -197,6 +197,13 @@ interface ProductionData {
   purchaseWeight?: number;
   vendor?: string;
   receiptNo?: string;
+  employees?: { employeeId?: string; name?: string; department?: string }[];
+}
+
+function formatProductionEmployees(prod: ProductionData): string {
+  const list = prod.employees || [];
+  if (!list.length) return prod.operator || "—";
+  return list.map((e) => e.name || e.employeeId || "—").filter(Boolean).join(", ");
 }
 
 // Stage configuration
@@ -2574,7 +2581,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
     inDateRange(prod.productionDate, exportStartDate || undefined, exportEndDate || undefined)
   );
 
-  const handleExportHistory = (format: "excel" | "word") => {
+  const handleExportHistory = (format: "excel" | "word" | "pdf") => {
     if (exportData.length === 0) {
       toast({
         title: "No data",
@@ -2588,6 +2595,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
       "Batch No",
       "Material",
       "Quality",
+      "Employees",
       "Shift",
       "Total Output (kg)",
       "Sold (kg)",
@@ -2605,6 +2613,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
         "Batch No": prod.batchNo,
         "Material": prod.materialName,
         "Quality": prod.quality || "N/A",
+        "Employees": formatProductionEmployees(prod),
         "Shift": prod.shift,
         "Total Output (kg)": total,
         "Sold (kg)": sold,
@@ -2619,7 +2628,12 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
         ? `${exportStartDate || "start"}_to_${exportEndDate || "today"}`
         : toYmd(new Date());
     if (format === "excel") {
-      exportAsCsv(`Process_History_${rangeText}.csv`, headers, rows);
+      exportAsExcelTable(`Process_History_${rangeText}.xls`, "Production History", headers, rows);
+    } else if (format === "pdf") {
+      const body = `<table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows
+        .map((r) => `<tr>${headers.map((h) => `<td>${r[h as keyof typeof r] ?? ""}</td>`).join("")}</tr>`)
+        .join("")}</tbody></table>`;
+      exportAsPdf("Production History", body);
     } else {
       exportAsWordTable(`Process_History_${rangeText}.doc`, "Process Production History", headers, rows);
     }
@@ -2850,6 +2864,13 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
             Excel
           </button>
           <button
+            onClick={() => handleExportHistory("pdf")}
+            className="px-3 py-1.5 bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-1 transition-colors hover:bg-secondary"
+          >
+            <Download className="w-3 h-3" />
+            PDF
+          </button>
+          <button
             onClick={() => handleExportHistory("word")}
             className="px-3 py-1.5 bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-1 transition-colors hover:bg-secondary"
           >
@@ -3075,6 +3096,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Bags</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Efficiency</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total Cost</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Employees</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Shift</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Status</th>
@@ -3170,6 +3192,9 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
                         "—"
                       );
                     })()}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-foreground max-w-[180px]">
+                    {formatProductionEmployees(prod)}
                   </td>
                   <td className="px-4 py-3 text-sm text-foreground capitalize">
                     {prod.shift}

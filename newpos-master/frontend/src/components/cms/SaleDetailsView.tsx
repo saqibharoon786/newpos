@@ -29,6 +29,7 @@ interface Sale {
   buyerCnic: string;
   buyerCompany: string;
   finalAmount: string;
+  customerBalanceAtSale?: number;
   receiptImage?: string;
   
   // Vehicle Details
@@ -572,6 +573,11 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                 <div class="print-row">
                   <span class="print-label">Email:</span>
                   <span class="print-value">${sale.buyerEmail}</span>
+                </div>` : ''}
+                ${(sale as Sale)?.customerBalanceAtSale != null && (sale as Sale).customerBalanceAtSale! > 0 ? `
+                <div class="print-row">
+                  <span class="print-label">Customer Balance (before sale):</span>
+                  <span class="print-value">Rs. ${Number((sale as Sale).customerBalanceAtSale).toLocaleString()}</span>
                 </div>` : ''}
                 ${sale?.buyerAddress ? `
                 <div class="print-row">

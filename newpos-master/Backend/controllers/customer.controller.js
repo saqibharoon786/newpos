@@ -41,7 +41,6 @@ exports.createCustomer = async (req, res) => {
     const customerData = {
       customerName,
       phoneNo,
-      email: email || '',
       cnicNo: cnicNo || '',
       registrationDate: registrationDate || new Date(),
       address: address || '',
@@ -51,6 +50,10 @@ exports.createCustomer = async (req, res) => {
       documents: documents || [],
       amount: totalAmount,
     };
+
+    if (email && String(email).trim()) {
+      customerData.email = String(email).trim().toLowerCase();
+    }
 
     // Handle amountPaid if provided
     if (typeof amountPaid !== 'undefined') {
@@ -185,7 +188,10 @@ exports.getAllCustomers = async (req, res) => {
         salesBalanceDue: Math.round(salesDue * 100) / 100,
         profileBalanceDue: Math.round(profileDue * 100) / 100,
         totalBalanceDue: Math.round((salesDue + profileDue) * 100) / 100,
-        advanceCredit: Math.round((saleRow.advanceFromSales || 0) * 100) / 100,
+        advanceCredit: Math.round(
+          ((saleRow.advanceFromSales || 0) + (doc.financeAdvanceBalance || 0)) * 100
+        ) / 100,
+        financeAdvanceBalance: Math.round((doc.financeAdvanceBalance || 0) * 100) / 100,
       };
     });
 

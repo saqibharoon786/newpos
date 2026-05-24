@@ -18,6 +18,26 @@ const saleSchema = new mongoose.Schema(
       default: 'pending',
     },
     costPerKg: { type: Number, default: 0 },
+    /** FIFO / batch actual cost per kg (not averaged across batches) */
+    actualCostPerKg: { type: Number, default: 0 },
+    transportationCost: { type: Number, default: 0 },
+    notes: { type: String, default: '' },
+    createdBy: { type: String, default: '' },
+    customerBalanceAtSale: { type: Number, default: 0 },
+    lineItems: [
+      {
+        materialName: String,
+        quality: String,
+        materialColor: String,
+        weight: Number,
+        sellingPricePerKg: Number,
+        discount: { type: Number, default: 0 },
+        transportationCost: { type: Number, default: 0 },
+        amount: Number,
+        actualCostPerKg: { type: Number, default: 0 },
+        productionId: { type: mongoose.Schema.Types.ObjectId, ref: 'ProductionData' },
+      },
+    ],
 
     weight: { type: String, required: true }, // 30KG / 40KG
     unit: { type: String, required: true },

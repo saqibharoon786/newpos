@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Sale = require("../models/pos.model");
 const Purchase = require("../models/pop.model");
+const Customer = require("../models/customer.model");
 const Transaction = require("../models/transaction.model");
 const { ProductionData } = require("../models/process.model.js");
 const { generateSaleInvoiceNo } = require("../utils/invoiceGenerator");
@@ -14,6 +15,69 @@ function parseSaleWeight(v) {
   if (v == null || v === "") return 0;
   const n = parseFloat(String(v).replace(/,/g, ""));
   return isNaN(n) ? 0 : n;
+}
+
+/** FIFO actual cost per kg from oldest production batch for material+quality+color */
+async function getFifoActualCostPerKg({ materialName, quality, materialColor }) {
+  const qualityQ = String(quality || "Standard").trim();
+  const colorC = String(materialColor || "#FFFFFF").trim();
+  const productions = await ProductionData.find({
+    materialName: String(materialName || "").trim(),
+    $or: [{ availableWeight: { $gt: 0 } }, { availableWeight: { $exists: false } }],
+  })
+    .sort({ productionDate: 1 })
+    .lean();
+  const match = productions.find(
+    (p) =>
+      normStr(p.materialName) === normStr(materialName) &&
+      normStr(p.quality || "Standard") === normStr(qualityQ) &&
+      normStr(p.color || "#FFFFFF") === normStr(colorC) &&
+      (p.availableWeight ?? p.totalWeight ?? 0) > 0
+  );
+  if (!match) return 0;
+  const total = parseFloat(match.totalWeight) || 0;
+  const cost = parseFloat(match.totalProductionCost) || 0;
+  return total > 0 ? Math.round((cost / total) * 100) / 100 : 0;
+}
+
+async function recordPosFinanceDeposit({ amount, paymentMethod, invoiceNo, customerName }) {
+  if (!amount || amount <= 0) return;
+  const raw = String(paymentMethod || "cash").toLowerCase();
+  const method = raw === "cash" ? "drawer" : raw;
+  if (!["drawer", "easypaisa", "jazzcash", "bank"].includes(method)) return;
+  await Transaction.create({
+    type: "deposit",
+    method,
+    amount,
+    net: amount,
+    description: `POS sale ${invoiceNo} - ${customerName}`,
+    reference: invoiceNo,
+    status: "completed",
+  });
+}
+
+async function applyCustomerFinanceAdvance(customerId, amount, invoiceNo) {
+  if (!customerId || !amount || amount <= 0) return { ok: true, applied: 0 };
+  const customer = await Customer.findById(customerId);
+  if (!customer) return { ok: false, message: "Customer not found" };
+  const available = customer.financeAdvanceBalance || 0;
+  if (available < amount) {
+    return {
+      ok: false,
+      message: `Insufficient advance balance. Available: Rs. ${available}, required: Rs. ${amount}`,
+    };
+  }
+  customer.financeAdvanceBalance = Math.max(0, available - amount);
+  customer.advanceLedger = customer.advanceLedger || [];
+  customer.advanceLedger.push({
+    date: new Date(),
+    amount: 0,
+    method: "drawer",
+    description: `Advance applied to POS invoice ${invoiceNo} (Rs. ${amount})`,
+    reference: invoiceNo,
+  });
+  await customer.save();
+  return { ok: true, applied: amount };
 }
 
 /** Bill total: pricePerKg × kg − discount + transport; else finalAmount / sellingPrice total. */
@@ -445,18 +509,75 @@ const addSale = async (req, res) => {
     salePayload.customerId = req.body.customerId;
     salePayload.approvalStatus = 'pending';
     salePayload.createdBy = req.user?.username || req.body.createdBy || 'system';
+    salePayload.transportationCost = transportNum;
+    salePayload.notes = notes || '';
 
-    if (paidAmount > 0 && ['drawer', 'cash', 'easypaisa', 'jazzcash', 'bank'].includes(paymentMethod || 'cash')) {
-      const method = paymentMethod === 'cash' ? 'drawer' : paymentMethod;
-      await Transaction.create({
-        type: 'deposit',
-        method,
-        amount: paidAmount,
-        net: paidAmount,
-        description: `POS sale ${finalInvoiceNo} - ${customerName}`,
-        reference: finalInvoiceNo,
-        status: 'completed',
+    const matForCost = salePayload.materialName || bodyMaterialName;
+    const qualForCost = salePayload.quality || bodyQuality;
+    const colorForCost = salePayload.materialColor || bodyMaterialColor;
+    if (matForCost) {
+      const fifoCost = await getFifoActualCostPerKg({
+        materialName: matForCost,
+        quality: qualForCost,
+        materialColor: colorForCost,
       });
+      if (fifoCost > 0) {
+        salePayload.actualCostPerKg = fifoCost;
+        if (!salePayload.costPerKg || salePayload.costPerKg === 0) {
+          salePayload.costPerKg = fifoCost;
+        }
+      }
+    }
+
+    if (req.body.customerId) {
+      const cust = await Customer.findById(req.body.customerId).lean();
+      if (cust) {
+        const profileDue = Math.max(0, (cust.amount || 0) - (cust.amountPaid || 0));
+        const saleDueAgg = await Sale.aggregate([
+          { $match: { customerId: cust._id } },
+          { $group: { _id: null, due: { $sum: { $ifNull: ['$remainingAmount', 0] } } } },
+        ]);
+        const salesDue = saleDueAgg[0]?.due || 0;
+        salePayload.customerBalanceAtSale = Math.round((profileDue + salesDue) * 100) / 100;
+      }
+    }
+
+    const payMethod = String(paymentMethod || 'cash').toLowerCase();
+    if (payMethod === 'advance' && paidAmount > 0 && req.body.customerId) {
+      const adv = await applyCustomerFinanceAdvance(req.body.customerId, paidAmount, finalInvoiceNo);
+      if (!adv.ok) {
+        return res.status(400).json({ success: false, message: adv.message });
+      }
+    } else if (paidAmount > 0) {
+      await recordPosFinanceDeposit({
+        amount: paidAmount,
+        paymentMethod: payMethod,
+        invoiceNo: finalInvoiceNo,
+        customerName,
+      });
+    }
+
+    let parsedLineItems = req.body.lineItems;
+    if (typeof parsedLineItems === 'string') {
+      try {
+        parsedLineItems = JSON.parse(parsedLineItems);
+      } catch {
+        parsedLineItems = [];
+      }
+    }
+    if (Array.isArray(parsedLineItems) && parsedLineItems.length > 0) {
+      salePayload.lineItems = parsedLineItems.map((li) => ({
+        materialName: li.materialName,
+        quality: li.quality || 'Standard',
+        materialColor: li.materialColor || '#FFFFFF',
+        weight: parseFloat(li.weight) || 0,
+        sellingPricePerKg: parseFloat(li.sellingPricePerKg) || 0,
+        discount: parseFloat(li.discount) || 0,
+        transportationCost: parseFloat(li.transportationCost) || 0,
+        amount: parseFloat(li.amount) || 0,
+        actualCostPerKg: parseFloat(li.actualCostPerKg) || 0,
+        productionId: li.productionId,
+      }));
     }
 
     const sale = await Sale.create(salePayload);

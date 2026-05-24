@@ -53,7 +53,6 @@ export function AddCustomerQuickDialog({
       const res = await api.post("/api/customers/create-customers", {
         customerName: name,
         phoneNo: phone,
-        email: "",
         address: "",
         province: "",
         city: "",

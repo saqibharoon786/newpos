@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { exportAsCsv } from '@/lib/exportUtils';
+import { exportAsCsv, exportAsExcelTable, exportAsPdf } from '@/lib/exportUtils';
 import { FileSpreadsheet, Loader2, RefreshCw, TrendingUp, Package, Factory, ShoppingCart, Receipt } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
@@ -116,6 +116,7 @@ export default function ReportsView() {
   const [startDate, setStartDate] = useState(todayYmd());
   const [endDate, setEndDate] = useState(todayYmd());
   const [report, setReport] = useState<any>(null);
+  const [profitLoss, setProfitLoss] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   const [customers, setCustomers] = useState<any[]>([]);
@@ -135,11 +136,36 @@ export default function ReportsView() {
     return q.toString();
   }, [period, date, month, year, startDate, endDate]);
 
+  const profitRangeQuery = useCallback(() => {
+    const rangeQ = new URLSearchParams();
+    if (period === 'daily') {
+      rangeQ.set('startDate', date);
+      rangeQ.set('endDate', date);
+    } else if (period === 'monthly') {
+      const [y, m] = month.split('-');
+      const last = new Date(parseInt(y, 10), parseInt(m, 10), 0).getDate();
+      rangeQ.set('startDate', `${y}-${m}-01`);
+      rangeQ.set('endDate', `${y}-${m}-${String(last).padStart(2, '0')}`);
+    } else if (period === 'yearly') {
+      rangeQ.set('startDate', `${year}-01-01`);
+      rangeQ.set('endDate', `${year}-12-31`);
+    } else {
+      rangeQ.set('startDate', startDate);
+      rangeQ.set('endDate', endDate);
+    }
+    return rangeQ.toString();
+  }, [period, date, month, year, startDate, endDate]);
+
   const loadReport = async () => {
     setLoading(true);
     try {
-      const r = await api.get(`/api/reports/business-pipeline?${buildQuery()}`);
+      const q = buildQuery();
+      const [r, pl] = await Promise.all([
+        api.get(`/api/reports/business-pipeline?${q}`),
+        api.get(`/api/reports/profit-loss?${profitRangeQuery()}`),
+      ]);
       setReport(r.data.data);
+      setProfitLoss(pl.data.data);
     } catch (e: any) {
       setReport(null);
       toast({
