@@ -299,7 +299,6 @@ const Index = () => {
                       handleEmailChange(e.target.value);
                       clearError();
                     }}
-                    onFocus={disableAutoComplete}
                     className="w-full h-14 pl-12 pr-4 rounded-xl text-base transition-all duration-300 focus:outline-none"
                     style={{ 
                       background: 'rgba(10, 50, 50, 0.7)',
@@ -307,6 +306,7 @@ const Index = () => {
                       color: '#ffffff'
                     }}
                     onFocus={(e) => {
+                      disableAutoComplete();
                       e.target.style.borderColor = error ? 'rgba(255, 100, 100, 0.7)' : 'rgba(77, 184, 184, 0.5)';
                       e.target.style.boxShadow = error ? '0 0 0 3px rgba(255, 100, 100, 0.1)' : '0 0 0 3px rgba(77, 184, 184, 0.1)';
                     }}
@@ -339,7 +339,6 @@ const Index = () => {
                     onPaste={handlePasswordPaste}
                     onCopy={handlePasswordCopy}
                     onCut={handlePasswordCut}
-                    onFocus={disableAutoComplete}
                     className="w-full h-14 pl-12 pr-4 rounded-xl text-base transition-all duration-300 focus:outline-none"
                     style={{ 
                       background: 'rgba(10, 50, 50, 0.7)',
@@ -348,6 +347,7 @@ const Index = () => {
                       WebkitTextSecurity: 'disc'
                     }}
                     onFocus={(e) => {
+                      disableAutoComplete();
                       e.target.style.borderColor = error ? 'rgba(255, 100, 100, 0.7)' : 'rgba(77, 184, 184, 0.5)';
                       e.target.style.boxShadow = error ? '0 0 0 3px rgba(255, 100, 100, 0.1)' : '0 0 0 3px rgba(77, 184, 184, 0.1)';
                     }}

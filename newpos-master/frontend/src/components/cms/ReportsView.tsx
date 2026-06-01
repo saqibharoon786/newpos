@@ -401,15 +401,17 @@ export default function ReportsView() {
             Load Report
           </Button>
           {report && (
-            <Button variant="outline" size="sm" onClick={() => exportAll('csv')}>
-              <FileSpreadsheet className="w-4 h-4 mr-1" /> CSV
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => exportAll('excel')}>
-              Excel
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => exportAll('pdf')}>
-              PDF
-            </Button>
+            <>
+              <Button variant="outline" size="sm" onClick={() => exportAll('csv')}>
+                <FileSpreadsheet className="w-4 h-4 mr-1" /> CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => exportAll('excel')}>
+                Excel
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => exportAll('pdf')}>
+                PDF
+              </Button>
+            </>
           )}
         </div>
 
