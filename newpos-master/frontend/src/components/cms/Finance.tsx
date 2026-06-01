@@ -213,31 +213,6 @@ export default function FinanceModule() {
     };
   } | null>(null);
 
-  const fetchProfitLoss = useCallback(async () => {
-    try {
-      const params: Record<string, string> = {};
-      if (selectedMonth) {
-        const [year, month] = selectedMonth.split('-');
-        const y = parseInt(year, 10);
-        const m = parseInt(month, 10);
-        const lastDay = new Date(y, m, 0).getDate();
-        params.startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-        params.endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-        setPlPeriodLabel(`${PL_MONTH_NAMES[m - 1] || month} ${year}`);
-      } else {
-        setPlPeriodLabel('All time');
-      }
-      const r = await api.get('/api/reports/profit-loss', { params });
-      if (r.data?.data) setPlReport(r.data.data);
-    } catch {
-      /* ignore */
-    }
-  }, [selectedMonth]);
-
-  useEffect(() => {
-    fetchProfitLoss();
-  }, [fetchProfitLoss]);
-
   // State for form inputs
   const [depositData, setDepositData] = useState({
     method: 'drawer',
@@ -270,6 +245,31 @@ export default function FinanceModule() {
     total: 0,
     pages: 1
   });
+
+  const fetchProfitLoss = useCallback(async () => {
+    try {
+      const params: Record<string, string> = {};
+      if (selectedMonth) {
+        const [year, month] = selectedMonth.split('-');
+        const y = parseInt(year, 10);
+        const m = parseInt(month, 10);
+        const lastDay = new Date(y, m, 0).getDate();
+        params.startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+        params.endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        setPlPeriodLabel(`${PL_MONTH_NAMES[m - 1] || month} ${year}`);
+      } else {
+        setPlPeriodLabel('All time');
+      }
+      const r = await api.get('/api/reports/profit-loss', { params });
+      if (r.data?.data) setPlReport(r.data.data);
+    } catch {
+      /* ignore */
+    }
+  }, [selectedMonth]);
+
+  useEffect(() => {
+    fetchProfitLoss();
+  }, [fetchProfitLoss]);
 
   // ==================== HELPER FUNCTIONS ====================
   const formatCurrency = (amount: number) => {
