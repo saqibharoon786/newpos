@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { exportAsCsv, exportAsExcelTable, exportAsPdf } from "@/lib/exportUtils";
 import { PRODUCT_CODES, getMaterialNameForCode, getProductByCode } from "@/lib/productCodes";
 
 interface VendorMaterial {
@@ -232,6 +233,28 @@ export default function VendorsView() {
     }
   };
 
+  const exportVendors = (format: "csv" | "excel" | "pdf") => {
+    const headers = ["Vendor ID", "Name", "Phone", "Address", "Payable", "Advance"];
+    const rows = filteredVendors.map((v) => ({
+      "Vendor ID": v.vendorId || v._id,
+      Name: v.name,
+      Phone: v.phone || "",
+      Address: v.address || "",
+      Payable: v.payableBalance ?? 0,
+      Advance: v.advanceBalance ?? 0,
+    }));
+    const name = `Vendors_${Date.now()}`;
+    if (format === "csv") exportAsCsv(`${name}.csv`, headers, rows);
+    else if (format === "excel") exportAsExcelTable(`${name}.xls`, "Vendors", headers, rows);
+    else {
+      const body = rows
+        .map((r) => `<tr>${headers.map((h) => `<td>${r[h as keyof typeof r]}</td>`).join("")}</tr>`)
+        .join("");
+      exportAsPdf("Vendors", `<table border="1" cellpadding="4"><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>`);
+    }
+    toast.success("Vendors exported");
+  };
+
   const handleDelete = async (vendor: Vendor) => {
     if (!confirm(`Delete vendor "${vendor.name}"?`)) return;
     try {
@@ -255,14 +278,30 @@ export default function VendorsView() {
             Register vendors with materials, codes, and price per kg — used in POP
           </p>
         </div>
-        <button
-          type="button"
-          onClick={openAddDialog}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90"
-        >
-          <Plus className="w-4 h-4" />
-          Add Vendor
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => exportVendors("excel")}
+            className="px-3 py-2.5 bg-cms-card border border-border rounded-md text-sm font-medium hover:bg-cms-card-hover"
+          >
+            Excel
+          </button>
+          <button
+            type="button"
+            onClick={() => exportVendors("pdf")}
+            className="px-3 py-2.5 bg-cms-card border border-border rounded-md text-sm font-medium hover:bg-cms-card-hover"
+          >
+            PDF
+          </button>
+          <button
+            type="button"
+            onClick={openAddDialog}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90"
+          >
+            <Plus className="w-4 h-4" />
+            Add Vendor
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">

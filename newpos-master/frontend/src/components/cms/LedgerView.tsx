@@ -171,9 +171,93 @@ export default function LedgerView() {
     }
   }, [activeTab, startDate, endDate, selectedCode, vendorId, customerId, employeeId]);
 
-  const exportCsv = (filename: string, headers: string[], rows: Record<string, string | number>[]) => {
-    exportAsCsv(filename, headers, rows);
-    toast({ title: 'CSV exported' });
+  const exportLedger = (format: 'excel' | 'pdf' | 'csv') => {
+    if (!data) {
+      toast({ title: 'Pehle ledger load karen', variant: 'destructive' });
+      return;
+    }
+    let headers: string[] = [];
+    let rows: Record<string, string | number>[] = [];
+    const tabLabel = TABS.find((t) => t.id === activeTab)?.label || activeTab;
+    const name = `Ledger_${tabLabel}_${startDate}_${endDate}`;
+
+    if ((activeTab === 'rm-detail' || activeTab === 'fp-detail') && data.lines) {
+      if (activeTab === 'rm-detail') {
+        headers = ['Date', 'Invoice #', 'Vendor', 'Description', 'Purch Qty', 'Rate', 'Amount', 'Issued', 'Closing'];
+        rows = (data.lines as Record<string, unknown>[]).map((l) => ({
+          Date: String(l.date ?? ''),
+          'Invoice #': String(l.invoiceNo ?? '—'),
+          Vendor: String(l.vendor ?? '—'),
+          Description: String(l.description ?? ''),
+          'Purch Qty': l.purchasedQty ? fmtKg(l.purchasedQty as number) : '—',
+          Rate: l.purchasedRate ? fmtRs(l.purchasedRate as number) : '—',
+          Amount: l.purchasedAmount ? fmtRs(l.purchasedAmount as number) : '—',
+          Issued: l.issuedQty ? fmtKg(l.issuedQty as number) : '—',
+          Closing: fmtKg(l.closingQty as number),
+        }));
+      } else {
+        headers = ['Date', 'Description', 'From Process', 'Rate', 'Amount', 'Sale Qty', 'Sale Rate', 'Closing'];
+        rows = (data.lines as Record<string, unknown>[]).map((l) => ({
+          Date: String(l.date ?? ''),
+          Description: String(l.description ?? ''),
+          'From Process': l.receivedQty ? fmtKg(l.receivedQty as number) : '—',
+          Rate: l.receivedRate ? fmtRs(l.receivedRate as number) : '—',
+          Amount: l.receivedAmount ? fmtRs(l.receivedAmount as number) : '—',
+          'Sale Qty': l.saleQty ? fmtKg(l.saleQty as number) : '—',
+          'Sale Rate': l.saleRate ? fmtRs(l.saleRate as number) : '—',
+          Closing: fmtKg(l.closingQty as number),
+        }));
+      }
+    } else if (data.rows) {
+      if (activeTab === 'vendor' || activeTab === 'customer') {
+        headers = ['Date', 'Invoice #', 'Description', 'Debit', 'Credit', 'Balance'];
+        rows = (data.lines as Record<string, unknown>[]).map((l) => ({
+          Date: String(l.date ?? ''),
+          'Invoice #': String(l.invoiceNo ?? '—'),
+          Description: String(l.description ?? ''),
+          Debit: l.debit ? fmtRs(l.debit as number) : '—',
+          Credit: l.credit ? fmtRs(l.credit as number) : '—',
+          Balance: fmtRs(l.balance as number),
+        }));
+      } else if (activeTab === 'purchases' || activeTab === 'sales') {
+        headers = ['Date', 'Invoice #', 'Particulars', activeTab === 'purchases' ? 'Vendor' : 'Customer', 'Debit', 'Credit', 'Balance'];
+        rows = (data.rows as Record<string, unknown>[]).map((r) => ({
+          Date: String(r.date ?? ''),
+          'Invoice #': String(r.invoiceNo ?? ''),
+          Particulars: String(r.description ?? ''),
+          [activeTab === 'purchases' ? 'Vendor' : 'Customer']: String(
+            activeTab === 'purchases' ? r.vendor : r.customer
+          ),
+          Debit: r.debit ? fmtRs(r.debit as number) : '—',
+          Credit: r.credit ? fmtRs(r.credit as number) : '—',
+          Balance: fmtRs((r.balance ?? r.closing) as number),
+        }));
+      } else {
+        headers = ['Code', 'Item', 'Opening', 'Movement', 'Balance'];
+        rows = (data.rows as Record<string, number>[]).map((r) => ({
+          Code: r.code,
+          Item: r.itemName,
+          Opening: fmtKg(r.openingQty),
+          Movement:
+            activeTab === 'rm-summary'
+              ? `P:${fmtKg(r.purchase)} I:${fmtKg(r.issue)}`
+              : `Prod:${fmtKg(r.production)} Sale:${fmtKg(r.sale)}`,
+          Balance: fmtKg(r.balance),
+        }));
+      }
+    }
+
+    if (!rows.length) {
+      toast({ title: 'Export ke liye data nahi', variant: 'destructive' });
+      return;
+    }
+    if (format === 'csv') exportAsCsv(`${name}.csv`, headers, rows);
+    else if (format === 'excel') exportAsExcelTable(`${name}.xls`, tabLabel, headers, rows);
+    else {
+      const body = rows.map((r) => `<tr>${headers.map((h) => `<td>${r[h] ?? ''}</td>`).join('')}</tr>`).join('');
+      exportAsPdf(tabLabel, `<table border="1" cellpadding="4"><thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`);
+    }
+    toast({ title: `${format.toUpperCase()} exported` });
   };
 
   const renderTable = (
@@ -285,6 +369,8 @@ export default function LedgerView() {
           {renderTable(
             [
               { key: 'date', label: 'Date' },
+              { key: 'invoiceNo', label: 'Invoice #' },
+              { key: 'vendor', label: 'Vendor' },
               { key: 'description', label: 'Description' },
               { key: 'purchasedQty', label: 'Purch Qty', align: 'right' },
               { key: 'purchasedRate', label: 'Rate', align: 'right' },
@@ -294,6 +380,8 @@ export default function LedgerView() {
             ],
             (data.lines as Record<string, unknown>[]).map((l) => ({
               date: l.date,
+              invoiceNo: l.invoiceNo ?? '—',
+              vendor: l.vendor ?? '—',
               description: l.description,
               purchasedQty: l.purchasedQty ? fmtKg(l.purchasedQty as number) : '—',
               purchasedRate: l.purchasedRate ? fmtRs(l.purchasedRate as number) : '—',
@@ -405,7 +493,7 @@ export default function LedgerView() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Balance = Opening − Debit (Payment) + Credit (Purchase)
+            Invoice # alag column — Description sirf detail. Vendor advance (Finance) poori raqam Debit column mein.
           </p>
           {renderTable(
             [
@@ -556,10 +644,21 @@ export default function LedgerView() {
             </p>
           </div>
         </div>
-        <Button onClick={load} disabled={loading} size="sm">
-          {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-          Load Ledger
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={load} disabled={loading} size="sm">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+            Load Ledger
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => exportLedger('excel')} disabled={!data}>
+            Excel
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => exportLedger('pdf')} disabled={!data}>
+            PDF
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => exportLedger('csv')} disabled={!data}>
+            CSV
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2 p-3 rounded-lg border border-border bg-cms-card">

@@ -248,7 +248,7 @@ export function DashboardView() {
         <StatsCard
           icon={dashboardStats.totalProfit.isPositive ? TrendingUp : TrendingDown}
           iconColor={dashboardStats.totalProfit.isPositive ? "text-cms-success" : "text-cms-orange"}
-          label="Profit"
+          label="Net Profit (Finance P&L)"
           value={dashboardStats.totalProfit.formatted}
           valueColor={dashboardStats.totalProfit.isPositive ? "text-cms-success" : "text-red-600"}
         />

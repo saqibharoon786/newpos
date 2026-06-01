@@ -77,7 +77,7 @@ exports.getTransactions = async (req, res) => {
     
     const [transactions, total, allForBalance] = await Promise.all([
       Transaction.find(query)
-        .sort({ date: -1 })
+        .sort({ date: 1, createdAt: 1 })
         .skip(skip)
         .limit(parseInt(limit))
         .lean(),

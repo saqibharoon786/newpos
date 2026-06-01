@@ -5,6 +5,7 @@ import { AssetDetailsView } from "./AssetDetailsView";
 import { toast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import api from "@/lib/api";
+import { exportAsCsv, exportAsExcelTable, exportAsPdf } from "@/lib/exportUtils";
 
 const ASSETS_API = "/api/assets";
 
@@ -76,6 +77,12 @@ export function AssetsView() {
   const [editForm, setEditForm] = useState<Partial<AssetItem>>({});
   const [updating, setUpdating] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [financeBalances, setFinanceBalances] = useState<{
+    drawer: number;
+    easypaisa: number;
+    jazzcash: number;
+    bank: number;
+  } | null>(null);
   const [stats, setStats] = useState({
     totalAssets: 0,
     totalValue: 0,
@@ -125,7 +132,43 @@ export function AssetsView() {
   // Initialize data
   useEffect(() => {
     fetchAssets();
+    const loadFinance = () => {
+      api
+        .get("/api/finance/balances")
+        .then((r) => {
+          if (r.data?.success && r.data.balances) {
+            setFinanceBalances({
+              drawer: Number(r.data.balances.drawer) || 0,
+              easypaisa: Number(r.data.balances.easypaisa) || 0,
+              jazzcash: Number(r.data.balances.jazzcash) || 0,
+              bank: Number(r.data.balances.bank) || 0,
+            });
+          }
+        })
+        .catch(() => {});
+    };
+    loadFinance();
   }, []);
+
+  const exportAssets = (format: "csv" | "excel" | "pdf") => {
+    const headers = ["Name", "Category", "Price", "Department", "Purchase Date", "Invoice"];
+    const rows = filteredData.map((a) => ({
+      Name: a.assetName,
+      Category: a.category,
+      Price: a.purchasePrice ?? 0,
+      Department: a.department,
+      "Purchase Date": formatDateWithMonthName(a.purchaseDate),
+      Invoice: a.invoiceNo || "",
+    }));
+    const name = `Assets_${Date.now()}`;
+    if (format === "csv") exportAsCsv(`${name}.csv`, headers, rows);
+    else if (format === "excel") exportAsExcelTable(`${name}.xls`, "Assets", headers, rows);
+    else {
+      const body = rows.map((r) => `<tr>${headers.map((h) => `<td>${r[h as keyof typeof r]}</td>`).join("")}</tr>`).join("");
+      exportAsPdf("Assets", `<table border="1" cellpadding="4"><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>`);
+    }
+    toast({ title: "Export complete" });
+  };
 
   useEffect(() => {
     if (data.length > 0) {
@@ -167,8 +210,17 @@ const handleAddAsset = async (assetData: any) => {
           description: `${result.data.assetName} has been added successfully.`,
         });
         
-        // Refresh the list
         await fetchAssets();
+        api.get("/api/finance/balances").then((r) => {
+          if (r.data?.success && r.data.balances) {
+            setFinanceBalances({
+              drawer: Number(r.data.balances.drawer) || 0,
+              easypaisa: Number(r.data.balances.easypaisa) || 0,
+              jazzcash: Number(r.data.balances.jazzcash) || 0,
+              bank: Number(r.data.balances.bank) || 0,
+            });
+          }
+        });
         setDialogOpen(false);
       } else {
         console.error("❌ Backend error response:", result);
@@ -413,6 +465,32 @@ const handleAddAsset = async (assetData: any) => {
             Rs. {stats.totalValue.toLocaleString()}
           </p>
         </div>
+        {financeBalances && (
+          <div className="bg-cms-card rounded-xl p-4 col-span-2 border border-primary/20">
+            <p className="text-sm font-medium text-foreground mb-2">Finance (linked)</p>
+            <p className="text-xs text-muted-foreground mb-2">
+              Naya asset add karne par purchase price Finance se withdraw hoti hai (transaction: Asset: …)
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+              <div>
+                <span className="text-muted-foreground">Drawer</span>
+                <p className="font-semibold text-primary">Rs. {financeBalances.drawer.toLocaleString()}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Bank</span>
+                <p className="font-semibold">Rs. {financeBalances.bank.toLocaleString()}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">JazzCash</span>
+                <p className="font-semibold">Rs. {financeBalances.jazzcash.toLocaleString()}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">EasyPaisa</span>
+                <p className="font-semibold">Rs. {financeBalances.easypaisa.toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Action Bar */}
@@ -427,7 +505,13 @@ const handleAddAsset = async (assetData: any) => {
             className="bg-cms-card border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-72"
           />
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button type="button" onClick={() => exportAssets("excel")} className="px-3 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium">
+            Excel
+          </button>
+          <button type="button" onClick={() => exportAssets("pdf")} className="px-3 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium">
+            PDF
+          </button>
           <button className="px-4 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
             <Filter className="w-4 h-4" />
             Filter By

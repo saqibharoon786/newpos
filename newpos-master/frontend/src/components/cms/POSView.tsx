@@ -4,11 +4,10 @@ import { AddSaleDialog } from "./AddSaleDialog"; // CHANGED: Import AddSaleDialo
 import { SaleDetailsView } from "./SaleDetailsView";
 import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
-import { exportAsCsv, exportAsWordTable, inDateRange, toYmd } from "@/lib/exportUtils";
+import { exportAsCsv, exportAsExcelTable, exportAsWordTable, exportAsPdf, inDateRange, toYmd } from "@/lib/exportUtils";
 
 const SALES_API_URL = "/api/sales";
 const PURCHASES_API_URL = "/api/purchases";
-const FINANCE_DEPOSIT_URL = "/api/finance/deposit";
 
 interface Sale {
   _id: string;
@@ -377,7 +376,8 @@ const PaymentModal = ({
       const updateData = {
         amountPaid: newAmountPaid,
         paymentStatus: newPaymentStatus,
-        remainingAmount: newRemainingAmount
+        remainingAmount: newRemainingAmount,
+        paymentMethod: paymentMethod.toLowerCase(),
       };
 
       const response = await api.put(
@@ -386,23 +386,6 @@ const PaymentModal = ({
       );
 
       if (response.data.success) {
-        const method = paymentMethod.toLowerCase();
-        if (['jazzcash', 'easypaisa', 'bank'].includes(method)) {
-          try {
-            await api.post(FINANCE_DEPOSIT_URL, {
-              method,
-              amount: Number(amount),
-              description: `POS Payment - ${(sale.buyerName || 'Customer').trim()} - ${sale.invoiceNo || sale.materialName || 'Sale'}`,
-              reference: `POS-${sale._id}-${Date.now()}`,
-            });
-          } catch (depositErr: any) {
-            toast({
-              title: "Payment saved",
-              description: "Finance deposit could not be added: " + (depositErr.response?.data?.message || depositErr.message),
-              variant: "destructive",
-            });
-          }
-        }
         toast({
           title: "Success",
           description: `Payment of Rs. ${amount.toLocaleString()} recorded successfully!`,
@@ -457,14 +440,14 @@ const PaymentModal = ({
                 </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Amount/Payment Received</p>
+                <p className="text-xs text-muted-foreground">Payment Received</p>
                 <p className="text-lg font-semibold text-green-600">
                   Rs. {sale.amountPaid.toLocaleString()}
                 </p>
               </div>
             </div>
             <div className="pt-3 border-t border-border">
-              <p className="text-xs text-muted-foreground">Remaining Amount</p>
+              <p className="text-xs text-muted-foreground">Receivable (Baqi)</p>
               <p className="text-xl font-bold text-red-600">
                 Rs. {remainingAmount.toLocaleString()}
               </p>
@@ -476,7 +459,7 @@ const PaymentModal = ({
 
           <div className="space-y-4">
             <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Payment Amount *</label>
+              <label className="block text-xs text-muted-foreground mb-1.5">Payment Received *</label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <input
@@ -610,7 +593,8 @@ const MarkAsPaidModal = ({
       const updateData = {
         amountPaid: totalAmount,
         paymentStatus: 'paid',
-        remainingAmount: 0
+        remainingAmount: 0,
+        paymentMethod: method,
       };
 
       const response = await api.put(
@@ -619,22 +603,6 @@ const MarkAsPaidModal = ({
       );
 
       if (response.data.success) {
-        if (['jazzcash', 'easypaisa', 'bank'].includes(method)) {
-          try {
-            await api.post(FINANCE_DEPOSIT_URL, {
-              method,
-              amount: remainingAmount,
-              description: `POS Payment - ${(sale.buyerName || 'Customer').trim()} - ${sale.invoiceNo || sale.materialName || 'Sale'}`,
-              reference: `POS-${sale._id}-${Date.now()}`,
-            });
-          } catch (depositErr: any) {
-            toast({
-              title: "Marked as paid",
-              description: "Finance deposit could not be added: " + (depositErr.response?.data?.message || depositErr.message),
-              variant: "destructive",
-            });
-          }
-        }
         toast({
           title: "Success",
           description: `Sale marked as fully paid!`,
@@ -856,13 +824,13 @@ const PaymentHistoryModal = ({
                 </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Amount/Payment Received</p>
+                <p className="text-xs text-muted-foreground">Payment Received</p>
                 <p className="text-lg font-semibold text-green-600">
                   Rs. {sale.amountPaid.toLocaleString()}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Remaining Amount</p>
+                <p className="text-xs text-muted-foreground">Receivable (Baqi)</p>
                 <p className="text-lg font-bold text-red-600">
                   Rs. {remainingAmount.toLocaleString()}
                 </p>
@@ -1099,28 +1067,11 @@ const PayTotalModal = ({
           amountPaid: newAmountPaid,
           paymentStatus: newPaymentStatus,
           remainingAmount: newRemainingAmount,
+          paymentMethod: paymentMethod.toLowerCase(),
         });
 
         records.push(paymentRecord);
         left -= pay;
-      }
-
-      const method = paymentMethod.toLowerCase();
-      if (['jazzcash', 'easypaisa', 'bank'].includes(method)) {
-        try {
-          await api.post(FINANCE_DEPOSIT_URL, {
-            method,
-            amount: Number(amount),
-            description: `POS Payment - ${customerName} - Multiple invoices`,
-            reference: `POS-TOTAL-${Date.now()}`,
-          });
-        } catch (depositErr: any) {
-          toast({
-            title: "Payment saved",
-            description: "Finance deposit could not be added: " + (depositErr.response?.data?.message || depositErr.message),
-            variant: "destructive",
-          });
-        }
       }
 
       toast({
@@ -1473,7 +1424,7 @@ export function POSView() {
     );
   };
 
-  const handleExportSales = (format: "excel" | "word") => {
+  const handleExportSales = (format: "excel" | "word" | "pdf") => {
     const exportRows = getExportSales();
     if (exportRows.length === 0) {
       toast({
@@ -1491,8 +1442,8 @@ export function POSView() {
       "Weight (kg)",
       "Units",
       "Total Amount",
-      "Amount/Payment Received",
-      "Remaining Amount",
+      "Payment Received",
+      "Receivable (Baqi)",
       "Payment Status",
     ];
     const rows = exportRows.map((sale) => ({
@@ -1503,8 +1454,8 @@ export function POSView() {
       "Weight (kg)": sale.weight || "0",
       "Units": sale.unit || "0",
       "Total Amount": parseFloat(sale.finalAmount || sale.sellingPrice) || 0,
-      "Amount/Payment Received": sale.amountPaid || 0,
-      "Remaining Amount": sale.remainingAmount || 0,
+      "Payment Received": sale.amountPaid || 0,
+      "Receivable (Baqi)": sale.remainingAmount || 0,
       "Payment Status": sale.paymentStatus || "none",
     }));
     const rangeText =
@@ -1513,7 +1464,18 @@ export function POSView() {
         : toYmd(new Date());
 
     if (format === "excel") {
-      exportAsCsv(`POS_Report_${rangeText}.csv`, headers, rows);
+      exportAsExcelTable(`POS_Report_${rangeText}.xls`, "POS Report", headers, rows);
+    } else if (format === "pdf") {
+      const body = rows
+        .map(
+          (r) =>
+            `<tr>${headers.map((h) => `<td>${r[h as keyof typeof r] ?? ""}</td>`).join("")}</tr>`
+        )
+        .join("");
+      exportAsPdf(
+        "POS Report",
+        `<table border="1" cellpadding="4"><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>`
+      );
     } else {
       exportAsWordTable(`POS_Report_${rangeText}.doc`, "POS Report", headers, rows);
     }
@@ -1537,7 +1499,7 @@ export function POSView() {
       "Customer",
       "Sales",
       "Total Amount",
-      "Total Pay",
+      "Payment Received",
       "Remaining",
       "Total Weight (kg)",
       "Total Units",
@@ -1566,7 +1528,7 @@ export function POSView() {
         "Customer": row.customerName,
         "Sales": row.sales,
         "Total Amount": row.totalAmount,
-        "Total Pay": row.amountPaid,
+        "Payment Received": row.amountPaid,
         "Remaining": row.remainingAmount,
         "Total Weight (kg)": row.weight,
         "Total Units": row.units,
@@ -1774,7 +1736,7 @@ export function POSView() {
         <div className="bg-cms-card rounded-lg p-4 border border-border">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">Amount/Payment Received</p>
+              <p className="text-sm text-muted-foreground">Payment Received</p>
               <p className="text-2xl font-semibold text-green-600">
                 Rs. {formatCurrency(totals.totalAmountPaid)}
               </p>
@@ -1857,7 +1819,7 @@ export function POSView() {
                     <span className="font-semibold text-foreground">Rs. {formatCurrency(row.totalAmount)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total Pay</span>
+                    <span className="text-muted-foreground">Payment Received</span>
                     <span className="font-semibold text-green-600">Rs. {formatCurrency(row.amountPaid)}</span>
                   </div>
                   {row.qualityPaid && Object.keys(row.qualityPaid).length > 0 && (
@@ -2013,6 +1975,13 @@ export function POSView() {
             Word
           </button>
           <button
+            onClick={() => handleExportSales("pdf")}
+            className="px-3 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            PDF
+          </button>
+          <button
             onClick={handleAddNew}
             className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
           >
@@ -2065,8 +2034,8 @@ export function POSView() {
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight (kg)</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Units</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Total Amount</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Amount/Payment Received</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining Amount</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Payment Received</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Receivable (Baqi)</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Payment Status</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Vehicle No.</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>

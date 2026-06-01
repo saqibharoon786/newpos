@@ -50,7 +50,7 @@ async function recordPosFinanceDeposit({ amount, paymentMethod, invoiceNo, custo
     method,
     amount,
     net: amount,
-    description: `POS sale ${invoiceNo} - ${customerName}`,
+    description: `Payment received - POS ${invoiceNo} - ${customerName}`,
     reference: invoiceNo,
     status: "completed",
   });
@@ -539,6 +539,7 @@ const addSale = async (req, res) => {
         ]);
         const salesDue = saleDueAgg[0]?.due || 0;
         salePayload.customerBalanceAtSale = Math.round((profileDue + salesDue) * 100) / 100;
+        salePayload.financeAdvanceAtSale = Math.round((cust.financeAdvanceBalance || 0) * 100) / 100;
       }
     }
 
@@ -872,11 +873,32 @@ const updateSale = async (req, res) => {
       }
     }
 
+    const oldPaid = Number(existingSale.amountPaid) || 0;
+    const newPaid =
+      updateData.amountPaid !== undefined
+        ? parseFloat(updateData.amountPaid) || 0
+        : oldPaid;
+
     const sale = await Sale.findByIdAndUpdate(
       id,
       updateData,
       { new: true }
     );
+
+    if (newPaid > oldPaid) {
+      const delta = Math.round((newPaid - oldPaid) * 100) / 100;
+      const payMethod = String(
+        updateData.paymentMethod || existingSale.paymentMethod || 'cash'
+      ).toLowerCase();
+      if (payMethod !== 'advance' && delta > 0) {
+        await recordPosFinanceDeposit({
+          amount: delta,
+          paymentMethod: payMethod,
+          invoiceNo: existingSale.invoiceNo || id,
+          customerName: existingSale.buyerName || 'Customer',
+        });
+      }
+    }
 
     // Add full URL to receiptImage for response
     const saleObj = sale.toObject();

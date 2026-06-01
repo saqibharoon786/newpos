@@ -142,7 +142,8 @@ const addPurchase = async (req, res) => {
       await vendorController.updateVendorLedger(vendor, {
         type: 'purchase',
         purchaseId: purchase._id,
-        description: `Purchase ${invoiceNo} - ${materialName}`,
+        reference: invoiceNo,
+        description: materialName || 'Purchase',
         debit: priceNum,
         credit: 0,
       });
@@ -150,6 +151,7 @@ const addPurchase = async (req, res) => {
         await vendorController.updateVendorLedger(vendor, {
           type: 'payment',
           purchaseId: purchase._id,
+          reference: invoiceNo,
           description: `Payment on ${invoiceNo}`,
           debit: 0,
           credit: amountPaidNum,
@@ -159,7 +161,8 @@ const addPurchase = async (req, res) => {
         await vendorController.updateVendorLedger(vendor, {
           type: 'apply_advance',
           purchaseId: purchase._id,
-          description: `Vendor advance applied on ${invoiceNo}`,
+          reference: invoiceNo,
+          description: `Advance applied on ${invoiceNo}`,
           debit: 0,
           credit: advancePaymentNum,
         });

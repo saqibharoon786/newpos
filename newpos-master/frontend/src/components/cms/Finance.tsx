@@ -13,6 +13,7 @@ import api from '@/lib/api';
 import { exportAsCsv, exportAsExcelTable, exportAsPdf } from '@/lib/exportUtils';
 
 const FINANCE_API = '/api/finance';
+const PL_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 interface Transaction {
   _id: string;
@@ -212,9 +213,30 @@ export default function FinanceModule() {
     };
   } | null>(null);
 
+  const fetchProfitLoss = useCallback(async () => {
+    try {
+      const params: Record<string, string> = {};
+      if (selectedMonth) {
+        const [year, month] = selectedMonth.split('-');
+        const y = parseInt(year, 10);
+        const m = parseInt(month, 10);
+        const lastDay = new Date(y, m, 0).getDate();
+        params.startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+        params.endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        setPlPeriodLabel(`${PL_MONTH_NAMES[m - 1] || month} ${year}`);
+      } else {
+        setPlPeriodLabel('All time');
+      }
+      const r = await api.get('/api/reports/profit-loss', { params });
+      if (r.data?.data) setPlReport(r.data.data);
+    } catch {
+      /* ignore */
+    }
+  }, [selectedMonth]);
+
   useEffect(() => {
-    api.get('/api/reports/profit-loss').then((r) => setPlReport(r.data.data)).catch(() => {});
-  }, []);
+    fetchProfitLoss();
+  }, [fetchProfitLoss]);
 
   // State for form inputs
   const [depositData, setDepositData] = useState({
@@ -236,10 +258,15 @@ export default function FinanceModule() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [filterMethod, setFilterMethod] = useState('all');
-  const [selectedMonth, setSelectedMonth] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'pos' | 'asset'>('all');
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [plPeriodLabel, setPlPeriodLabel] = useState('This month');
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 10,
+    limit: 500,
     total: 0,
     pages: 1
   });
@@ -358,23 +385,35 @@ export default function FinanceModule() {
   };
 
   const filterTransactions = useCallback(() => {
-    const filtered = transactions.filter(transaction => {
-      const matchesSearch =
-        transaction.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        transaction.fromTo?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        transaction.amount.toString().includes(searchQuery) ||
-        transaction.method?.toLowerCase().includes(searchQuery.toLowerCase());
+    const filtered = transactions
+      .filter((transaction) => {
+        const matchesSearch =
+          transaction.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          transaction.fromTo?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          transaction.amount.toString().includes(searchQuery) ||
+          transaction.method?.toLowerCase().includes(searchQuery.toLowerCase());
 
-      const matchesType = filterType === 'all' || transaction.type === filterType;
-      const matchesMethod =
-        filterMethod === 'all' ||
-        transaction.method?.toLowerCase() === filterMethod.toLowerCase();
+        const matchesType = filterType === 'all' || transaction.type === filterType;
+        const matchesMethod =
+          filterMethod === 'all' ||
+          transaction.method?.toLowerCase() === filterMethod.toLowerCase();
 
-      return matchesSearch && matchesType && matchesMethod;
-    });
-    
+        const desc = (transaction.description || '').toLowerCase();
+        const matchesSource =
+          sourceFilter === 'all' ||
+          (sourceFilter === 'pos' && desc.includes('pos')) ||
+          (sourceFilter === 'asset' && desc.includes('asset:'));
+
+        return matchesSearch && matchesType && matchesMethod && matchesSource;
+      })
+      .sort((a, b) => {
+        const da = new Date(a.createdAt || a.date || 0).getTime();
+        const db = new Date(b.createdAt || b.date || 0).getTime();
+        return da - db;
+      });
+
     setFilteredTransactions(filtered);
-  }, [transactions, searchQuery, filterType, filterMethod]);
+  }, [transactions, searchQuery, filterType, filterMethod, sourceFilter]);
 
   // Calculate total balance from balances
   const totalBalance = Object.values(balances).reduce((sum, balance) => sum + balance, 0);
@@ -622,7 +661,7 @@ export default function FinanceModule() {
 
   useEffect(() => {
     filterTransactions();
-  }, [transactions, searchQuery, filterType, filterMethod]);
+  }, [transactions, searchQuery, filterType, filterMethod, sourceFilter]);
 
   const isFirstRender = useRef(true);
   useEffect(() => {
@@ -654,8 +693,8 @@ export default function FinanceModule() {
     setLoading(prev => ({ ...prev, transactions: true }));
     try {
       const params: any = {
-        page,
-        limit: pagination.limit
+        page: 1,
+        limit: selectedMonth ? 2000 : Math.max(pagination.limit, 500),
       };
 
       if (searchQuery) params.search = searchQuery;
@@ -1260,6 +1299,9 @@ export default function FinanceModule() {
 
       {plReport && (
         <div className="px-3 sm:px-4 md:px-6 py-4 border-b border-border bg-muted/30">
+          <p className="text-xs text-muted-foreground mb-2 max-w-screen-2xl mx-auto">
+            Profit &amp; Loss ({plPeriodLabel}) — same period as Dashboard when month is selected
+          </p>
           <div className="max-w-screen-2xl mx-auto grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
             <div><span className="text-muted-foreground">Revenue</span><p className="font-semibold">Rs. {plReport.totalRevenue?.toLocaleString()}</p></div>
             <div><span className="text-muted-foreground">Material Cost</span><p className="font-semibold">Rs. {plReport.totalMaterialCost?.toLocaleString()}</p></div>
@@ -1938,6 +1980,20 @@ export default function FinanceModule() {
                 ))}
               </SelectContent>
             </Select>
+            <Select
+              value={sourceFilter}
+              onValueChange={(value: 'all' | 'pos' | 'asset') => setSourceFilter(value)}
+              disabled={loading.transactions}
+            >
+              <SelectTrigger className="w-36 bg-card border-border">
+                <SelectValue placeholder="Source" />
+              </SelectTrigger>
+              <SelectContent className="bg-popover border-border">
+                <SelectItem value="all">All sources</SelectItem>
+                <SelectItem value="pos">POS payments</SelectItem>
+                <SelectItem value="asset">Asset purchases</SelectItem>
+              </SelectContent>
+            </Select>
             <Select 
               value={filterType} 
               onValueChange={(value) => {
@@ -2193,8 +2249,13 @@ export default function FinanceModule() {
             <div className="lg:col-span-2">
               <Card className="bg-card border-border h-full">
                 <CardHeader className="border-b border-border pb-4">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-foreground text-lg">Transaction History</CardTitle>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <CardTitle className="text-foreground text-lg">Transaction History</CardTitle>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Purani entries upar, latest neeche. POS &amp; Asset entries is month ki list mein dikhen gi.
+                      </p>
+                    </div>
                     <Badge variant="outline" className="text-muted-foreground border-border">
                       {loading.transactions ? 'Loading...' : `${filteredTransactions.length} ${filteredTransactions.length === 1 ? 'record' : 'records'}`}
                     </Badge>

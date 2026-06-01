@@ -262,18 +262,15 @@ export function AddSaleDialog({
   }, []);
 
   const costPerKgDisplay = (() => {
-    const fromApi = selectedMaterialInfo?.costPerKg;
+    const fromApi =
+      (selectedMaterialInfo as { actualCostPerKg?: number })?.actualCostPerKg ??
+      selectedMaterialInfo?.costPerKg;
     if (fromApi != null && Number.isFinite(fromApi) && fromApi > 0) {
       return fromApi.toFixed(2);
     }
-    const cost = parseFloat(String(selectedMaterialInfo?.productionCost ?? ""));
-    const w =
-      selectedMaterialInfo?.weightForCost ??
-      selectedMaterialInfo?.weight ??
-      0;
-    if (cost > 0 && w > 0) return (cost / w).toFixed(2);
     return null;
   })();
+
   const currentUser = getCurrentUser();
 
   const fetchRegisteredCustomers = async () => {
@@ -549,9 +546,7 @@ export function AddSaleDialog({
             ? parseFloat(item.actualCostPerKg)
             : item.costPerKg != null && item.costPerKg > 0
               ? parseFloat(item.costPerKg)
-              : outputW > 0 && totalCost > 0
-                ? totalCost / outputW
-                : 0;
+              : 0;
         return {
           _id: compositeId,
           materialName,
@@ -854,6 +849,15 @@ export function AddSaleDialog({
     const amountPaid = parseFloat(formData.amountPaid) || 0;
     return Math.max(0, Math.round((total - amountPaid) * 100) / 100);
   };
+
+  const totalBill = calculateTotalAmount();
+  const paymentReceived = parseFloat(formData.amountPaid || "0") || 0;
+  const receivableAfterSale = calculateRemainingAmount();
+  const advanceCredit = customerBalanceInfo?.advanceCredit ?? 0;
+  const advanceRemainingAfterSale =
+    paymentType === "advance"
+      ? Math.max(0, Math.round((advanceCredit - totalBill) * 100) / 100)
+      : advanceCredit;
 
   /** Edit: fill blanks from saved sale so partial edits work; backend still gets valid strings */
   const getEffectiveFormData = (): typeof formData => {
@@ -1892,7 +1896,7 @@ export function AddSaleDialog({
           <div className={`grid gap-4 mb-4 ${paymentType === "advance" ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">
-                Received {paymentType === "credit" ? "" : "*"}
+                Payment Received {paymentType === "credit" ? "" : "*"}
               </label>
               <input
                 type="number"
@@ -1941,12 +1945,12 @@ export function AddSaleDialog({
               <p className="text-lg font-bold text-primary">Rs. {calculateTotalAmount().toLocaleString()}</p>
             </div>
             <div className="bg-green-50 border border-green-200 rounded-md p-3">
-              <p className="text-xs text-green-700 mb-1">Amount/Payment Received</p>
-              <p className="text-lg font-bold text-green-800">Rs. {parseFloat(formData.amountPaid || "0").toLocaleString()}</p>
+              <p className="text-xs text-green-700 mb-1">Payment Received</p>
+              <p className="text-lg font-bold text-green-800">Rs. {paymentReceived.toLocaleString()}</p>
             </div>
             <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
-              <p className="text-xs text-yellow-700 mb-1">Remaining (Baqi)</p>
-              <p className="text-lg font-bold text-yellow-800">Rs. {calculateRemainingAmount().toLocaleString()}</p>
+              <p className="text-xs text-yellow-700 mb-1">Receivable (Baqi)</p>
+              <p className="text-lg font-bold text-yellow-800">Rs. {receivableAfterSale.toLocaleString()}</p>
             </div>
             <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
               <p className="text-xs text-blue-700 mb-1">Payment Status</p>
@@ -1959,6 +1963,34 @@ export function AddSaleDialog({
               </p>
             </div>
           </div>
+          {customerBalanceInfo && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+              {paymentType === "advance" && advanceCredit > 0 && (
+                <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 dark:bg-emerald-950/30">
+                  <p className="text-xs font-medium text-emerald-900 dark:text-emerald-100">
+                    Advance remaining (after this bill)
+                  </p>
+                  <p className="text-xl font-bold text-emerald-800 dark:text-emerald-300 mt-1">
+                    Rs. {advanceRemainingAfterSale.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-emerald-800/80 mt-1">
+                    Pehle advance Rs. {advanceCredit.toLocaleString()} — bill Rs.{" "}
+                    {totalBill.toLocaleString()}
+                  </p>
+                </div>
+              )}
+              {paymentType !== "advance" && receivableAfterSale > 0 && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 p-3 dark:bg-amber-950/30">
+                  <p className="text-xs font-medium text-amber-900 dark:text-amber-100">
+                    Customer se lena hai (receivable)
+                  </p>
+                  <p className="text-xl font-bold text-amber-800 dark:text-amber-300 mt-1">
+                    Rs. {receivableAfterSale.toLocaleString()}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Receipt Image Section */}
