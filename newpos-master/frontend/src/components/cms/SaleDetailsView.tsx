@@ -30,6 +30,12 @@ interface Sale {
   buyerCompany: string;
   finalAmount: string;
   customerBalanceAtSale?: number;
+  financeAdvanceAtSale?: number;
+  amountPaid?: number;
+  remainingAmount?: number;
+  paymentStatus?: string;
+  actualCostPerKg?: number;
+  costPerKg?: number;
   receiptImage?: string;
   
   // Vehicle Details
@@ -486,14 +492,21 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                 <span class="print-label">Discount:</span>
                 <span class="print-value">${formatCurrency(sale?.discount || '0')}</span>
               </div>
-              ${parseFloat(String(sale?.transportationCost)) > 0 ? `
               <div class="print-row">
-                <span class="print-label">Transportation:</span>
-                <span class="print-value">${formatCurrency(String(sale.transportationCost))}</span>
-              </div>` : ''}
+                <span class="print-label">Delivery / Transport:</span>
+                <span class="print-value">${formatCurrency(String(sale?.transportationCost ?? '0'))}</span>
+              </div>
               <div class="print-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee;">
                 <span class="print-label">Total Amount:</span>
                 <span class="print-value" style="font-weight: bold; font-size: 13px;">${formatCurrency(sale?.finalAmount || sale?.sellingPrice || '0')}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Payment Received:</span>
+                <span class="print-value">${formatCurrency(String((sale as Sale)?.amountPaid ?? 0))}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Receivable (Baqi):</span>
+                <span class="print-value">${formatCurrency(String((sale as Sale)?.remainingAmount ?? Math.max(0, parseFloat(sale?.finalAmount || sale?.sellingPrice || '0') - parseFloat(String((sale as Sale)?.amountPaid ?? 0)))))}</span>
               </div>
             </div>
           </div>
@@ -574,9 +587,14 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                   <span class="print-label">Email:</span>
                   <span class="print-value">${sale.buyerEmail}</span>
                 </div>` : ''}
+                ${(sale as Sale)?.financeAdvanceAtSale != null && (sale as Sale).financeAdvanceAtSale! > 0 ? `
+                <div class="print-row">
+                  <span class="print-label">Previous Advance (Finance):</span>
+                  <span class="print-value">Rs. ${Number((sale as Sale).financeAdvanceAtSale).toLocaleString()}</span>
+                </div>` : ''}
                 ${(sale as Sale)?.customerBalanceAtSale != null && (sale as Sale).customerBalanceAtSale! > 0 ? `
                 <div class="print-row">
-                  <span class="print-label">Customer Balance (before sale):</span>
+                  <span class="print-label">Previous Balance Due:</span>
                   <span class="print-value">Rs. ${Number((sale as Sale).customerBalanceAtSale).toLocaleString()}</span>
                 </div>` : ''}
                 ${sale?.buyerAddress ? `
@@ -897,10 +915,60 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
                 <CreditCard className="w-4 h-4" />
-                <span className="text-sm">Final Amount</span>
+                <span className="text-sm">Delivery / Transport</span>
+              </div>
+              <span className="text-sm text-foreground">{formatCurrency(String(sale.transportationCost ?? '0'))}</span>
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t border-border">
+              <div className="flex items-center gap-3 text-foreground">
+                <CreditCard className="w-4 h-4" />
+                <span className="text-sm font-medium">Total Amount</span>
               </div>
               <span className="text-sm text-foreground font-semibold">{formatCurrency(sale.finalAmount || sale.sellingPrice)}</span>
             </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 text-muted-foreground">
+                <DollarSign className="w-4 h-4" />
+                <span className="text-sm">Payment Received</span>
+              </div>
+              <span className="text-sm text-green-700 font-medium">{formatCurrency(String((sale as Sale).amountPaid ?? 0))}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 text-muted-foreground">
+                <CreditCard className="w-4 h-4" />
+                <span className="text-sm">Receivable (Baqi)</span>
+              </div>
+              <span className="text-sm text-amber-700 font-medium">
+                {formatCurrency(
+                  String(
+                    (sale as Sale).remainingAmount ??
+                      Math.max(
+                        0,
+                        parseFloat(sale.finalAmount || sale.sellingPrice || '0') -
+                          parseFloat(String((sale as Sale).amountPaid ?? 0))
+                      )
+                  )
+                )}
+              </span>
+            </div>
+            {(sale as Sale).financeAdvanceAtSale != null && (sale as Sale).financeAdvanceAtSale! > 0 && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 text-muted-foreground">
+                  <User className="w-4 h-4" />
+                  <span className="text-sm">Previous Advance (Finance)</span>
+                </div>
+                <span className="text-sm text-emerald-700">Rs. {Number((sale as Sale).financeAdvanceAtSale).toLocaleString()}</span>
+              </div>
+            )}
+            {(sale as Sale).customerBalanceAtSale != null && (sale as Sale).customerBalanceAtSale! > 0 && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 text-muted-foreground">
+                  <User className="w-4 h-4" />
+                  <span className="text-sm">Previous Balance Due</span>
+                </div>
+                <span className="text-sm text-amber-700">Rs. {Number((sale as Sale).customerBalanceAtSale).toLocaleString()}</span>
+              </div>
+            )}
             <div className="pt-3 border-t border-border">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 text-foreground">

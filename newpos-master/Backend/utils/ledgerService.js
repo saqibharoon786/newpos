@@ -192,7 +192,9 @@ async function getRmDetail(code, query) {
       const rate = num(m.pricePerKg);
       entries.push({
         date: pYmd,
-        description: `Purchase ${p.invoiceNo || p.receiptNo || ''} — ${p.vendor}`,
+        invoiceNo: p.invoiceNo || p.receiptNo || '—',
+        vendor: p.vendor || '—',
+        description: m.materialName || getMaterialNameForCode(code) || 'Purchase',
         purchasedQty: qty,
         purchasedRate: rate,
         purchasedAmount: round2(num(m.totalAmount) || qty * rate),
@@ -208,6 +210,8 @@ async function getRmDetail(code, query) {
     const kg = num(prod.weightUsedFromPOP) || num(prod.totalWeight);
     entries.push({
       date: ymd,
+      invoiceNo: '—',
+      vendor: '—',
       description: `Issue to Process — Batch ${prod.batchNo || ''}`,
       purchasedQty: 0,
       purchasedRate: 0,
@@ -443,24 +447,58 @@ async function getSalesTransactionLedger(query) {
   return { startDate, endDate, openingBalance: round2(openingBalance), rows, closingBalance: balance };
 }
 
-function formatVendorLedgerRows(ledger, startYmd, endYmd) {
+async function formatVendorLedgerRows(ledger, startYmd, endYmd) {
   const sorted = (ledger || [])
     .slice()
     .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const purchaseIds = [
+    ...new Set(
+      sorted.filter((e) => e.purchaseId).map((e) => String(e.purchaseId))
+    ),
+  ];
+  const purchaseDocs =
+    purchaseIds.length > 0
+      ? await Purchase.find({ _id: { $in: purchaseIds } })
+          .select('invoiceNo receiptNo')
+          .lean()
+      : [];
+  const invoiceByPurchaseId = Object.fromEntries(
+    purchaseDocs.map((p) => [String(p._id), p.invoiceNo || p.receiptNo || '—'])
+  );
 
   let openingBalance = 0;
   const beforePeriod = [];
   const inPeriod = [];
 
+  const vendorDescription = (e) => {
+    if (e.type === 'purchase') return e.description || 'Purchase (POP)';
+    if (e.type === 'payment') return 'Payment to vendor';
+    if (e.type === 'advance') return 'Vendor advance — Finance (full debit)';
+    if (e.type === 'apply_advance') return 'Advance applied on bill';
+    const raw = String(e.description || '').trim();
+    const ref = e.reference ? String(e.reference).trim() : '';
+    if (ref && raw.toLowerCase().includes(ref.toLowerCase())) {
+      return raw.replace(new RegExp(ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').replace(/^Payment on\s*/i, '').trim() || e.type;
+    }
+    return raw || e.type;
+  };
+
   for (const e of sorted) {
     const ymd = parseDateField(e.date);
     const debitPay =
-      e.type === 'payment' || e.type === 'apply_advance' ? num(e.credit) : 0;
+      e.type === 'payment' || e.type === 'apply_advance' || e.type === 'advance'
+        ? num(e.credit)
+        : 0;
     const creditPurch = e.type === 'purchase' ? num(e.debit) : 0;
+    const invoiceNo =
+      e.reference ||
+      (e.purchaseId ? invoiceByPurchaseId[String(e.purchaseId)] : null) ||
+      '—';
     const row = {
       date: ymd || parseDateField(e.date),
-      invoiceNo: e.purchaseId ? String(e.purchaseId).slice(-6) : '—',
-      description: e.description || e.type,
+      invoiceNo,
+      description: vendorDescription(e),
       debit: round2(debitPay),
       credit: round2(creditPurch),
       type: e.type,
@@ -487,7 +525,7 @@ async function getVendorLedger(vendorId, query) {
   const vendor = await Vendor.findById(vendorId).lean();
   if (!vendor) return null;
 
-  const { openingBalance, lines } = formatVendorLedgerRows(vendor.ledger, startDate, endDate);
+  const { openingBalance, lines } = await formatVendorLedgerRows(vendor.ledger, startDate, endDate);
 
   return {
     startDate,

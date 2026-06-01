@@ -24,6 +24,8 @@ const saleSchema = new mongoose.Schema(
     notes: { type: String, default: '' },
     createdBy: { type: String, default: '' },
     customerBalanceAtSale: { type: Number, default: 0 },
+    /** Customer finance advance balance at time of sale (for invoice print) */
+    financeAdvanceAtSale: { type: Number, default: 0 },
     lineItems: [
       {
         materialName: String,

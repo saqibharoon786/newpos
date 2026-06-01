@@ -182,12 +182,12 @@ export default function ReportsView() {
     loadReport();
   }, []);
 
-  const exportAll = () => {
+  const exportAll = (format: 'csv' | 'excel' | 'pdf' = 'csv') => {
     if (!report) return;
     const label = report.label || 'report';
     const s = report.summary;
 
-    exportAsCsv(`business-report-${label}.csv`, ['Section', 'Metric', 'Value'], [
+    const summaryRows = [
       { Section: 'Mall (POP)', Metric: 'Entries', Value: s.purchases.count },
       { Section: 'Mall (POP)', Metric: 'Total Weight (kg)', Value: s.purchases.totalWeightKg },
       { Section: 'Mall (POP)', Metric: 'Total Cost (Rs)', Value: s.purchases.totalCostRs },
@@ -200,9 +200,20 @@ export default function ReportsView() {
       { Section: 'Sales', Metric: 'Profit (Rs)', Value: s.sales.profitRs },
       { Section: 'Kharcha', Metric: 'Total (Rs)', Value: s.expenses.totalRs },
       { Section: 'Summary', Metric: 'Net Profit (Rs)', Value: s.netProfitRs },
-    ]);
+    ];
+    const summaryHeaders = ['Section', 'Metric', 'Value'];
 
-    if (report.purchases?.length) {
+    if (format === 'excel') {
+      exportAsExcelTable(`business-report-${label}.xls`, 'Business Report', summaryHeaders, summaryRows);
+    } else if (format === 'pdf') {
+      const body = summaryRows
+        .map((r) => `<tr><td>${r.Section}</td><td>${r.Metric}</td><td>${r.Value}</td></tr>`)
+        .join('');
+      exportAsPdf('Business Report', `<table border="1" cellpadding="4"><thead><tr>${summaryHeaders.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`);
+    } else {
+    exportAsCsv(`business-report-${label}.csv`, summaryHeaders, summaryRows);
+    }
+    if (format === 'csv' && report.purchases?.length) {
       exportAsCsv(`mall-purchases-${label}.csv`, ['Date', 'Receipt', 'Vendor', 'Material', 'Weight kg', 'Price/kg', 'Total Rs'], report.purchases.map((p: any) => ({
         Date: p.date,
         Receipt: p.receiptNo,
@@ -213,7 +224,7 @@ export default function ReportsView() {
         'Total Rs': p.priceRs,
       })));
     }
-    if (report.production?.length) {
+    if (format === 'csv' && report.production?.length) {
       exportAsCsv(`process-${label}.csv`, ['Date', 'Batch', 'Material', 'Input kg', 'Output kg', 'Waste kg', 'Yield %', 'Cost Rs'], report.production.map((p: any) => ({
         Date: p.date,
         Batch: p.batchNo,
@@ -225,7 +236,7 @@ export default function ReportsView() {
         'Cost Rs': p.totalProductionCostRs,
       })));
     }
-    if (report.sales?.length) {
+    if (format === 'csv' && report.sales?.length) {
       exportAsCsv(`sales-${label}.csv`, ['Date', 'Invoice', 'Customer', 'Material', 'Weight kg', 'Revenue Rs', 'Cost Rs', 'Profit Rs'], report.sales.map((s: any) => ({
         Date: s.date,
         Invoice: s.invoiceNo,
@@ -237,7 +248,10 @@ export default function ReportsView() {
         'Profit Rs': s.profitRs,
       })));
     }
-    toast({ title: 'Export complete', description: 'CSV files download ho gayi hain' });
+    toast({
+      title: 'Export complete',
+      description: format === 'csv' ? 'CSV files download ho gayi hain' : `${format.toUpperCase()} file download ho gayi hai`,
+    });
   };
 
   const loadCustomers = async () => {
@@ -387,8 +401,14 @@ export default function ReportsView() {
             Load Report
           </Button>
           {report && (
-            <Button variant="outline" size="sm" onClick={exportAll}>
-              <FileSpreadsheet className="w-4 h-4 mr-1" /> Export CSV
+            <Button variant="outline" size="sm" onClick={() => exportAll('csv')}>
+              <FileSpreadsheet className="w-4 h-4 mr-1" /> CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => exportAll('excel')}>
+              Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => exportAll('pdf')}>
+              PDF
             </Button>
           )}
         </div>
