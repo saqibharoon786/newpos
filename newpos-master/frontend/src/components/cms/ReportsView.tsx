@@ -199,6 +199,7 @@ export default function ReportsView() {
       { Section: 'Sales', Metric: 'Revenue (Rs)', Value: s.sales.revenueRs },
       { Section: 'Sales', Metric: 'Profit (Rs)', Value: s.sales.profitRs },
       { Section: 'Kharcha', Metric: 'Total (Rs)', Value: s.expenses.totalRs },
+      { Section: 'Selling Expenses', Metric: 'Delivery (Rs)', Value: s.sellingExpenses?.totalRs ?? 0 },
       { Section: 'Summary', Metric: 'Net Profit (Rs)', Value: s.netProfitRs },
     ];
     const summaryHeaders = ['Section', 'Metric', 'Value'];
@@ -237,13 +238,14 @@ export default function ReportsView() {
       })));
     }
     if (format === 'csv' && report.sales?.length) {
-      exportAsCsv(`sales-${label}.csv`, ['Date', 'Invoice', 'Customer', 'Material', 'Weight kg', 'Revenue Rs', 'Cost Rs', 'Profit Rs'], report.sales.map((s: any) => ({
+      exportAsCsv(`sales-${label}.csv`, ['Date', 'Invoice', 'Customer', 'Material', 'Weight kg', 'Revenue Rs', 'Delivery Rs', 'Cost Rs', 'Profit Rs'], report.sales.map((s: any) => ({
         Date: s.date,
         Invoice: s.invoiceNo,
         Customer: s.buyerName,
         Material: s.materialName,
         'Weight kg': s.weightKg,
         'Revenue Rs': s.revenueRs,
+        'Delivery Rs': s.deliveryChargesRs ?? 0,
         'Cost Rs': s.costRs,
         'Profit Rs': s.profitRs,
       })));
@@ -315,6 +317,7 @@ export default function ReportsView() {
       materialName: s.materialName,
       weightKg: `${s.weightKg} kg`,
       revenueRs: fmtRs(s.revenueRs),
+      deliveryRs: fmtRs(s.deliveryChargesRs ?? 0),
       costRs: fmtRs(s.costRs),
       profitRs: fmtRs(s.profitRs),
     })) || [];
@@ -457,6 +460,11 @@ export default function ReportsView() {
             />
             <SummaryCard label="Kharcha" value={fmtRs(s.expenses.totalRs)} sub={`${s.expenses.count} entries`} />
             <SummaryCard
+              label="Selling Expenses (Delivery)"
+              value={fmtRs(s.sellingExpenses?.totalRs ?? 0)}
+              sub="POS delivery / transport charges"
+            />
+            <SummaryCard
               label="Gross Profit"
               value={fmtRs(s.grossProfitRs)}
               sub="Revenue − sale cost"
@@ -552,6 +560,7 @@ export default function ReportsView() {
               { key: 'materialName', label: 'Material' },
               { key: 'weightKg', label: 'Weight', align: 'right' },
               { key: 'revenueRs', label: 'Sale', align: 'right' },
+              { key: 'deliveryRs', label: 'Delivery', align: 'right' },
               { key: 'costRs', label: 'Cost', align: 'right' },
               { key: 'profitRs', label: 'Profit', align: 'right' },
             ]}

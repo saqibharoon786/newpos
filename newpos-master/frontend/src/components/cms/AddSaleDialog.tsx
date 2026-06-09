@@ -484,15 +484,14 @@ export function AddSaleDialog({
     setPaymentType(type);
     const cust = registeredCustomers.find((c) => c._id === selectedCustomerId);
     const financeAdv = cust?.financeAdvanceBalance ?? cust?.advanceCredit ?? 0;
+    const bill = calculateTotalAmount();
+    const applied =
+      type === "advance" && financeAdv > 0 ? Math.min(financeAdv, bill) : 0;
     setFormData((prev) => ({
       ...prev,
       paymentMethod: type,
-      amountPaid:
-        type === "credit"
-          ? "0"
-          : type === "advance" && financeAdv > 0
-            ? String(Math.min(financeAdv, calculateTotalAmount()))
-            : prev.amountPaid,
+      amountPaid: type === "credit" ? "0" : prev.amountPaid,
+      advancePayment: applied > 0 ? String(applied) : prev.advancePayment,
     }));
     setPaymentStatusError("");
   };
@@ -633,7 +632,13 @@ export function AddSaleDialog({
     setFormData((prev) => {
       const next = { ...prev, [name]: value };
       if (name === "buyerName") {
-        next.customerId = "";
+        const linked = registeredCustomers.find((c) => c._id === prev.customerId);
+        if (
+          !linked ||
+          linked.customerName.toLowerCase() !== String(value).trim().toLowerCase()
+        ) {
+          next.customerId = "";
+        }
       }
       if (name === "weight" || name === "unit") {
         const code = resolveProductCode(next.materialName);
@@ -846,18 +851,57 @@ export function AddSaleDialog({
 
   const calculateRemainingAmount = () => {
     const total = calculateTotalAmount();
-    const amountPaid = parseFloat(formData.amountPaid) || 0;
-    return Math.max(0, Math.round((total - amountPaid) * 100) / 100);
+    const advanceApplied = parseFloat(formData.advancePayment) || 0;
+    const cashPaid = parseFloat(formData.amountPaid) || 0;
+    const totalPaid = Math.min(total, advanceApplied + cashPaid);
+    return Math.max(0, Math.round((total - totalPaid) * 100) / 100);
   };
 
+  /** Auto-apply customer finance advance against bill (mirrors POP vendor advance) */
+  useEffect(() => {
+    if (isEdit || !open || !selectedCustomerId) return;
+    const cust = registeredCustomers.find((c) => c._id === selectedCustomerId);
+    const financeAdv = cust?.financeAdvanceBalance ?? cust?.advanceCredit ?? 0;
+    const bill = calculateTotalAmount();
+    if (bill <= 0) return;
+    const applied = financeAdv > 0 ? Math.min(financeAdv, bill) : 0;
+    setFormData((prev) => {
+      const nextAdvance = applied > 0 ? String(applied) : "";
+      if (prev.advancePayment === nextAdvance && prev.customerId === selectedCustomerId) {
+        return prev;
+      }
+      return {
+        ...prev,
+        advancePayment: nextAdvance,
+        customerId: selectedCustomerId,
+        paymentStatus:
+          applied >= bill ? "paid" : applied > 0 ? "partial" : prev.paymentStatus,
+      };
+    });
+  }, [
+    isEdit,
+    open,
+    selectedCustomerId,
+    formData.weight,
+    formData.sellingPrice,
+    formData.discount,
+    formData.transportationCost,
+    registeredCustomers,
+  ]);
+
   const totalBill = calculateTotalAmount();
-  const paymentReceived = parseFloat(formData.amountPaid || "0") || 0;
+  const advanceAppliedAmount = parseFloat(formData.advancePayment) || 0;
+  const cashReceived = parseFloat(formData.amountPaid || "0") || 0;
+  const paymentReceived = Math.min(
+    totalBill,
+    Math.round((advanceAppliedAmount + cashReceived) * 100) / 100
+  );
   const receivableAfterSale = calculateRemainingAmount();
   const advanceCredit = customerBalanceInfo?.advanceCredit ?? 0;
-  const advanceRemainingAfterSale =
-    paymentType === "advance"
-      ? Math.max(0, Math.round((advanceCredit - totalBill) * 100) / 100)
-      : advanceCredit;
+  const advanceRemainingAfterSale = Math.max(
+    0,
+    Math.round((advanceCredit - advanceAppliedAmount) * 100) / 100
+  );
 
   /** Edit: fill blanks from saved sale so partial edits work; backend still gets valid strings */
   const getEffectiveFormData = (): typeof formData => {
@@ -908,6 +952,11 @@ export function AddSaleDialog({
       buyerAddress: formData.buyerAddress || editData.buyerAddress || "",
       buyerEmail: formData.buyerEmail || editData.buyerEmail || "",
       amountPaid: formData.amountPaid ?? String(editData.amountPaid ?? 0),
+      customerId:
+        formData.customerId ||
+        selectedCustomerId ||
+        (editData as Sale & { customerId?: string }).customerId ||
+        "",
     };
   };
 
@@ -943,7 +992,9 @@ export function AddSaleDialog({
       newErrors.sellingPrice = "Valid price per kg is required";
     if (saleKg <= 0) newErrors.weight = newErrors.weight || "Valid weight is required";
 
-    const amountPaid = parseFloat(fd.amountPaid) || 0;
+    const cashPaid = parseFloat(fd.amountPaid) || 0;
+    const advanceApplied = parseFloat(fd.advancePayment) || 0;
+    const totalPaid = cashPaid + advanceApplied;
     const totalBill =
       saleKg > 0 && pricePerKg > 0
         ? Math.max(
@@ -953,13 +1004,12 @@ export function AddSaleDialog({
               (parseFloat(fd.transportationCost.replace(/,/g, "")) || 0)
           )
         : 0;
-    if (amountPaid < 0) {
+    if (cashPaid < 0) {
       newErrors.amountPaid = "Received amount cannot be negative";
-    } else if (totalBill > 0 && amountPaid > totalBill) {
-      newErrors.amountPaid = "Received amount cannot exceed total bill";
-    } else if (paymentType === "advance") {
-      const advance = parseFloat(fd.advancePayment) || 0;
-      if (advance < 0) newErrors.advancePayment = "Advance amount cannot be negative";
+    } else if (advanceApplied < 0) {
+      newErrors.advancePayment = "Advance amount cannot be negative";
+    } else if (totalBill > 0 && totalPaid > totalBill) {
+      newErrors.amountPaid = "Total payment cannot exceed total bill";
     }
 
     if (!fd.buyerName.trim()) newErrors.buyerName = "Customer name is required";
@@ -1051,8 +1101,9 @@ export function AddSaleDialog({
       formDataToSend.append('saleDate', dateTime);
       formDataToSend.append('paymentMethod', fd.paymentMethod || paymentType);
       formDataToSend.append('amountPaid', fd.amountPaid);
-      if (fd.customerId) {
-        formDataToSend.append('customerId', fd.customerId);
+      const customerIdForSale = fd.customerId || selectedCustomerId;
+      if (customerIdForSale) {
+        formDataToSend.append('customerId', customerIdForSale);
       }
       if (fd.invoiceNo.trim()) {
         formDataToSend.append('invoiceNo', fd.invoiceNo.trim());
@@ -1965,16 +2016,17 @@ export function AddSaleDialog({
           </div>
           {customerBalanceInfo && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-              {paymentType === "advance" && advanceCredit > 0 && (
+              {advanceCredit > 0 && (
                 <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 dark:bg-emerald-950/30">
                   <p className="text-xs font-medium text-emerald-900 dark:text-emerald-100">
-                    Advance remaining (after this bill)
+                    Advance applied / remaining
                   </p>
                   <p className="text-xl font-bold text-emerald-800 dark:text-emerald-300 mt-1">
-                    Rs. {advanceRemainingAfterSale.toLocaleString()}
+                    Rs. {advanceAppliedAmount.toLocaleString()} applied — Rs.{" "}
+                    {advanceRemainingAfterSale.toLocaleString()} bacha
                   </p>
                   <p className="text-xs text-emerald-800/80 mt-1">
-                    Pehle advance Rs. {advanceCredit.toLocaleString()} — bill Rs.{" "}
+                    Customer advance Rs. {advanceCredit.toLocaleString()} — bill Rs.{" "}
                     {totalBill.toLocaleString()}
                   </p>
                 </div>

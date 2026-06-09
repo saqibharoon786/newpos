@@ -41,7 +41,6 @@ exports.createCustomer = async (req, res) => {
     const customerData = {
       customerName,
       phoneNo,
-      cnicNo: cnicNo || '',
       registrationDate: registrationDate || new Date(),
       address: address || '',
       province: province || '',
@@ -53,6 +52,10 @@ exports.createCustomer = async (req, res) => {
 
     if (email && String(email).trim()) {
       customerData.email = String(email).trim().toLowerCase();
+    }
+
+    if (cnicNo && String(cnicNo).trim()) {
+      customerData.cnicNo = String(cnicNo).trim();
     }
 
     // Handle amountPaid if provided

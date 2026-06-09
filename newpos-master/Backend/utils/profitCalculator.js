@@ -24,7 +24,10 @@ async function calculateNetProfit({ startDate, endDate } = {}) {
       {
         $group: {
           _id: null,
-          total: { $sum: { $toDouble: { $ifNull: ['$finalAmount', '$sellingPrice'] } } }
+          total: { $sum: { $toDouble: { $ifNull: ['$finalAmount', '$sellingPrice'] } } },
+          delivery: {
+            $sum: { $toDouble: { $ifNull: ['$transportationCost', 0] } },
+          },
         }
       }
     ]),
@@ -42,16 +45,20 @@ async function calculateNetProfit({ startDate, endDate } = {}) {
   ]);
 
   const totalRevenue = salesAgg[0]?.total || 0;
+  const deliveryCharges = salesAgg[0]?.delivery || 0;
+  const sellingExpenses = Math.round(deliveryCharges * 100) / 100;
   const rawMaterialCost = materialCostAgg[0]?.total || 0;
   const productionCost = productionCostAgg[0]?.total || 0;
   const wasteCost = productionCostAgg[0]?.waste || 0;
   const totalMaterialCost = rawMaterialCost + productionCost + wasteCost;
   const totalExpenses = expensesAgg[0]?.total || 0;
   const grossProfit = totalRevenue - totalMaterialCost;
-  const netProfit = grossProfit - totalExpenses;
+  const netProfit = grossProfit - totalExpenses - sellingExpenses;
 
   return {
     totalRevenue,
+    deliveryCharges: sellingExpenses,
+    sellingExpenses,
     rawMaterialCost,
     productionCost,
     wasteCost,

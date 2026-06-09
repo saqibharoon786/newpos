@@ -8,7 +8,7 @@ class AuthService {
   // Register new user
   async register(userData) {
     try {
-      // Check if user already exists
+      // Check if user already exist
       const existingUser = await User.findOne({
         $or: [{ email: userData.email }, { username: userData.username }],
       });

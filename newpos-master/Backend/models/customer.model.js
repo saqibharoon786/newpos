@@ -24,7 +24,7 @@ const customerSchema = new mongoose.Schema({
   cnicNo: {
     type: String,
     trim: true,
-    default: ''
+    default: undefined,
   },
   registrationDate: {
     type: Date,
@@ -118,6 +118,9 @@ customerSchema.pre('save', async function(next) {
   }
   if (this.email === '' || this.email == null) {
     this.email = undefined;
+  }
+  if (this.cnicNo === '' || this.cnicNo == null) {
+    this.cnicNo = undefined;
   }
   next();
 });
