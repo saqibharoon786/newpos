@@ -56,6 +56,17 @@ async function recordPosFinanceDeposit({ amount, paymentMethod, invoiceNo, custo
   });
 }
 
+/** How much customer finance advance to apply on a new POS bill (mirrors POP vendor advance). */
+function resolveAdvanceForSale(customer, billTotal, requestedAdvance) {
+  const price = parseFloat(billTotal) || 0;
+  const available = Math.max(0, Number(customer?.financeAdvanceBalance) || 0);
+  if (price <= 0 || available <= 0) return 0;
+  const requested = parseFloat(requestedAdvance);
+  if (requestedAdvance === 0 || requested === 0) return 0;
+  if (isNaN(requested) || requested < 0) return Math.min(available, price);
+  return Math.min(requested, available, price);
+}
+
 async function applyCustomerFinanceAdvance(customerId, amount, invoiceNo) {
   if (!customerId || !amount || amount <= 0) return { ok: true, applied: 0 };
   const customer = await Customer.findById(customerId);
@@ -259,18 +270,42 @@ const addSale = async (req, res) => {
     }
 
     const receiptImage = req.file ? `/uploads/receipts/${req.file.filename}` : "";
-    const paidAmount = parseFloat(amountPaid) || 0;
+    const cashFromBody = parseFloat(amountPaid) || 0;
     const discountNum = parseFloat(req.body.discount) || 0;
     const sellingPriceNum = computeSaleBillTotal({
       ...req.body,
       sellingWeight: weightToSell,
     });
-    if (paidAmount > sellingPriceNum) {
-      return res.status(400).json({
-        success: false,
-        message: `Received amount (${paidAmount}) cannot exceed total bill (${sellingPriceNum})`,
-      });
+
+    const payMethodEarly = String(paymentMethod || "cash").toLowerCase();
+    const hasAdvanceField =
+      req.body.advancePayment !== undefined && req.body.advancePayment !== "";
+    let advanceApplied = 0;
+    let cashPaid = cashFromBody;
+
+    if (req.body.customerId) {
+      const custForAdv = await Customer.findById(req.body.customerId);
+      if (custForAdv && (custForAdv.financeAdvanceBalance || 0) > 0) {
+        if (hasAdvanceField) {
+          advanceApplied = resolveAdvanceForSale(
+            custForAdv,
+            sellingPriceNum,
+            parseFloat(req.body.advancePayment)
+          );
+        } else {
+          advanceApplied = resolveAdvanceForSale(custForAdv, sellingPriceNum, -1);
+        }
+        if (payMethodEarly === "advance" && advanceApplied === 0 && cashPaid > 0) {
+          advanceApplied = resolveAdvanceForSale(custForAdv, sellingPriceNum, cashPaid);
+          cashPaid = 0;
+        }
+      }
     }
+
+    if (advanceApplied + cashPaid > sellingPriceNum) {
+      cashPaid = Math.max(0, sellingPriceNum - advanceApplied);
+    }
+    const paidAmount = Math.min(sellingPriceNum, advanceApplied + cashPaid);
     const remainingAmount = Math.max(0, sellingPriceNum - paidAmount);
     const billTotalStr = String(sellingPriceNum);
     const transportNum = parseFloat(transportationCost) || 0;
@@ -336,7 +371,7 @@ const addSale = async (req, res) => {
         sellingPricePerKg,
         discount: String(discountNum),
         finalAmount: billTotalStr,
-        advancePayment: paidAmount,
+        advancePayment: advanceApplied,
         amountPaid: paidAmount,
         remainingAmount: remainingAmount,
         paymentStatus: finalPaymentStatus,
@@ -421,7 +456,7 @@ const addSale = async (req, res) => {
         sellingPricePerKg,
         discount: String(discountNum),
         finalAmount: billTotalStr,
-        advancePayment: paidAmount,
+        advancePayment: advanceApplied,
         amountPaid: paidAmount,
         remainingAmount: remainingAmount,
         paymentStatus: finalPaymentStatus,
@@ -488,7 +523,7 @@ const addSale = async (req, res) => {
         sellingPricePerKg,
         discount: String(discountNum),
         finalAmount: billTotalStr,
-        advancePayment: paidAmount,
+        advancePayment: advanceApplied,
         amountPaid: paidAmount,
         remainingAmount: remainingAmount,
         paymentStatus: finalPaymentStatus,
@@ -544,14 +579,19 @@ const addSale = async (req, res) => {
     }
 
     const payMethod = String(paymentMethod || 'cash').toLowerCase();
-    if (payMethod === 'advance' && paidAmount > 0 && req.body.customerId) {
-      const adv = await applyCustomerFinanceAdvance(req.body.customerId, paidAmount, finalInvoiceNo);
+    if (advanceApplied > 0 && req.body.customerId) {
+      const adv = await applyCustomerFinanceAdvance(
+        req.body.customerId,
+        advanceApplied,
+        finalInvoiceNo
+      );
       if (!adv.ok) {
         return res.status(400).json({ success: false, message: adv.message });
       }
-    } else if (paidAmount > 0) {
+    }
+    if (cashPaid > 0) {
       await recordPosFinanceDeposit({
-        amount: paidAmount,
+        amount: cashPaid,
         paymentMethod: payMethod,
         invoiceNo: finalInvoiceNo,
         customerName,

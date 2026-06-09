@@ -182,6 +182,7 @@ function mapSaleRow(s) {
     revenueRs: Math.round(revenueRs * 100) / 100,
     costRs: Math.round(costRs * 100) / 100,
     profitRs: Math.round(profitRs * 100) / 100,
+    deliveryChargesRs: Math.round((parseFloat(s.transportationCost) || 0) * 100) / 100,
     amountPaidRs: parseFloat(s.amountPaid) || 0,
     remainingRs: parseFloat(s.remainingAmount) || 0,
     paymentStatus: s.paymentStatus || 'none',
@@ -212,7 +213,7 @@ exports.getProfitLossReport = async (req, res) => {
       success: true,
       data: {
         ...data,
-        formula: 'Net Profit = Revenue − Material/Production/Wastage − Kharcha',
+        formula: 'Net Profit = Revenue − Material/Production/Wastage − Kharcha − Selling Expenses (Delivery)',
       },
     });
   } catch (error) {
@@ -380,9 +381,11 @@ exports.getBusinessPipelineReport = async (req, res) => {
     const totalSalesCostRs = sales.reduce((s, x) => s + x.costRs, 0);
     const totalSalesProfitRs = sales.reduce((s, x) => s + x.profitRs, 0);
     const totalExpensesRs = expenses.reduce((s, e) => s + e.priceRs, 0);
+    const totalDeliveryChargesRs = sales.reduce((s, x) => s + (x.deliveryChargesRs || 0), 0);
+    const sellingExpensesRs = Math.round(totalDeliveryChargesRs * 100) / 100;
 
     const grossProfit = totalRevenueRs - totalSalesCostRs;
-    const netProfit = grossProfit - totalExpensesRs;
+    const netProfit = grossProfit - totalExpensesRs - sellingExpensesRs;
 
     res.json({
       success: true,
@@ -415,9 +418,13 @@ exports.getBusinessPipelineReport = async (req, res) => {
             count: expenses.length,
             totalRs: Math.round(totalExpensesRs * 100) / 100,
           },
+          sellingExpenses: {
+            deliveryChargesRs: sellingExpensesRs,
+            totalRs: sellingExpensesRs,
+          },
           grossProfitRs: Math.round(grossProfit * 100) / 100,
           netProfitRs: Math.round(netProfit * 100) / 100,
-          formula: 'Net Profit = Sales Profit − Kharcha (Sales Profit = Revenue − Sale Cost)',
+          formula: 'Net Profit = Revenue − Sale Cost − Kharcha − Delivery (Selling Expenses)',
         },
         purchases,
         production: productionRows,

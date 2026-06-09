@@ -15,6 +15,35 @@ import { exportAsCsv, exportAsExcelTable, exportAsPdf } from '@/lib/exportUtils'
 const FINANCE_API = '/api/finance';
 const PL_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+function monthStartYmd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+function monthEndYmd(): string {
+  const d = new Date();
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+}
+
+function formatPeriodLabel(start: string, end: string): string {
+  if (!start || !end) return 'All time';
+  const fmt = (ymd: string) => {
+    const [y, m, d] = ymd.split('-').map(Number);
+    return `${d} ${PL_MONTH_NAMES[m - 1] || m} ${y}`;
+  };
+  if (start === end) return fmt(start);
+  return `${fmt(start)} — ${fmt(end)}`;
+}
+
+function buildFinanceDateParams(start: string, end: string): Record<string, string> {
+  if (!start || !end) return {};
+  return {
+    startDate: `${start}T00:00:00.000`,
+    endDate: `${end}T23:59:59.999`,
+  };
+}
+
 interface Transaction {
   _id: string;
   id: string;
@@ -234,11 +263,11 @@ export default function FinanceModule() {
   const [filterType, setFilterType] = useState('all');
   const [filterMethod, setFilterMethod] = useState('all');
   const [sourceFilter, setSourceFilter] = useState<'all' | 'pos' | 'asset'>('all');
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  });
-  const [plPeriodLabel, setPlPeriodLabel] = useState('This month');
+  const [startDate, setStartDate] = useState(monthStartYmd);
+  const [endDate, setEndDate] = useState(monthEndYmd);
+  const [plPeriodLabel, setPlPeriodLabel] = useState(() =>
+    formatPeriodLabel(monthStartYmd(), monthEndYmd())
+  );
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 500,
@@ -249,14 +278,10 @@ export default function FinanceModule() {
   const fetchProfitLoss = useCallback(async () => {
     try {
       const params: Record<string, string> = {};
-      if (selectedMonth) {
-        const [year, month] = selectedMonth.split('-');
-        const y = parseInt(year, 10);
-        const m = parseInt(month, 10);
-        const lastDay = new Date(y, m, 0).getDate();
-        params.startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-        params.endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-        setPlPeriodLabel(`${PL_MONTH_NAMES[m - 1] || month} ${year}`);
+      if (startDate && endDate) {
+        params.startDate = startDate;
+        params.endDate = endDate;
+        setPlPeriodLabel(formatPeriodLabel(startDate, endDate));
       } else {
         setPlPeriodLabel('All time');
       }
@@ -265,7 +290,7 @@ export default function FinanceModule() {
     } catch {
       /* ignore */
     }
-  }, [selectedMonth]);
+  }, [startDate, endDate]);
 
   useEffect(() => {
     fetchProfitLoss();
@@ -674,7 +699,7 @@ export default function FinanceModule() {
       fetchTransactions(1);
     }, 0);
     return () => clearTimeout(timer);
-  }, [selectedMonth]);
+  }, [startDate, endDate]);
 
   // ==================== API FUNCTIONS ====================
   const fetchInitialData = async () => {
@@ -694,20 +719,14 @@ export default function FinanceModule() {
     try {
       const params: any = {
         page: 1,
-        limit: selectedMonth ? 2000 : Math.max(pagination.limit, 500),
+        limit: startDate && endDate ? 2000 : Math.max(pagination.limit, 500),
       };
 
       if (searchQuery) params.search = searchQuery;
       if (filterType !== 'all') params.type = filterType;
       if (filterMethod !== 'all') params.method = filterMethod;
 
-      if (selectedMonth) {
-        const [year, month] = selectedMonth.split('-');
-        const startDate = new Date(parseInt(year), parseInt(month) - 1, 1).toISOString();
-        const endDate = new Date(parseInt(year), parseInt(month), 0, 23, 59, 59, 999).toISOString();
-        params.startDate = startDate;
-        params.endDate = endDate;
-      }
+      Object.assign(params, buildFinanceDateParams(startDate, endDate));
 
       const response = await api.get(`${FINANCE_API}/transactions`, { params });
       
@@ -982,13 +1001,15 @@ export default function FinanceModule() {
     try {
       setLoading(prev => ({ ...prev, export: true }));
       const response = await api.get(`${FINANCE_API}/export`, {
+        params: buildFinanceDateParams(startDate, endDate),
         responseType: 'blob'
       });
       
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `transactions_${new Date().toISOString().split('T')[0]}.csv`);
+      const rangeLabel = startDate && endDate ? `${startDate}_to_${endDate}` : 'all';
+      link.setAttribute('download', `transactions_${rangeLabel}.csv`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -1150,7 +1171,7 @@ export default function FinanceModule() {
 
   const handleSearch = useCallback(() => {
     fetchTransactions(1);
-  }, [searchQuery, filterType, filterMethod, selectedMonth]);
+  }, [searchQuery, filterType, filterMethod, startDate, endDate]);
 
   const exportFinanceTable = (format: 'csv' | 'excel' | 'pdf') => {
     const rows = filteredTransactions.map((t) => ({
@@ -1163,7 +1184,7 @@ export default function FinanceModule() {
       Reference: t.reference || '',
     }));
     const headers = ['Date', 'Type', 'Method', 'Amount', 'Balance', 'Description', 'Reference'];
-    const name = `Finance_${selectedMonth || 'all'}_${Date.now()}`;
+    const name = `Finance_${startDate && endDate ? `${startDate}_to_${endDate}` : 'all'}_${Date.now()}`;
     if (format === 'csv') exportAsCsv(`${name}.csv`, headers, rows);
     else if (format === 'excel') exportAsExcelTable(`${name}.xls`, 'Finance Transactions', headers, rows);
     else {
@@ -1300,13 +1321,14 @@ export default function FinanceModule() {
       {plReport && (
         <div className="px-3 sm:px-4 md:px-6 py-4 border-b border-border bg-muted/30">
           <p className="text-xs text-muted-foreground mb-2 max-w-screen-2xl mx-auto">
-            Profit &amp; Loss ({plPeriodLabel}) — same period as Dashboard when month is selected
+            Profit &amp; Loss ({plPeriodLabel})
           </p>
-          <div className="max-w-screen-2xl mx-auto grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+          <div className="max-w-screen-2xl mx-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
             <div><span className="text-muted-foreground">Revenue</span><p className="font-semibold">Rs. {plReport.totalRevenue?.toLocaleString()}</p></div>
             <div><span className="text-muted-foreground">Material Cost</span><p className="font-semibold">Rs. {plReport.totalMaterialCost?.toLocaleString()}</p></div>
             <div><span className="text-muted-foreground">Gross Profit</span><p className="font-semibold text-green-600">Rs. {plReport.grossProfit?.toLocaleString()}</p></div>
             <div><span className="text-muted-foreground">Kharcha</span><p className="font-semibold">Rs. {plReport.totalExpenses?.toLocaleString()}</p></div>
+            <div><span className="text-muted-foreground">Selling Expenses (Delivery)</span><p className="font-semibold text-orange-600">Rs. {(plReport.sellingExpenses ?? plReport.deliveryCharges ?? 0)?.toLocaleString()}</p></div>
             <div><span className="text-muted-foreground">Net Profit</span><p className="font-bold text-primary">Rs. {plReport.netProfit?.toLocaleString()}</p></div>
           </div>
         </div>
@@ -1953,14 +1975,43 @@ export default function FinanceModule() {
                 />
               )}
             </div>
-            <div className="w-auto">
-              <Input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="bg-card border-border text-foreground w-full sm:w-[160px]"
-                disabled={loading.transactions}
-              />
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="finance-from" className="text-xs text-muted-foreground whitespace-nowrap">From</Label>
+                <Input
+                  id="finance-from"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (endDate && next > endDate) {
+                      toast.error('Start date cannot be after end date');
+                      return;
+                    }
+                    setStartDate(next);
+                  }}
+                  className="bg-card border-border text-foreground w-full sm:w-[150px]"
+                  disabled={loading.transactions}
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="finance-to" className="text-xs text-muted-foreground whitespace-nowrap">To</Label>
+                <Input
+                  id="finance-to"
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (startDate && startDate > next) {
+                      toast.error('End date cannot be before start date');
+                      return;
+                    }
+                    setEndDate(next);
+                  }}
+                  className="bg-card border-border text-foreground w-full sm:w-[150px]"
+                  disabled={loading.transactions}
+                />
+              </div>
             </div>
             <Select 
               value={filterMethod} 

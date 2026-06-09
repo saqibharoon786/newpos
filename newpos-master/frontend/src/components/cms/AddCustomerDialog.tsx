@@ -436,8 +436,8 @@ export function AddCustomerDialog({
       const requestData = {
         customerName: formData.customerName.trim(),
         phoneNo: formData.phoneNo.trim(),
-        email: formData.email?.trim() || "",
-        cnicNo: formData.cnicNo?.trim() || "",
+        ...(formData.email?.trim() ? { email: formData.email.trim() } : {}),
+        ...(formData.cnicNo?.trim() ? { cnicNo: formData.cnicNo.trim() } : {}),
         registrationDate: registrationDateForBackend, // Send as ISO string
         address: formData.address?.trim() || "",
         province: formData.province || "",
