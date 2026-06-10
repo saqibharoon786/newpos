@@ -80,14 +80,6 @@ async function applyCustomerFinanceAdvance(customerId, amount, invoiceNo) {
     };
   }
   customer.financeAdvanceBalance = Math.max(0, available - amount);
-  customer.advanceLedger = customer.advanceLedger || [];
-  customer.advanceLedger.push({
-    date: new Date(),
-    amount,
-    method: "drawer",
-    description: `Advance applied to POS invoice ${invoiceNo} (Rs. ${amount})`,
-    reference: invoiceNo,
-  });
   await customer.save();
   return { ok: true, applied: amount };
 }
