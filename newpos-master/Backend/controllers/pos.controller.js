@@ -83,7 +83,7 @@ async function applyCustomerFinanceAdvance(customerId, amount, invoiceNo) {
   customer.advanceLedger = customer.advanceLedger || [];
   customer.advanceLedger.push({
     date: new Date(),
-    amount: 0,
+    amount,
     method: "drawer",
     description: `Advance applied to POS invoice ${invoiceNo} (Rs. ${amount})`,
     reference: invoiceNo,

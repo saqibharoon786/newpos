@@ -591,14 +591,27 @@ async function getCustomerLedger(customerId, query) {
     const ymd = parseYmd(s.purchaseDate);
     const bill = num(s.finalAmount) || num(s.sellingPrice);
     const paid = num(s.amountPaid);
+    const advanceApplied = num(s.advancePayment);
     entries.push({
       date: ymd,
       invoiceNo: s.invoiceNo || '—',
       description: `Sale — ${s.materialName || ''}`,
-      debit: round2(bill),
-      credit: round2(paid),
+      debit: 0,
+      credit: round2(bill),
       sortKey: `${ymd}S${s._id}`,
     });
+
+    const cashPayment = round2(Math.max(0, paid - advanceApplied));
+    if (cashPayment > 0) {
+      entries.push({
+        date: ymd,
+        invoiceNo: s.invoiceNo || '—',
+        description: `Payment received — ${s.materialName || ''}`,
+        debit: cashPayment,
+        credit: 0,
+        sortKey: `${ymd}P${s._id}`,
+      });
+    }
   }
 
   for (const a of customer.advanceLedger || []) {
@@ -607,8 +620,8 @@ async function getCustomerLedger(customerId, query) {
       date: ymd,
       invoiceNo: a.reference || '—',
       description: a.description || 'Advance (Finance)',
-      debit: 0,
-      credit: round2(a.amount),
+      debit: round2(a.amount),
+      credit: 0,
       sortKey: `${ymd}A${a._id || a.reference}`,
     });
   }
@@ -619,7 +632,7 @@ async function getCustomerLedger(customerId, query) {
   const inPeriod = [];
   for (const e of entries) {
     if (startDate && e.date && e.date < startDate) {
-      openingBalance = round2(openingBalance + e.debit - e.credit);
+      openingBalance = round2(openingBalance + e.credit - e.debit);
     } else if (inRange(e.date, startDate, endDate)) {
       inPeriod.push(e);
     }
@@ -627,7 +640,7 @@ async function getCustomerLedger(customerId, query) {
 
   let balance = openingBalance;
   const lines = inPeriod.map((row) => {
-    balance = round2(balance + row.debit - row.credit);
+    balance = round2(balance + row.credit - row.debit);
     return { ...row, balance };
   });
 
