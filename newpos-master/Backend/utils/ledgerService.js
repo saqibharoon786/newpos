@@ -682,6 +682,8 @@ async function getCustomerLedger(customerId, query) {
   const inPeriod = [];
   for (const e of entries) {
     if (startDate && e.date && e.date < startDate) {
+      // Opening balance for the selected range is the closing balance
+      // from all previous rows: prior credits minus prior debits.
       openingBalance = round2(openingBalance + e.credit - e.debit);
     } else if (inRange(e.date, startDate, endDate)) {
       inPeriod.push(e);
@@ -690,6 +692,7 @@ async function getCustomerLedger(customerId, query) {
 
   let balance = openingBalance;
   const lines = inPeriod.map((row) => {
+    // Balance formula = opening + credit - debit
     balance = round2(balance + row.credit - row.debit);
     return { ...row, balance };
   });
