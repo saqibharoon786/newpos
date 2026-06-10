@@ -233,11 +233,9 @@ export default function LedgerView() {
         activeTab === 'purchases' ? 'Bill #' : 'Invoice #',
         'Particulars',
         activeTab === 'purchases' ? 'Vendor' : 'Customer',
-        'Qty',
-        'Rate',
-        'Amount',
-        'Paid',
-        'Balance',
+        'Debit (Rs)',
+        'Credit (Rs)',
+        'Balance (Rs)',
       ];
       rows = ledgerRows.map((r) => ({
         Date: String(r.date ?? ''),
@@ -246,11 +244,9 @@ export default function LedgerView() {
         [activeTab === 'purchases' ? 'Vendor' : 'Customer']: String(
           activeTab === 'purchases' ? r.vendor : r.customer
         ),
-        Qty: r.qty ? fmtKg(r.qty as number) : '—',
-        Rate: r.rate ? fmtRs(r.rate as number) : '—',
-        Amount: r.amount ? fmtRs(r.amount as number) : '—',
-        Paid: r.paid ? fmtRs(r.paid as number) : '—',
-        Balance: fmtRs((r.balance ?? r.closing) as number),
+        'Debit (Rs)': r.debit ? fmtRs(r.debit as number) : r.amount ? fmtRs(r.amount as number) : '—',
+        'Credit (Rs)': r.credit ? fmtRs(r.credit as number) : r.paid ? fmtRs(r.paid as number) : '—',
+        'Balance (Rs)': fmtRs((r.balance ?? r.closing) as number),
       }));
     } else if (data.rows) {
       headers = ['Code', 'Item', 'Opening', 'Movement', 'Balance'];
@@ -455,10 +451,8 @@ export default function LedgerView() {
         invoiceNo: r.invoiceNo,
         description: r.description,
         party: isPurchase ? r.vendor : r.customer,
-        qty: r.qty ? fmtKg(r.qty as number) : '—',
-        rate: r.rate ? fmtRs(r.rate as number) : '—',
-        amount: r.amount ? fmtRs(r.amount as number) : '—',
-        paid: r.paid ? fmtRs(r.paid as number) : '—',
+        debit: r.debit ? fmtRs(r.debit as number) : r.amount ? fmtRs(r.amount as number) : '—',
+        credit: r.credit ? fmtRs(r.credit as number) : r.paid ? fmtRs(r.paid as number) : '—',
         balance: fmtRs((r.balance ?? r.closing) as number),
       }));
       return (
@@ -519,24 +513,18 @@ export default function LedgerView() {
           {renderTable(
             [
               { key: 'date', label: 'Date' },
-              { key: 'invoiceNo', label: isPurchase ? 'Bill #' : 'Invoice #' },
+              { key: 'invoiceNo', label: 'Invoice #' },
               { key: 'description', label: 'Description' },
-              { key: 'party', label: isPurchase ? 'Vendor' : 'Customer' },
-              { key: 'qty', label: 'Qty', align: 'right' },
-              { key: 'rate', label: 'Rate', align: 'right' },
-              { key: 'amount', label: 'Amount', align: 'right' },
-              { key: 'paid', label: 'Paid', align: 'right' },
+              { key: 'debit', label: 'Debit', align: 'right' },
+              { key: 'credit', label: 'Credit', align: 'right' },
               { key: 'balance', label: 'Balance (Rs)', align: 'right' },
             ],
             (data.lines as Record<string, unknown>[]).map((l) => ({
               date: l.date,
               invoiceNo: l.invoiceNo ?? '—',
               description: l.description,
-              party: l.vendor || l.customer || '—',
-              qty: l.qty ? fmtKg(l.qty as number) : '—',
-              rate: l.rate ? fmtRs(l.rate as number) : '—',
-              amount: l.amount ? fmtRs(l.amount as number) : '—',
-              paid: l.paid ? fmtRs(l.paid as number) : '—',
+              debit: l.debit ? fmtRs(l.debit as number) : '—',
+              credit: l.credit ? fmtRs(l.credit as number) : '—',
               balance: fmtRs(l.balance as number),
             })),
             'No ledger entries'

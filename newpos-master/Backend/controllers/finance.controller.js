@@ -75,6 +75,17 @@ exports.getTransactions = async (req, res) => {
     
     const skip = (parseInt(page) - 1) * parseInt(limit);
     
+    const openingQuery = {};
+    if (type && type !== 'all') {
+      openingQuery.type = type;
+    }
+    if (method && method !== 'all') {
+      openingQuery.method = method;
+    }
+    if (startDate) {
+      openingQuery.date = { $lt: new Date(startDate) };
+    }
+
     const [transactions, total, allForBalance, openingTransactions] = await Promise.all([
       Transaction.find(query)
         .sort({ date: 1, createdAt: 1 })
@@ -84,7 +95,7 @@ exports.getTransactions = async (req, res) => {
       Transaction.countDocuments(query),
       Transaction.find(query).sort({ date: 1, createdAt: 1 }).lean(),
       startDate
-        ? Transaction.find({ date: { $lt: new Date(startDate) } }).lean()
+        ? Transaction.find(openingQuery).lean()
         : Promise.resolve([]),
     ]);
 

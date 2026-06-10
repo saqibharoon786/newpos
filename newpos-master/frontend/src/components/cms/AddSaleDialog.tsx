@@ -181,6 +181,7 @@ export function AddSaleDialog({
     weight?: number;
     weightForCost?: number;
     costPerKg?: number;
+    actualCostPerKg?: number;
   } | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>("cash");
   const [weightError, setWeightError] = useState<string>("");
@@ -453,6 +454,10 @@ export function AddSaleDialog({
       materialColor: editData.materialColor || "#FFFFFF",
       productionCost: editData.productionCost || undefined,
       weight: editWeight > 0 ? editWeight : undefined,
+      actualCostPerKg:
+        editData.actualCostPerKg != null && editData.actualCostPerKg > 0
+          ? editData.actualCostPerKg
+          : undefined,
     });
     if (editProdCost > 0 && editWeight > 0) {
       setFormData((prev) => ({ ...prev, productionCost: String(editProdCost) }));
@@ -540,9 +545,13 @@ export function AddSaleDialog({
         const totalAvailable = item.totalAvailableWeight ?? 0;
         const totalCost = parseFloat(item.totalProductionCost) || 0;
         const outputW = parseFloat(item.totalOutputWeight) || totalAvailable;
-        const costPerKg =
+        const actualCostPerKg =
           item.actualCostPerKg != null && item.actualCostPerKg > 0
             ? parseFloat(item.actualCostPerKg)
+            : 0;
+        const costPerKg =
+          actualCostPerKg > 0
+            ? actualCostPerKg
             : item.costPerKg != null && item.costPerKg > 0
               ? parseFloat(item.costPerKg)
               : 0;
@@ -570,6 +579,7 @@ export function AddSaleDialog({
           createdAt: "",
           isAggregated: true,
           totalProductionCost: totalCost,
+          actualCostPerKg,
           costPerKg,
         };
       });
@@ -752,13 +762,18 @@ export function AddSaleDialog({
       totalProductionCost?: number;
       productionCost?: string;
       costPerKg?: number;
+      actualCostPerKg?: number;
     };
     const productionCost =
       mat.totalProductionCost ?? mat.productionCost;
+    const actualCostPerKg =
+      mat.actualCostPerKg != null && mat.actualCostPerKg > 0
+        ? mat.actualCostPerKg
+        : undefined;
     const costPerKg =
       mat.costPerKg != null && mat.costPerKg > 0
         ? mat.costPerKg
-        : undefined;
+        : actualCostPerKg;
     setSelectedMaterialInfo({
       totalWeight,
       availableWeight,
@@ -771,6 +786,7 @@ export function AddSaleDialog({
       productionCost: productionCost ?? formData.productionCost,
       weight: totalWeight > 0 ? totalWeight : undefined,
       weightForCost: availableWeight > 0 ? availableWeight : totalWeight,
+      actualCostPerKg,
       costPerKg,
     });
     if (productionCost != null) {

@@ -29,6 +29,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
     invoiceNo: "",
     date: "",  // DD/MM/YYYY string - USER SELECTED DATE
     time: "12:00", // Default to 12:00 PM to avoid midnight timezone issues
+    paymentMethod: "cash",
     receiptImage: null as File | null,
   });
   
@@ -65,8 +66,15 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
   // Dialog open: date auto mat set nahi - user jo date select kare wohi show/save hogi
   useEffect(() => {
     if (open) {
-      setCurrentMonth(new Date().getMonth());
-      setCurrentYear(new Date().getFullYear());
+      const today = new Date();
+      setCurrentMonth(today.getMonth());
+      setCurrentYear(today.getFullYear());
+      setSelectedDate(today);
+      setFormData(prev => ({
+        ...prev,
+        time: "12:00",
+        paymentMethod: "cash",
+      }));
     }
   }, [open]);
 
@@ -226,6 +234,10 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
       const timeToSend = formData.time || '12:00';
       formDataToSend.append('purchaseTime', timeToSend);
       
+      // ✅ Attach selected payment method so asset purchases debit the right account
+      formDataToSend.append('paymentMethod', formData.paymentMethod || 'cash');
+      formDataToSend.append('accountType', 'fixed_asset');
+      
       // ✅ Append the File object with the correct field name
       if (formData.receiptImage) {
         console.log("📄 Appending file to FormData:", formData.receiptImage.name);
@@ -264,6 +276,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
           invoiceNo: "",
           date: "",
           time: "12:00",
+          paymentMethod: "cash",
           receiptImage: null,
         });
         setSelectedDate(null);
@@ -328,6 +341,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
         invoiceNo: "",
         date: "",
         time: "12:00",
+        paymentMethod: "cash",
         receiptImage: null,
       });
       setSelectedDate(null);
@@ -503,6 +517,24 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
                   onChange={handleInputChange}
                   className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Payment Method</label>
+                <select
+                  name="paymentMethod"
+                  value={formData.paymentMethod}
+                  onChange={handleSelectChange}
+                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="cash">Cash (Drawer)</option>
+                  <option value="bank">Bank</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="online">Online</option>
+                  <option value="easypaisa">Easypaisa</option>
+                  <option value="jazzcash">JazzCash</option>
+                </select>
               </div>
             </div>
 

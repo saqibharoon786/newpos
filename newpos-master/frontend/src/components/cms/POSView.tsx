@@ -1485,7 +1485,7 @@ export function POSView() {
     });
   };
 
-  const handleExportCustomerSummary = (format: "excel" | "word") => {
+const handleExportCustomerSummary = (format: "excel" | "word" | "pdf") => {
     if (!customerSummary || customerSummary.length === 0) {
       toast({
         title: "No data",
@@ -1543,7 +1543,19 @@ export function POSView() {
         : toYmd(new Date());
 
     if (format === "excel") {
-      exportAsCsv(`POS_Customer_Summary_${rangeText}.csv`, headers, rows);
+      exportAsExcelTable(`POS_Customer_Summary_${rangeText}.xls`, "POS Customer-wise Summary", headers, rows);
+    } else if (format === "pdf") {
+      const body = `<table border="1" cellpadding="4"><thead><tr>${headers
+        .map((h) => `<th>${h}</th>`)
+        .join("")}</tr></thead><tbody>${rows
+        .map(
+          (r) =>
+            `<tr>${headers
+              .map((h) => `<td>${r[h as keyof typeof r] ?? ""}</td>`)
+              .join("")}</tr>`
+        )
+        .join("")}</tbody></table>`;
+      exportAsPdf("POS Customer-wise Summary", body);
     } else {
       exportAsWordTable(`POS_Customer_Summary_${rangeText}.doc`, "POS Customer-wise Summary", headers, rows);
     }
@@ -1790,6 +1802,13 @@ export function POSView() {
               >
                 <Download className="w-3.5 h-3.5" />
                 Excel
+              </button>
+              <button
+                onClick={() => handleExportCustomerSummary("pdf")}
+                className="px-3 py-1.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-2 transition-colors"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                PDF
               </button>
               <button
                 onClick={() => handleExportCustomerSummary("word")}

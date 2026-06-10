@@ -228,6 +228,26 @@ async function getRmDetail(code, query) {
     });
   }
 
+  for (const s of sales) {
+    if (!s.purchaseId || !saleMatchesRmCode(s, code)) continue;
+    const ymd = parseYmd(s.purchaseDate);
+    if (!inRange(ymd, startDate, endDate)) continue;
+    const kg = num(s.weight);
+    if (kg <= 0) continue;
+
+    entries.push({
+      date: ymd,
+      invoiceNo: s.invoiceNo || s.saleInvoice || '—',
+      vendor: s.customerName || s.customer || '—',
+      description: `Sale — ${s.customerName || 'Customer'}`,
+      purchasedQty: 0,
+      purchasedRate: 0,
+      purchasedAmount: 0,
+      issuedQty: kg,
+      sortKey: `${ymd}S${s._id}`,
+    });
+  }
+
   entries.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.sortKey).localeCompare(String(b.sortKey)));
 
   let closing = summary.openingQty;

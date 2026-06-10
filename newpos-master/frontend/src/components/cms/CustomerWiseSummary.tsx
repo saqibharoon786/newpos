@@ -6,7 +6,7 @@ import {
   getColorNameFromHex,
   type SaleForSummary,
 } from "@/lib/customerSummary";
-import { exportAsCsv, exportAsWordTable, toYmd } from "@/lib/exportUtils";
+import { exportAsExcelTable, exportAsPdf, toYmd } from "@/lib/exportUtils";
 
 function formatCurrency(value: number): string {
   return Number(value || 0).toLocaleString();
@@ -36,7 +36,7 @@ export function CustomerWiseSummary({
     [sales]
   );
 
-  const handleExport = (format: "excel" | "word") => {
+  const handleExport = (format: "excel" | "pdf") => {
     if (customerSummary.length === 0) {
       toast({
         title: "No data",
@@ -88,14 +88,19 @@ export function CustomerWiseSummary({
 
     const rangeText = toYmd(new Date());
     if (format === "excel") {
-      exportAsCsv(`${exportFilePrefix}_${rangeText}.csv`, headers, rows);
+      exportAsExcelTable(`${exportFilePrefix}_${rangeText}.xls`, title, headers, rows);
     } else {
-      exportAsWordTable(
-        `${exportFilePrefix}_${rangeText}.doc`,
-        title,
-        headers,
-        rows
-      );
+      const body = `<table border="1" cellpadding="4"><thead><tr>${headers
+        .map((h) => `<th>${h}</th>`)
+        .join("")}</tr></thead><tbody>${rows
+        .map(
+          (r) =>
+            `<tr>${headers
+              .map((h) => `<td>${r[h as keyof typeof r] ?? ""}</td>`)
+              .join("")}</tr>`
+        )
+        .join("")}</tbody></table>`;
+      exportAsPdf(title, body);
     }
     toast({
       title: "Export complete",
@@ -123,11 +128,11 @@ export function CustomerWiseSummary({
           </button>
           <button
             type="button"
-            onClick={() => handleExport("word")}
+            onClick={() => handleExport("pdf")}
             className="px-3 py-1.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-2"
           >
             <FileText className="w-3.5 h-3.5" />
-            Word
+            PDF
           </button>
         </div>
       </div>
