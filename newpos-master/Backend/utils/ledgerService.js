@@ -412,12 +412,14 @@ async function getPurchaseTransactionLedger(query) {
       vendor: p.vendor,
       qty: round2(qty),
       rate,
-      debit: round2(paid),
-      credit: round2(amount),
+      // Debit should represent the purchase amount, Credit the payment/advance
+      debit: round2(amount),
+      credit: round2(paid),
       amount: round2(amount),
       paid: round2(paid),
     };
     if (ymd && startDate && ymd < startDate) {
+      // opening balance = sum(debit - credit) for prior period
       openingBalance = round2(openingBalance + amount - paid);
     } else if (inRange(ymd, startDate, endDate)) {
       periodRows.push(row);
@@ -426,7 +428,8 @@ async function getPurchaseTransactionLedger(query) {
 
   let balance = openingBalance;
   const rows = periodRows.map((row) => {
-    balance = round2(balance + row.credit - row.debit);
+    // balance = opening + debit - credit
+    balance = round2(balance + row.debit - row.credit);
     return { ...row, balance, closing: balance };
   });
 
