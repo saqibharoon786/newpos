@@ -5,6 +5,7 @@ const Customer = require("../models/customer.model");
 const Transaction = require("../models/transaction.model");
 const { ProductionData } = require("../models/process.model.js");
 const { generateSaleInvoiceNo } = require("../utils/invoiceGenerator");
+const Expense = require("../models/expense.model");
 const path = require("path");
 const fs = require("fs");
 
@@ -544,7 +545,9 @@ const addSale = async (req, res) => {
     salePayload.customerId = req.body.customerId;
     salePayload.approvalStatus = 'pending';
     salePayload.createdBy = req.user?.username || req.body.createdBy || 'system';
-    salePayload.transportationCost = transportNum;
+    // Transportation cost should be recorded as an Expense, not saved against the Sale invoice.
+    // Keep transport amount in `transportNum` then zero it on the sale payload so invoices don't carry transport.
+    salePayload.transportationCost = 0;
     salePayload.notes = notes || '';
 
     const matForCost = salePayload.materialName || bodyMaterialName;
@@ -607,6 +610,7 @@ const addSale = async (req, res) => {
       }
     }
     if (Array.isArray(parsedLineItems) && parsedLineItems.length > 0) {
+      // Line-item transportation cost should also be recorded as Expense (not saved on invoice).
       salePayload.lineItems = parsedLineItems.map((li) => ({
         materialName: li.materialName,
         quality: li.quality || 'Standard',
@@ -614,7 +618,7 @@ const addSale = async (req, res) => {
         weight: parseFloat(li.weight) || 0,
         sellingPricePerKg: parseFloat(li.sellingPricePerKg) || 0,
         discount: parseFloat(li.discount) || 0,
-        transportationCost: parseFloat(li.transportationCost) || 0,
+        transportationCost: 0,
         amount: parseFloat(li.amount) || 0,
         actualCostPerKg: parseFloat(li.actualCostPerKg) || 0,
         productionId: li.productionId,
@@ -622,6 +626,28 @@ const addSale = async (req, res) => {
     }
 
     const sale = await Sale.create(salePayload);
+
+    // If there was a transportation cost provided, create an Expense record for it (non-blocking).
+    if (transportNum && transportNum > 0) {
+      try {
+        const expDate = salePayload.purchaseDate || new Date().toISOString().split('T')[0];
+        const expTime = salePayload.purchaseTime || new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+        await Expense.create({
+          subject: `Transport - Invoice ${finalInvoiceNo}`,
+          description: `Transportation cost for invoice ${finalInvoiceNo}`,
+          purpose: 'Travel',
+          paymentMethod: String(paymentMethod || 'drawer'),
+          category: 'Transport',
+          price: String(transportNum),
+          personResponsible: 'Admin',
+          usage: 'Company',
+          date: expDate,
+          time: expTime,
+        });
+      } catch (expErr) {
+        console.warn('Failed to create transport expense for sale', finalInvoiceNo, expErr.message || expErr);
+      }
+    }
 
     res.status(201).json({
       success: true,

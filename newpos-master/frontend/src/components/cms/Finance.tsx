@@ -174,6 +174,8 @@ export default function FinanceModule() {
   // State for transaction history
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
+  const [openingBalance, setOpeningBalance] = useState<number>(0);
+  const [closingBalance, setClosingBalance] = useState<number>(0);
   
   // Loading states
   const [loading, setLoading] = useState({
@@ -740,6 +742,8 @@ export default function FinanceModule() {
         }));
         
         setTransactions(transactionsData);
+        setOpeningBalance(Number(response.data.openingBalance ?? 0));
+        setClosingBalance(Number(response.data.closingBalance ?? 0));
         
         if (response.data.pagination) {
           setPagination(response.data.pagination);
@@ -1916,6 +1920,40 @@ export default function FinanceModule() {
                 up: true 
               },
             ].map((stat, index) => (
+              <Card key={index} className="bg-card border-border hover:border-primary/30 transition-all duration-300">
+                <CardContent className="pt-6">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">{stat.label}</p>
+                      <p className="text-2xl font-bold text-foreground">{stat.value}</p>
+                      <div className={`flex items-center gap-1 mt-2 text-xs ${stat.up ? 'text-success' : 'text-destructive'}`}>
+                        {stat.up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                        {stat.trend}
+                      </div>
+                    </div>
+                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                      <stat.icon className="w-6 h-6 text-primary" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-4">
+            {[{
+              label: "Opening Balance",
+              value: formatCurrency(openingBalance),
+              icon: ArrowDownRight,
+              trend: "Period start",
+              up: openingBalance >= 0
+            }, {
+              label: "Closing Balance",
+              value: formatCurrency(closingBalance),
+              icon: ArrowUpRight,
+              trend: "Period end",
+              up: closingBalance >= openingBalance
+            }].map((stat, index) => (
               <Card key={index} className="bg-card border-border hover:border-primary/30 transition-all duration-300">
                 <CardContent className="pt-6">
                   <div className="flex items-start justify-between">

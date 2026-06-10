@@ -596,7 +596,7 @@ export default function CustomersView() {
               <div class="financial-value">PKR ${customer.amount.toLocaleString()}</div>
             </div>
             <div class="financial-item">
-              <div class="financial-label">Amount Paid</div>
+              <div class="financial-label">Amount/Payment Received</div>
               <div class="financial-value">PKR ${customer.amountPaid.toLocaleString()}</div>
             </div>
             <div class="financial-item">
@@ -949,7 +949,7 @@ export default function CustomersView() {
                 <DollarSign className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Amount Paid</p>
+                <p className="text-xs text-muted-foreground">Amount/Payment Received</p>
                 <p className="text-lg font-bold text-foreground">{formatCurrency(selectedCustomer.amountPaid)}</p>
               </div>
             </div>
@@ -1245,7 +1245,7 @@ export default function CustomersView() {
               <p className="text-2xl sm:text-3xl font-bold text-foreground">{formatCurrency(totalAmount)}</p>
             </div>
             <div className="bg-cms-card rounded-xl p-4">
-              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Amount Paid</p>
+              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Amount/Payment Received</p>
               <p className="text-2xl sm:text-3xl font-bold text-foreground">{formatCurrency(totalPaid)}</p>
             </div>
             <div className="bg-cms-card rounded-xl p-4">

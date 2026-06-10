@@ -180,71 +180,90 @@ export default function LedgerView() {
     let rows: Record<string, string | number>[] = [];
     const tabLabel = TABS.find((t) => t.id === activeTab)?.label || activeTab;
     const name = `Ledger_${tabLabel}_${startDate}_${endDate}`;
+    const ledgerRows = (data.lines ?? data.rows ?? []) as Record<string, unknown>[];
 
-    if ((activeTab === 'rm-detail' || activeTab === 'fp-detail') && data.lines) {
-      if (activeTab === 'rm-detail') {
-        headers = ['Date', 'Invoice #', 'Vendor', 'Description', 'Purch Qty', 'Rate', 'Amount', 'Issued', 'Closing'];
-        rows = (data.lines as Record<string, unknown>[]).map((l) => ({
-          Date: String(l.date ?? ''),
-          'Invoice #': String(l.invoiceNo ?? '—'),
-          Vendor: String(l.vendor ?? '—'),
-          Description: String(l.description ?? ''),
-          'Purch Qty': l.purchasedQty ? fmtKg(l.purchasedQty as number) : '—',
-          Rate: l.purchasedRate ? fmtRs(l.purchasedRate as number) : '—',
-          Amount: l.purchasedAmount ? fmtRs(l.purchasedAmount as number) : '—',
-          Issued: l.issuedQty ? fmtKg(l.issuedQty as number) : '—',
-          Closing: fmtKg(l.closingQty as number),
-        }));
-      } else {
-        headers = ['Date', 'Description', 'From Process', 'Rate', 'Amount', 'Sale Qty', 'Sale Rate', 'Closing'];
-        rows = (data.lines as Record<string, unknown>[]).map((l) => ({
-          Date: String(l.date ?? ''),
-          Description: String(l.description ?? ''),
-          'From Process': l.receivedQty ? fmtKg(l.receivedQty as number) : '—',
-          Rate: l.receivedRate ? fmtRs(l.receivedRate as number) : '—',
-          Amount: l.receivedAmount ? fmtRs(l.receivedAmount as number) : '—',
-          'Sale Qty': l.saleQty ? fmtKg(l.saleQty as number) : '—',
-          'Sale Rate': l.saleRate ? fmtRs(l.saleRate as number) : '—',
-          Closing: fmtKg(l.closingQty as number),
-        }));
-      }
+    if (activeTab === 'rm-detail' && data.lines) {
+      headers = ['Date', 'Invoice #', 'Vendor', 'Description', 'Purch Qty', 'Rate', 'Amount', 'Issued', 'Closing'];
+      rows = (data.lines as Record<string, unknown>[]).map((l) => ({
+        Date: String(l.date ?? ''),
+        'Invoice #': String(l.invoiceNo ?? '—'),
+        Vendor: String(l.vendor ?? '—'),
+        Description: String(l.description ?? ''),
+        'Purch Qty': l.purchasedQty ? fmtKg(l.purchasedQty as number) : '—',
+        Rate: l.purchasedRate ? fmtRs(l.purchasedRate as number) : '—',
+        Amount: l.purchasedAmount ? fmtRs(l.purchasedAmount as number) : '—',
+        Issued: l.issuedQty ? fmtKg(l.issuedQty as number) : '—',
+        Closing: fmtKg(l.closingQty as number),
+      }));
+    } else if (activeTab === 'fp-detail' && data.lines) {
+      headers = ['Date', 'Description', 'From Process', 'Rate', 'Amount', 'Sale Qty', 'Sale Rate', 'Closing'];
+      rows = (data.lines as Record<string, unknown>[]).map((l) => ({
+        Date: String(l.date ?? ''),
+        Description: String(l.description ?? ''),
+        'From Process': l.receivedQty ? fmtKg(l.receivedQty as number) : '—',
+        Rate: l.receivedRate ? fmtRs(l.receivedRate as number) : '—',
+        Amount: l.receivedAmount ? fmtRs(l.receivedAmount as number) : '—',
+        'Sale Qty': l.saleQty ? fmtKg(l.saleQty as number) : '—',
+        'Sale Rate': l.saleRate ? fmtRs(l.saleRate as number) : '—',
+        Closing: fmtKg(l.closingQty as number),
+      }));
+    } else if (activeTab === 'vendor' || activeTab === 'customer') {
+      headers = ['Date', 'Invoice #', 'Description', 'Debit', 'Credit', 'Balance'];
+      rows = ledgerRows.map((l) => ({
+        Date: String(l.date ?? ''),
+        'Invoice #': String(l.invoiceNo ?? '—'),
+        Description: String(l.description ?? ''),
+        Debit: l.debit ? fmtRs(l.debit as number) : '—',
+        Credit: l.credit ? fmtRs(l.credit as number) : '—',
+        Balance: fmtRs(l.balance as number),
+      }));
+    } else if (activeTab === 'owner' || activeTab === 'employee') {
+      headers = ['Date', 'Voucher', 'Description', 'Debit', 'Credit', 'Balance'];
+      rows = ledgerRows.map((l) => ({
+        Date: String(l.date ?? ''),
+        Voucher: String(l.voucherNo ?? ''),
+        Description: String(l.description ?? ''),
+        Debit: l.debit ? fmtRs(l.debit as number) : '—',
+        Credit: l.credit ? fmtRs(l.credit as number) : '—',
+        Balance: fmtRs(l.balance as number),
+      }));
+    } else if (activeTab === 'purchases' || activeTab === 'sales') {
+      headers = [
+        'Date',
+        activeTab === 'purchases' ? 'Bill #' : 'Invoice #',
+        'Particulars',
+        activeTab === 'purchases' ? 'Vendor' : 'Customer',
+        'Qty',
+        'Rate',
+        'Amount',
+        'Paid',
+        'Balance',
+      ];
+      rows = ledgerRows.map((r) => ({
+        Date: String(r.date ?? ''),
+        [activeTab === 'purchases' ? 'Bill #' : 'Invoice #']: String(r.invoiceNo ?? ''),
+        Particulars: String(r.description ?? ''),
+        [activeTab === 'purchases' ? 'Vendor' : 'Customer']: String(
+          activeTab === 'purchases' ? r.vendor : r.customer
+        ),
+        Qty: r.qty ? fmtKg(r.qty as number) : '—',
+        Rate: r.rate ? fmtRs(r.rate as number) : '—',
+        Amount: r.amount ? fmtRs(r.amount as number) : '—',
+        Paid: r.paid ? fmtRs(r.paid as number) : '—',
+        Balance: fmtRs((r.balance ?? r.closing) as number),
+      }));
     } else if (data.rows) {
-      if (activeTab === 'vendor' || activeTab === 'customer') {
-        headers = ['Date', 'Invoice #', 'Description', 'Debit', 'Credit', 'Balance'];
-        rows = (data.lines as Record<string, unknown>[]).map((l) => ({
-          Date: String(l.date ?? ''),
-          'Invoice #': String(l.invoiceNo ?? '—'),
-          Description: String(l.description ?? ''),
-          Debit: l.debit ? fmtRs(l.debit as number) : '—',
-          Credit: l.credit ? fmtRs(l.credit as number) : '—',
-          Balance: fmtRs(l.balance as number),
-        }));
-      } else if (activeTab === 'purchases' || activeTab === 'sales') {
-        headers = ['Date', 'Invoice #', 'Particulars', activeTab === 'purchases' ? 'Vendor' : 'Customer', 'Debit', 'Credit', 'Balance'];
-        rows = (data.rows as Record<string, unknown>[]).map((r) => ({
-          Date: String(r.date ?? ''),
-          'Invoice #': String(r.invoiceNo ?? ''),
-          Particulars: String(r.description ?? ''),
-          [activeTab === 'purchases' ? 'Vendor' : 'Customer']: String(
-            activeTab === 'purchases' ? r.vendor : r.customer
-          ),
-          Debit: r.debit ? fmtRs(r.debit as number) : '—',
-          Credit: r.credit ? fmtRs(r.credit as number) : '—',
-          Balance: fmtRs((r.balance ?? r.closing) as number),
-        }));
-      } else {
-        headers = ['Code', 'Item', 'Opening', 'Movement', 'Balance'];
-        rows = (data.rows as Record<string, number>[]).map((r) => ({
-          Code: r.code,
-          Item: r.itemName,
-          Opening: fmtKg(r.openingQty),
-          Movement:
-            activeTab === 'rm-summary'
-              ? `P:${fmtKg(r.purchase)} I:${fmtKg(r.issue)}`
-              : `Prod:${fmtKg(r.production)} Sale:${fmtKg(r.sale)}`,
-          Balance: fmtKg(r.balance),
-        }));
-      }
+      headers = ['Code', 'Item', 'Opening', 'Movement', 'Balance'];
+      rows = (data.rows as Record<string, number>[]).map((r) => ({
+        Code: r.code,
+        Item: r.itemName,
+        Opening: fmtKg(r.openingQty),
+        Movement:
+          activeTab === 'rm-summary'
+            ? `P:${fmtKg(r.purchase)} I:${fmtKg(r.issue)}`
+            : `Prod:${fmtKg(r.production)} Sale:${fmtKg(r.sale)}`,
+        Balance: fmtKg(r.balance),
+      }));
     }
 
     if (!rows.length) {
@@ -436,8 +455,10 @@ export default function LedgerView() {
         invoiceNo: r.invoiceNo,
         description: r.description,
         party: isPurchase ? r.vendor : r.customer,
-        debit: r.debit ? fmtRs(r.debit as number) : '—',
-        credit: r.credit ? fmtRs(r.credit as number) : '—',
+        qty: r.qty ? fmtKg(r.qty as number) : '—',
+        rate: r.rate ? fmtRs(r.rate as number) : '—',
+        amount: r.amount ? fmtRs(r.amount as number) : '—',
+        paid: r.paid ? fmtRs(r.paid as number) : '—',
         balance: fmtRs((r.balance ?? r.closing) as number),
       }));
       return (
@@ -498,18 +519,24 @@ export default function LedgerView() {
           {renderTable(
             [
               { key: 'date', label: 'Date' },
-              { key: 'invoiceNo', label: 'Invoice #' },
+              { key: 'invoiceNo', label: isPurchase ? 'Bill #' : 'Invoice #' },
               { key: 'description', label: 'Description' },
-              { key: 'debit', label: 'Debit (Payment)', align: 'right' },
-              { key: 'credit', label: 'Credit (Purchase)', align: 'right' },
+              { key: 'party', label: isPurchase ? 'Vendor' : 'Customer' },
+              { key: 'qty', label: 'Qty', align: 'right' },
+              { key: 'rate', label: 'Rate', align: 'right' },
+              { key: 'amount', label: 'Amount', align: 'right' },
+              { key: 'paid', label: 'Paid', align: 'right' },
               { key: 'balance', label: 'Balance (Rs)', align: 'right' },
             ],
             (data.lines as Record<string, unknown>[]).map((l) => ({
               date: l.date,
-              invoiceNo: l.invoiceNo,
+              invoiceNo: l.invoiceNo ?? '—',
               description: l.description,
-              debit: l.debit ? fmtRs(l.debit as number) : '—',
-              credit: l.credit ? fmtRs(l.credit as number) : '—',
+              party: l.vendor || l.customer || '—',
+              qty: l.qty ? fmtKg(l.qty as number) : '—',
+              rate: l.rate ? fmtRs(l.rate as number) : '—',
+              amount: l.amount ? fmtRs(l.amount as number) : '—',
+              paid: l.paid ? fmtRs(l.paid as number) : '—',
               balance: fmtRs(l.balance as number),
             })),
             'No ledger entries'

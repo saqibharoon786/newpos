@@ -75,7 +75,7 @@ exports.getTransactions = async (req, res) => {
     
     const skip = (parseInt(page) - 1) * parseInt(limit);
     
-    const [transactions, total, allForBalance] = await Promise.all([
+    const [transactions, total, allForBalance, openingTransactions] = await Promise.all([
       Transaction.find(query)
         .sort({ date: 1, createdAt: 1 })
         .skip(skip)
@@ -83,15 +83,25 @@ exports.getTransactions = async (req, res) => {
         .lean(),
       Transaction.countDocuments(query),
       Transaction.find(query).sort({ date: 1, createdAt: 1 }).lean(),
+      startDate
+        ? Transaction.find({ date: { $lt: new Date(startDate) } }).lean()
+        : Promise.resolve([]),
     ]);
 
-    let running = 0;
+    let openingBalance = 0;
+    for (const t of openingTransactions) {
+      openingBalance += t.type === 'deposit' ? t.amount : -t.amount;
+    }
+    openingBalance = Math.round(openingBalance * 100) / 100;
+
+    let running = openingBalance;
     const balanceById = new Map();
     for (const t of allForBalance) {
       if (t.type === 'deposit') running += t.amount;
       else running -= t.amount;
       balanceById.set(String(t._id), Math.round(running * 100) / 100);
     }
+    const closingBalance = Math.round(running * 100) / 100;
     
     // Format transactions for frontend
     const formattedTransactions = transactions.map(transaction => ({
@@ -111,11 +121,13 @@ exports.getTransactions = async (req, res) => {
       partyId: transaction.partyId || null,
       partyName: transaction.partyName || '',
       category: transaction.category || 'general',
-      runningBalance: balanceById.get(String(transaction._id)) ?? 0,
+      runningBalance: balanceById.get(String(transaction._id)) ?? openingBalance,
     }));
     
     res.json({
       success: true,
+      openingBalance,
+      closingBalance,
       transactions: formattedTransactions,
       pagination: {
         page: parseInt(page),

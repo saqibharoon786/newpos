@@ -718,7 +718,7 @@ export function AddCustomerDialog({
                   placeholder="Auto-generated"
                   value={formData.customerId}
                   onChange={handleInputChange}
-                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground bg-muted/50 cursor-not-allowed"
+                  className="w-full bg-muted/50 border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground cursor-not-allowed"
                   disabled
                   readOnly
                 />
@@ -921,7 +921,7 @@ export function AddCustomerDialog({
                 <p className="text-xs text-muted-foreground mt-1">Total amount for customer</p>
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Amount Paid (PKR)</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Amount/Payment Received (PKR)</label>
                 <div className="relative">
                   <input
                     type="number"
@@ -939,7 +939,7 @@ export function AddCustomerDialog({
                     PKR
                   </span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Amount already paid</p>
+                <p className="text-xs text-muted-foreground mt-1">Amount already received</p>
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Payment Status</label>
