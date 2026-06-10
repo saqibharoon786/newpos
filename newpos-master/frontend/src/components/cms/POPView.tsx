@@ -425,7 +425,7 @@ const VendorSummary = ({
   
   if (purchases.length === 0) return null;
 
-  const handleExportVendorSummary = (format: "excel" | "word") => {
+  const handleExportVendorSummary = (format: "excel" | "word" | "pdf") => {
     const headers = [
       "Vendor",
       "Total Purchases",
@@ -468,6 +468,18 @@ const VendorSummary = ({
     if (format === "excel") {
       // Use .xls table to keep alignment/boxes clear in Excel
       exportAsExcelTable(`POP_Vendor_Summary_${suffix}.xls`, "POP Vendor-wise Summary", headers, rows);
+    } else if (format === "pdf") {
+      const body = `<table border="1" cellpadding="4"><thead><tr>${headers
+        .map((h) => `<th>${h}</th>`)
+        .join("")}</tr></thead><tbody>${rows
+        .map(
+          (r) =>
+            `<tr>${headers
+              .map((h) => `<td>${r[h as keyof typeof r] ?? ""}</td>`)
+              .join("")}</tr>`
+        )
+        .join("")}</tbody></table>`;
+      exportAsPdf("POP Vendor-wise Summary", body);
     } else {
       exportAsWordTable(`POP_Vendor_Summary_${suffix}.doc`, "POP Vendor-wise Summary", headers, rows);
     }
@@ -512,6 +524,13 @@ const VendorSummary = ({
           >
             <Download className="w-3.5 h-3.5" />
             Excel
+          </button>
+          <button
+            onClick={() => handleExportVendorSummary("pdf")}
+            className="px-3 py-1.5 bg-cms-card-hover border border-border text-foreground rounded-md text-xs font-medium flex items-center gap-2 transition-colors hover:bg-secondary"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            PDF
           </button>
           <button
             onClick={() => handleExportVendorSummary("word")}
@@ -4887,7 +4906,7 @@ export function POPView() {
     );
   };
 
-  const handleExportPurchases = (format: "excel" | "word") => {
+  const handleExportPurchases = (format: "excel" | "word" | "pdf") => {
     const exportRows = getExportPurchases();
     if (exportRows.length === 0) {
       toast({
@@ -4932,6 +4951,18 @@ export function POPView() {
 
     if (format === "excel") {
       exportAsCsv(`POP_Report_${rangeText}.csv`, headers, rows);
+    } else if (format === "pdf") {
+      const body = `<table border="1" cellpadding="4"><thead><tr>${headers
+        .map((h) => `<th>${h}</th>`)
+        .join("")}</tr></thead><tbody>${rows
+        .map(
+          (r) =>
+            `<tr>${headers
+              .map((h) => `<td>${r[h as keyof typeof r] ?? ""}</td>`)
+              .join("")}</tr>`
+        )
+        .join("")}</tbody></table>`;
+      exportAsPdf("POP Report", body);
     } else {
       exportAsWordTable(`POP_Report_${rangeText}.doc`, "POP Report", headers, rows);
     }
@@ -5143,6 +5174,13 @@ export function POPView() {
           >
             <Download className="w-4 h-4" />
             Excel
+          </button>
+          <button
+            onClick={() => handleExportPurchases("pdf")}
+            className="px-3 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            PDF
           </button>
           <button
             onClick={() => handleExportPurchases("word")}

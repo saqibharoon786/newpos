@@ -149,13 +149,18 @@ exports.createAsset = async (req, res) => {
       purchaseDate: assetData.purchaseDate.toISOString()
     });
 
-    const method = (paymentMethod || 'drawer').replace('cash', 'drawer');
-    if (parsedPurchasePrice > 0 && ['drawer', 'bank', 'easypaisa', 'jazzcash'].includes(method)) {
+    const rawMethod = (paymentMethod || 'cash').toLowerCase();
+    const method = rawMethod === 'cash' ? 'drawer' : rawMethod;
+    const supportedMethods = ['drawer', 'bank', 'easypaisa', 'jazzcash', 'bank_transfer', 'cheque', 'online'];
+
+    if (parsedPurchasePrice > 0 && supportedMethods.includes(method)) {
       const balances = await Transaction.getBalances();
-      if ((balances[method] || 0) < parsedPurchasePrice) {
+      const balanceKey = ['bank_transfer', 'cheque', 'online'].includes(method) ? 'bank' : method;
+
+      if ((balances[balanceKey] || 0) < parsedPurchasePrice) {
         return res.status(400).json({
           success: false,
-          error: `Insufficient ${method} balance`,
+          error: `Insufficient ${balanceKey} balance`,
         });
       }
       await Transaction.create({
@@ -163,6 +168,7 @@ exports.createAsset = async (req, res) => {
         method,
         amount: parsedPurchasePrice,
         net: parsedPurchasePrice,
+        date: parsedPurchaseDate,
         description: `Asset: ${assetName}`,
         reference: invoiceNo || `AST-${Date.now()}`,
         status: 'completed',

@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from "sonner";
 import api from '@/lib/api';
-import { exportAsCsv, exportAsExcelTable, exportAsPdf } from '@/lib/exportUtils';
+import { exportAsCsv, exportAsExcelTable, exportAsPdf, exportAsWordTable } from '@/lib/exportUtils';
 
 const FINANCE_API = '/api/finance';
 const PL_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -37,11 +37,10 @@ function formatPeriodLabel(start: string, end: string): string {
 }
 
 function buildFinanceDateParams(start: string, end: string): Record<string, string> {
-  if (!start || !end) return {};
-  return {
-    startDate: `${start}T00:00:00.000`,
-    endDate: `${end}T23:59:59.999`,
-  };
+  const params: Record<string, string> = {};
+  if (start) params.startDate = `${start}T00:00:00.000`;
+  if (end) params.endDate = `${end}T23:59:59.999`;
+  return params;
 }
 
 interface Transaction {
@@ -701,7 +700,7 @@ export default function FinanceModule() {
       fetchTransactions(1);
     }, 0);
     return () => clearTimeout(timer);
-  }, [startDate, endDate]);
+  }, [startDate, endDate, filterType, filterMethod]);
 
   // ==================== API FUNCTIONS ====================
   const fetchInitialData = async () => {
@@ -1177,7 +1176,7 @@ export default function FinanceModule() {
     fetchTransactions(1);
   }, [searchQuery, filterType, filterMethod, startDate, endDate]);
 
-  const exportFinanceTable = (format: 'csv' | 'excel' | 'pdf') => {
+  const exportFinanceTable = (format: 'csv' | 'excel' | 'pdf' | 'word') => {
     const rows = filteredTransactions.map((t) => ({
       Date: t.date,
       Type: t.type,
@@ -1191,12 +1190,12 @@ export default function FinanceModule() {
     const name = `Finance_${startDate && endDate ? `${startDate}_to_${endDate}` : 'all'}_${Date.now()}`;
     if (format === 'csv') exportAsCsv(`${name}.csv`, headers, rows);
     else if (format === 'excel') exportAsExcelTable(`${name}.xls`, 'Finance Transactions', headers, rows);
+    else if (format === 'word') exportAsWordTable(`${name}.doc`, 'Finance Transactions', headers, rows);
     else {
       const body = `<table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows
         .map(
           (r) =>
-            `<tr>${headers.map((h) => `<td>${r[h as keyof typeof r] ?? ''}</td>`).join('')}</tr>`
-        )
+            `<tr>${headers.map((h) => `<td>${r[h as keyof typeof r] ?? ''}</td>`).join('')}</tr>`)
         .join('')}</tbody></table>`;
       exportAsPdf('Finance Transactions', body);
     }
@@ -2105,6 +2104,9 @@ export default function FinanceModule() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => exportFinanceTable('excel')} disabled={!filteredTransactions.length}>
               Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => exportFinanceTable('word')} disabled={!filteredTransactions.length}>
+              Word
             </Button>
             <Button
               variant="outline"

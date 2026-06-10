@@ -1442,7 +1442,7 @@ export function RoznamchaView() {
     }
   };
 
-  const exportExpensesBackup = async (format: "excel" | "word") => {
+  const exportExpensesBackup = async (format: "excel" | "word" | "pdf") => {
     try {
       const params = new URLSearchParams();
       params.append("page", "1");
@@ -1514,6 +1514,18 @@ export function RoznamchaView() {
         : `${activeTab}_${toYmd(new Date())}`;
       if (format === "excel") {
         exportAsCsv(`Roznamcha_Backup_${fileRange}.csv`, headers, rows);
+      } else if (format === "pdf") {
+        const body = `<table border="1" cellpadding="4"><thead><tr>${headers
+          .map((h) => `<th>${h}</th>`)
+          .join("")}</tr></thead><tbody>${rows
+          .map(
+            (r) =>
+              `<tr>${headers
+                .map((h) => `<td>${r[h as keyof typeof r] ?? ""}</td>`)
+                .join("")}</tr>`
+          )
+          .join("")}</tbody></table>`;
+        exportAsPdf("Roznamcha Expense Report", body);
       } else {
         exportAsWordTable(`Roznamcha_Backup_${fileRange}.doc`, "Roznamcha Expense Report", headers, rows);
       }
@@ -2187,6 +2199,13 @@ export function RoznamchaView() {
           >
             <Download className="w-4 h-4" />
             Excel Backup
+          </button>
+          <button
+            onClick={() => exportExpensesBackup("pdf")}
+            className="px-4 py-2.5 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            PDF Backup
           </button>
           <button
             onClick={() => exportExpensesBackup("word")}
