@@ -45,6 +45,13 @@ function parseDateField(dateField) {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
+function saleMatchesRmCode(sale, code) {
+  const target = String(getMaterialNameForCode(code) || '').toLowerCase().trim();
+  const saleName = String(sale.materialName || '').toLowerCase().trim();
+  if (!target || !saleName) return false;
+  return saleName === target || saleName.includes(target);
+}
+
 function inRange(ymd, startYmd, endYmd) {
   if (!ymd) return false;
   if (startYmd && ymd < startYmd) return false;
@@ -123,7 +130,7 @@ function aggregateRmForCode(purchases, productions, salesFromPop, code, startYmd
   }
 
   for (const s of salesFromPop) {
-    if (!s.purchaseId) continue;
+    if (!s.purchaseId || !saleMatchesRmCode(s, code)) continue;
     const ymd = parseYmd(s.purchaseDate);
     const kg = num(s.weight);
     if (ymd && startYmd && ymd < startYmd) {

@@ -195,6 +195,7 @@ function mapExpenseRow(e) {
   return {
     _id: e._id,
     date: e.date,
+    category: e.category || 'General',
     subject: e.subject,
     description: e.description,
     purpose: e.purpose,
@@ -202,6 +203,23 @@ function mapExpenseRow(e) {
     priceRs: parseMoney(e.price),
     personResponsible: e.personResponsible,
   };
+}
+
+function groupExpensesByCategory(expenses) {
+  const map = expenses.reduce((acc, e) => {
+    const key = String(e.category || 'General');
+    const existing = acc[key] || { category: key, totalRs: 0, count: 0 };
+    existing.totalRs += e.priceRs;
+    existing.count += 1;
+    acc[key] = existing;
+    return acc;
+  }, {});
+
+  return Object.values(map).map((item) => ({
+    category: item.category,
+    totalRs: Math.round(item.totalRs * 100) / 100,
+    count: item.count,
+  }));
 }
 
 exports.getProfitLossReport = async (req, res) => {
@@ -370,6 +388,8 @@ exports.getBusinessPipelineReport = async (req, res) => {
       .filter((e) => isInYmdRange(e.date, range.startDate, range.endDate))
       .map(mapExpenseRow);
 
+    const expenseCategories = groupExpensesByCategory(expenses);
+
     const totalPurchaseWeightKg = purchases.reduce((s, p) => s + p.weightKg, 0);
     const totalPurchaseCostRs = purchases.reduce((s, p) => s + p.priceRs, 0);
     const totalProcessInputKg = productionRows.reduce((s, p) => s + p.inputKg, 0);
@@ -430,6 +450,7 @@ exports.getBusinessPipelineReport = async (req, res) => {
         production: productionRows,
         sales,
         expenses,
+        expenseCategories,
       },
     });
   } catch (error) {

@@ -205,14 +205,38 @@ export default function ReportsView() {
     const summaryHeaders = ['Section', 'Metric', 'Value'];
 
     if (format === 'excel') {
-      exportAsExcelTable(`business-report-${label}.xls`, 'Business Report', summaryHeaders, summaryRows);
+      exportAsExcelTable(`business-report-${label}.xls`, 'Business Report Summary', summaryHeaders, summaryRows);
+      if (expenseCategoryRows.length) {
+        exportAsExcelTable(`expense-categories-${label}.xls`, 'Expense Categories', ['Category', 'Items', 'Total Rs'], expenseCategoryRows.map((r) => ({
+          Category: r.category,
+          Items: r.count,
+          'Total Rs': r.totalRs,
+        })));
+      }
+      if (expenseRows.length) {
+        exportAsExcelTable(`expense-details-${label}.xls`, 'Expense Details', ['Date', 'Category', 'Subject', 'Purpose', 'Usage', 'Amount', 'Responsible'], expenseRows.map((r) => ({
+          Date: r.date,
+          Category: r.category,
+          Subject: r.subject,
+          Purpose: r.purpose,
+          Usage: r.usage,
+          Amount: r.priceRs,
+          Responsible: r.personResponsible,
+        })));
+      }
     } else if (format === 'pdf') {
-      const body = summaryRows
+      const summaryBody = summaryRows
         .map((r) => `<tr><td>${r.Section}</td><td>${r.Metric}</td><td>${r.Value}</td></tr>`)
         .join('');
-      exportAsPdf('Business Report', `<table border="1" cellpadding="4"><thead><tr>${summaryHeaders.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`);
+      const categoryBody = expenseCategoryRows
+        .map((r) => `<tr><td>${r.category}</td><td>${r.count}</td><td>${r.totalRs}</td></tr>`)
+        .join('');
+      exportAsPdf(
+        'Business Report',
+        `<h2>Summary</h2><table border="1" cellpadding="4"><thead><tr>${summaryHeaders.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${summaryBody}</tbody></table>${categoryBody ? `<h2>Expense categories</h2><table border="1" cellpadding="4"><thead><tr><th>Category</th><th>Items</th><th>Total Rs</th></tr></thead><tbody>${categoryBody}</tbody></table>` : ''}`
+      );
     } else {
-    exportAsCsv(`business-report-${label}.csv`, summaryHeaders, summaryRows);
+      exportAsCsv(`business-report-${label}.csv`, summaryHeaders, summaryRows);
     }
     if (format === 'csv' && report.purchases?.length) {
       exportAsCsv(`mall-purchases-${label}.csv`, ['Date', 'Receipt', 'Vendor', 'Material', 'Weight kg', 'Price/kg', 'Total Rs'], report.purchases.map((p: any) => ({
@@ -223,6 +247,24 @@ export default function ReportsView() {
         'Weight kg': p.weightKg,
         'Price/kg': p.pricePerKg,
         'Total Rs': p.priceRs,
+      })));
+    }
+    if (format === 'csv' && expenseCategoryRows.length) {
+      exportAsCsv(`expense-categories-${label}.csv`, ['Category', 'Items', 'Total Rs'], expenseCategoryRows.map((r) => ({
+        Category: r.category,
+        Items: r.count,
+        'Total Rs': r.totalRs,
+      })));
+    }
+    if (format === 'csv' && expenseRows.length) {
+      exportAsCsv(`expense-details-${label}.csv`, ['Date', 'Category', 'Subject', 'Purpose', 'Usage', 'Amount', 'Responsible'], expenseRows.map((r) => ({
+        Date: r.date,
+        Category: r.category,
+        Subject: r.subject,
+        Purpose: r.purpose,
+        Usage: r.usage,
+        Amount: r.priceRs,
+        Responsible: r.personResponsible,
       })));
     }
     if (format === 'csv' && report.production?.length) {
@@ -326,11 +368,19 @@ export default function ReportsView() {
     report?.expenses?.map((e: any) => ({
       _id: e._id,
       date: e.date,
+      category: e.category || 'General',
       subject: e.subject,
       purpose: e.purpose,
       usage: e.usage,
       priceRs: fmtRs(e.priceRs),
       personResponsible: e.personResponsible,
+    })) || [];
+
+  const expenseCategoryRows =
+    report?.expenseCategories?.map((c: any) => ({
+      category: c.category,
+      count: c.count,
+      totalRs: fmtRs(c.totalRs),
     })) || [];
 
   const s = report?.summary;
@@ -573,6 +623,7 @@ export default function ReportsView() {
             icon={<Receipt className="w-5 h-5 text-red-500" />}
             headers={[
               { key: 'date', label: 'Date' },
+              { key: 'category', label: 'Category' },
               { key: 'subject', label: 'Subject' },
               { key: 'purpose', label: 'Purpose' },
               { key: 'usage', label: 'Usage' },
@@ -582,6 +633,20 @@ export default function ReportsView() {
             rows={expenseRows}
             emptyMsg="Is period mein koi kharcha nahi."
           />
+
+          {expenseCategoryRows.length > 0 && (
+            <DataTable
+              title="Expense categories"
+              icon={<Receipt className="w-5 h-5 text-orange-500" />}
+              headers={[
+                { key: 'category', label: 'Category' },
+                { key: 'count', label: 'Items', align: 'right' },
+                { key: 'totalRs', label: 'Total', align: 'right' },
+              ]}
+              rows={expenseCategoryRows}
+              emptyMsg="No expense category summary available."
+            />
+          )}
         </>
       )}
 

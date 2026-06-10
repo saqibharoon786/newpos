@@ -1097,7 +1097,7 @@ const PayTotalModal = ({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-md">
         <div className="bg-cms-table-header px-4 py-3 border-b border-border flex justify-between items-center">
-          <h3 className="text-sm font-semibold text-foreground">Pay total — {customerName}</h3>
+          <h3 className="text-sm font-semibold text-foreground">Receive total — {customerName}</h3>
           <button onClick={onClose} className="p-1 hover:bg-cms-card-hover rounded">
             <X className="w-4 h-4 text-muted-foreground" />
           </button>
@@ -1108,7 +1108,7 @@ const PayTotalModal = ({
             <p className="text-xl font-bold text-red-600">Rs. {formatCurrency(totalRemaining)}</p>
           </div>
           <div>
-            <label className="text-xs text-muted-foreground block mb-1">Amount to pay</label>
+            <label className="text-xs text-muted-foreground block mb-1">Amount Received</label>
             <input
               type="number"
               value={paymentAmount}
@@ -1164,7 +1164,7 @@ const PayTotalModal = ({
               className="flex-1 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-1"
             >
               {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {isSubmitting ? "Saving…" : "Pay"}
+              {isSubmitting ? "Saving…" : "Received"}
             </button>
           </div>
         </div>
