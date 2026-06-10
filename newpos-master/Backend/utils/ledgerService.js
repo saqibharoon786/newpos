@@ -456,8 +456,9 @@ async function getSalesTransactionLedger(query) {
       customer: s.buyerName || '—',
       qty: round2(qty),
       rate,
-      debit: round2(amount),
-      credit: round2(paid),
+      // Debit = payment received, Credit = sale amount
+      debit: round2(paid),
+      credit: round2(amount),
       amount: round2(amount),
       paid: round2(paid),
     };
@@ -470,7 +471,8 @@ async function getSalesTransactionLedger(query) {
 
   let balance = openingBalance;
   const rows = periodRows.map((row) => {
-    balance = round2(balance + row.debit - row.credit);
+    // balance = opening + credit - debit
+    balance = round2(balance + row.credit - row.debit);
     return { ...row, balance, closing: balance };
   });
 
