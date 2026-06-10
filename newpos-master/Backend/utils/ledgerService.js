@@ -438,40 +438,90 @@ async function getPurchaseTransactionLedger(query) {
 
 async function getSalesTransactionLedger(query) {
   const { startDate, endDate } = resolveRange(query);
-  const sales = await Sale.find().sort({ purchaseDate: 1, createdAt: 1 }).lean();
+  const [sales, customers] = await Promise.all([
+    Sale.find().sort({ purchaseDate: 1, createdAt: 1 }).lean(),
+    Customer.find({ 'advanceLedger.0': { $exists: true } })
+      .select('customerName advanceLedger')
+      .lean(),
+  ]);
 
-  let openingBalance = 0;
-  const periodRows = [];
+  const entries = [];
 
   for (const s of sales) {
     const ymd = parseYmd(s.purchaseDate);
     const amount = num(s.finalAmount) || num(s.sellingPrice);
     const paid = num(s.amountPaid);
+    const advanceApplied = num(s.advancePayment);
+    const cashPaid = round2(Math.max(0, paid - advanceApplied));
     const qty = num(s.weight);
     const rate = qty > 0 ? round2(amount / qty) : num(s.sellingPricePerKg);
-    const row = {
+
+    entries.push({
       date: ymd,
       invoiceNo: s.invoiceNo || '—',
       description: `${s.materialName || ''} — ${s.buyerName || ''}`.trim(),
       customer: s.buyerName || '—',
       qty: round2(qty),
       rate,
-      // Debit = payment received, Credit = sale amount
-      debit: round2(paid),
+      debit: 0,
       credit: round2(amount),
       amount: round2(amount),
       paid: round2(paid),
-    };
-    if (ymd && startDate && ymd < startDate) {
-      openingBalance = round2(openingBalance + amount - paid);
-    } else if (inRange(ymd, startDate, endDate)) {
+      sortKey: `${ymd}S${s._id}`,
+    });
+
+    if (cashPaid > 0) {
+      entries.push({
+        date: ymd,
+        invoiceNo: s.invoiceNo || '—',
+        description: `Payment received — ${s.materialName || ''}`,
+        customer: s.buyerName || '—',
+        qty: round2(qty),
+        rate,
+        debit: cashPaid,
+        credit: 0,
+        amount: round2(amount),
+        paid: cashPaid,
+        sortKey: `${ymd}P${s._id}`,
+      });
+    }
+  }
+
+  for (const customer of customers) {
+    const name = customer.customerName || 'Customer';
+    for (const a of customer.advanceLedger || []) {
+      const ymd = parseDateField(a.date);
+      entries.push({
+        date: ymd,
+        invoiceNo: a.reference || '—',
+        description: `Advance received — ${name}`,
+        customer: name,
+        qty: 0,
+        rate: 0,
+        debit: round2(a.amount),
+        credit: 0,
+        amount: round2(a.amount),
+        paid: round2(a.amount),
+        sortKey: `${ymd}A${a._id || a.reference}`,
+      });
+    }
+  }
+
+  entries.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.sortKey || '').localeCompare(String(b.sortKey || '')));
+
+  let openingBalance = 0;
+  const periodRows = [];
+
+  for (const row of entries) {
+    if (startDate && row.date && row.date < startDate) {
+      openingBalance = round2(openingBalance + row.credit - row.debit);
+    } else if (inRange(row.date, startDate, endDate)) {
       periodRows.push(row);
     }
   }
 
   let balance = openingBalance;
   const rows = periodRows.map((row) => {
-    // balance = opening + credit - debit
     balance = round2(balance + row.credit - row.debit);
     return { ...row, balance, closing: balance };
   });
