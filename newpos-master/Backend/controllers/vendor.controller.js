@@ -144,22 +144,23 @@ exports.updateVendorLedger = async (vendorName, entry) => {
   const debit = Number(entry.debit) || 0;
 
   if (entry.type === 'purchase') {
-    newBalance += debit;
-    vendor.payableBalance += debit;
+    newBalance += credit;
+    vendor.payableBalance += credit;
   } else if (entry.type === 'payment') {
-    newBalance -= credit;
-    vendor.payableBalance = Math.max(0, vendor.payableBalance - credit);
+    newBalance -= debit;
+    vendor.payableBalance = Math.max(0, vendor.payableBalance - debit);
   } else if (entry.type === 'advance') {
-    newBalance -= credit;
-    vendor.advanceBalance += credit;
+    newBalance -= debit;
+    vendor.advanceBalance += debit;
   } else if (entry.type === 'apply_advance') {
-    const applied = Math.min(credit, vendor.advanceBalance, vendor.payableBalance);
-    newBalance -= applied;
+    const applied = Math.min(debit, vendor.advanceBalance, vendor.payableBalance);
+    // Don't subtract applied from newBalance since it's just an internal offset!
     vendor.advanceBalance = Math.max(0, vendor.advanceBalance - applied);
     vendor.payableBalance = Math.max(0, vendor.payableBalance - applied);
-    entry.credit = applied;
+    entry.debit = applied;
+    entry.credit = 0;
   } else if (entry.type === 'adjustment') {
-    newBalance += debit - credit;
+    newBalance += credit - debit;
   }
 
   vendor.ledger.push({ ...entry, balance: newBalance });

@@ -144,8 +144,8 @@ const addPurchase = async (req, res) => {
         purchaseId: purchase._id,
         reference: invoiceNo,
         description: materialName || 'Purchase',
-        debit: priceNum,
-        credit: 0,
+        debit: 0,
+        credit: priceNum,
       });
       if (amountPaidNum > 0) {
         await vendorController.updateVendorLedger(vendor, {
@@ -153,8 +153,8 @@ const addPurchase = async (req, res) => {
           purchaseId: purchase._id,
           reference: invoiceNo,
           description: `Payment on ${invoiceNo}`,
-          debit: 0,
-          credit: amountPaidNum,
+          debit: amountPaidNum,
+          credit: 0,
         });
       }
       if (advancePaymentNum > 0) {
@@ -163,8 +163,8 @@ const addPurchase = async (req, res) => {
           purchaseId: purchase._id,
           reference: invoiceNo,
           description: `Advance applied on ${invoiceNo}`,
-          debit: 0,
-          credit: advancePaymentNum,
+          debit: advancePaymentNum,
+          credit: 0,
         });
       }
     }

@@ -136,16 +136,25 @@ async function getVendorLinkedProfile(vendorId) {
   const ledger = (vendor.ledger || [])
     .slice()
     .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .map((e) => ({
-      date: e.date,
-      type: e.type,
-      description: e.description || '',
-      debit: num(e.debit),
-      credit: num(e.credit),
-      balance: num(e.balance),
-      method: e.paymentMethod || '',
-      reference: e.reference || '',
-    }));
+    .map((e) => {
+      const isPurchase = e.type === 'purchase';
+      const finalDebit = !isPurchase
+        ? (num(e.debit) || num(e.credit))
+        : 0;
+      const finalCredit = isPurchase
+        ? (num(e.credit) || num(e.debit))
+        : 0;
+      return {
+        date: e.date,
+        type: e.type,
+        description: e.description || '',
+        debit: finalDebit,
+        credit: finalCredit,
+        balance: num(e.balance),
+        method: e.paymentMethod || '',
+        reference: e.reference || '',
+      };
+    });
 
   const vendorNet = calcVendorNetDisplay(pop.totalRemaining, vendor.advanceBalance);
 
