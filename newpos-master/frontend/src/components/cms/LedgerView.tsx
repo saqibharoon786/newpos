@@ -522,7 +522,7 @@ export default function LedgerView() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Invoice # alag column — Description sirf detail. Vendor advance (Finance) poori raqam Debit column mein.
+            Balance = Opening + Credit (Purchase) − Debit (Payment / Advance to Vendor)
           </p>
           {renderTable(
             [

@@ -285,6 +285,11 @@ export function AddSaleDialog({
     }
   };
 
+  const getCustomerAvailableAdvance = (customer?: {
+    financeAdvanceBalance?: number;
+    advanceCredit?: number;
+  }) => Math.max(0, customer?.financeAdvanceBalance ?? 0);
+
   const handleCustomerSelect = (customerId: string) => {
     setSelectedCustomerId(customerId);
     if (!customerId) {
@@ -302,9 +307,7 @@ export function AddSaleDialog({
     setCustomerBalanceInfo({
       totalBalanceDue: customer.totalBalanceDue ?? 0,
       salesBalanceDue: customer.salesBalanceDue ?? 0,
-      advanceCredit:
-        customer.advanceCredit ??
-        (customer.financeAdvanceBalance ?? 0),
+      advanceCredit: getCustomerAvailableAdvance(customer),
     });
     setFormData((prev) => ({
       ...prev,
@@ -488,7 +491,7 @@ export function AddSaleDialog({
   const handlePaymentTypeChange = (type: PaymentType) => {
     setPaymentType(type);
     const cust = registeredCustomers.find((c) => c._id === selectedCustomerId);
-    const financeAdv = cust?.financeAdvanceBalance ?? cust?.advanceCredit ?? 0;
+    const financeAdv = getCustomerAvailableAdvance(cust);
     const bill = calculateTotalAmount();
     const applied =
       type === "advance" && financeAdv > 0 ? Math.min(financeAdv, bill) : 0;
@@ -496,7 +499,7 @@ export function AddSaleDialog({
       ...prev,
       paymentMethod: type,
       amountPaid: type === "credit" ? "0" : prev.amountPaid,
-      advancePayment: applied > 0 ? String(applied) : prev.advancePayment,
+      advancePayment: type === "advance" ? (applied > 0 ? String(applied) : "") : prev.advancePayment,
     }));
     setPaymentStatusError("");
   };
@@ -877,7 +880,7 @@ export function AddSaleDialog({
   useEffect(() => {
     if (isEdit || !open || !selectedCustomerId) return;
     const cust = registeredCustomers.find((c) => c._id === selectedCustomerId);
-    const financeAdv = cust?.financeAdvanceBalance ?? cust?.advanceCredit ?? 0;
+    const financeAdv = getCustomerAvailableAdvance(cust);
     const bill = calculateTotalAmount();
     if (bill <= 0) return;
     const applied = financeAdv > 0 ? Math.min(financeAdv, bill) : 0;

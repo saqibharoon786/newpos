@@ -23,25 +23,36 @@ async function rebuildVendorLedger(vendor) {
   const rebuilt = [];
 
   for (const e of entries) {
-    const debit = num(e.debit);
-    const credit = num(e.credit);
+    const isPurchase = e.type === 'purchase';
+    const finalDebit = !isPurchase 
+      ? (num(e.debit) || num(e.credit)) 
+      : 0;
+    const finalCredit = isPurchase 
+      ? (num(e.credit) || num(e.debit)) 
+      : 0;
+
     if (e.type === 'purchase') {
-      payable += debit;
-      running += debit;
+      payable += finalCredit;
+      running += finalCredit;
     } else if (e.type === 'payment' || e.type === 'apply_advance') {
-      payable = Math.max(0, payable - credit);
+      payable = Math.max(0, payable - finalDebit);
       if (e.type === 'apply_advance') {
-        advance = Math.max(0, advance - credit);
+        advance = Math.max(0, advance - finalDebit);
+      } else {
+        running -= finalDebit;
       }
-      running -= credit;
     } else if (e.type === 'advance') {
-      advance += credit;
-      running -= credit;
+      advance += finalDebit;
+      running -= finalDebit;
     } else if (e.type === 'adjustment') {
-      running += debit - credit;
+      const adjDebit = num(e.debit);
+      const adjCredit = num(e.credit);
+      running += adjCredit - adjDebit;
     }
     rebuilt.push({
       ...e.toObject ? e.toObject() : e,
+      debit: finalDebit,
+      credit: finalCredit,
       balance: Math.round(running * 100) / 100,
     });
   }

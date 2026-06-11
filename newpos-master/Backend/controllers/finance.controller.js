@@ -557,8 +557,8 @@ exports.recordVendorAdvance = async (req, res) => {
     await vendorController.updateVendorLedger(vendor.name, {
       type: 'advance',
       description: desc,
-      credit: amt,
-      debit: 0,
+      debit: amt,
+      credit: 0,
       paymentMethod: method,
       reference: ref,
       transactionId: transaction._id,
@@ -790,11 +790,14 @@ exports.getVendorAdvanceHistory = async (req, res) => {
     const history = ledgerRaw.map((e) => {
       const isFinanceAdvance =
         e.type === 'advance' && e.transactionId && !e.purchaseId;
+      const finalAmount = e.type === 'purchase'
+        ? (num(e.credit) || num(e.debit))
+        : (num(e.debit) || num(e.credit));
       return {
         _id: e._id,
         date: e.date,
         type: e.type,
-        amount: e.type === 'purchase' ? num(e.debit) : num(e.credit),
+        amount: finalAmount,
         method: e.paymentMethod || '',
         description: e.description,
         reference: e.reference,
