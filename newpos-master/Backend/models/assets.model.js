@@ -33,6 +33,19 @@ const assetSchema = new mongoose.Schema({
   purchasePrice: {
     type: Number
   },
+  amountPaid: {
+    type: Number,
+    default: 0
+  },
+  remainingAmount: {
+    type: Number,
+    default: 0
+  },
+  paidStatus: {
+    type: String,
+    enum: ['none', 'partial', 'paid'],
+    default: 'none'
+  },
   purchaseFrom: {
     type: String
   },
@@ -74,6 +87,20 @@ const assetSchema = new mongoose.Schema({
   ],
 }, {
   timestamps: true
+});
+
+assetSchema.pre('save', function(next) {
+  const price = this.purchasePrice || 0;
+  const paid = this.amountPaid || 0;
+  this.remainingAmount = Math.max(0, price - paid);
+  if (paid <= 0) {
+    this.paidStatus = 'none';
+  } else if (paid >= price) {
+    this.paidStatus = 'paid';
+  } else {
+    this.paidStatus = 'partial';
+  }
+  next();
 });
 
 // Create indexes for better performance

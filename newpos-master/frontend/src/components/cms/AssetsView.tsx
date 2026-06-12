@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, Printer, Pencil, Eye, Trash2, ChevronLeft, ChevronRight, Filter, Package, Loader2, Save, Calendar, Clock, ChevronDown } from "lucide-react";
+import { Search, Plus, Printer, Pencil, Eye, Trash2, ChevronLeft, ChevronRight, Filter, Package, Loader2, Save, Calendar, Clock, ChevronDown, Wallet, CreditCard, DollarSign, CheckCircle } from "lucide-react";
 import { AddAssetDialog } from "./AddAssetDialog";
 import { AssetDetailsView } from "./AssetDetailsView";
 import { toast } from "@/hooks/use-toast";
@@ -15,6 +15,10 @@ interface AssetItem {
   category: string;
   condition: string;
   purchasePrice?: number;
+  amountPaid?: number;
+  remainingAmount?: number;
+  paidStatus?: 'none' | 'partial' | 'paid';
+  paymentMethod?: string;
   assignedTo: string;
   purchaseDate: string;
   purchaseTime?: string;
@@ -28,6 +32,30 @@ interface AssetItem {
   createdAt: string;
   updatedAt: string;
 }
+
+const getPaidStatusBadge = (status?: string) => {
+  switch (status) {
+    case 'paid':
+      return (
+        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+          Paid
+        </span>
+      );
+    case 'partial':
+      return (
+        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/20">
+          Partial
+        </span>
+      );
+    case 'none':
+    default:
+      return (
+        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/20">
+          Unpaid
+        </span>
+      );
+  }
+};
 
 // Helper function to format date as "22 Jan 2026"
 const formatDateWithMonthName = (dateString: string): string => {
@@ -77,6 +105,13 @@ export function AssetsView() {
   const [editForm, setEditForm] = useState<Partial<AssetItem>>({});
   const [updating, setUpdating] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentAsset, setPaymentAsset] = useState<AssetItem | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentNotes, setPaymentNotes] = useState("");
+  const [recordingPayment, setRecordingPayment] = useState(false);
   const [financeBalances, setFinanceBalances] = useState<{
     drawer: number;
     easypaisa: number;
@@ -297,6 +332,8 @@ const handleAddAsset = async (assetData: any) => {
       category: asset.category,
       condition: asset.condition,
       purchasePrice: asset.purchasePrice,
+      amountPaid: asset.amountPaid || 0,
+      paymentMethod: asset.paymentMethod || "cash",
       assignedTo: asset.assignedTo,
       department: asset.department,
       quantity: asset.quantity,
@@ -338,6 +375,16 @@ const handleAddAsset = async (assetData: any) => {
           updateData.purchasePrice = cleanedPrice ? parseFloat(cleanedPrice) : null;
         } else if (typeof updateData.purchasePrice === 'number') {
           updateData.purchasePrice = updateData.purchasePrice;
+        }
+      }
+
+      // Convert amountPaid to number if it's a string
+      if (updateData.amountPaid !== undefined) {
+        if (typeof updateData.amountPaid === 'string') {
+          const cleanedPaid = updateData.amountPaid.replace(/,/g, '').trim();
+          updateData.amountPaid = cleanedPaid ? parseFloat(cleanedPaid) : 0;
+        } else if (typeof updateData.amountPaid === 'number') {
+          updateData.amountPaid = updateData.amountPaid;
         }
       }
       
@@ -405,6 +452,76 @@ const handleAddAsset = async (assetData: any) => {
         description: error.message || "Failed to delete asset",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleRecordPayment = async () => {
+    if (!paymentAsset) return;
+    const amount = parseFloat(paymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast({
+        title: "❌ Invalid Amount",
+        description: "Please enter a valid payment amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const remaining = paymentAsset.remainingAmount ?? (paymentAsset.purchasePrice ? Math.max(0, paymentAsset.purchasePrice - (paymentAsset.amountPaid || 0)) : 0);
+    if (amount > remaining) {
+      toast({
+        title: "❌ Overpayment",
+        description: `Payment amount cannot exceed remaining balance of Rs. ${remaining.toLocaleString()}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setRecordingPayment(true);
+      const response = await api.post(`/api/assets/${paymentAsset._id}/payments`, {
+        amount,
+        paymentMethod,
+        notes: paymentNotes,
+        date: paymentDate
+      });
+
+      if (response.data?.success) {
+        toast({
+          title: "✅ Payment Recorded",
+          description: response.data.message || `Payment of Rs. ${amount.toLocaleString()} recorded successfully!`,
+        });
+
+        // Update local state
+        setData(prev => prev.map(item => 
+          item._id === paymentAsset._id ? { ...item, ...response.data.data } : item
+        ));
+
+        // Refetch finance balances
+        api.get("/api/finance/balances").then((r) => {
+          if (r.data?.success && r.data.balances) {
+            setFinanceBalances({
+              drawer: Number(r.data.balances.drawer) || 0,
+              easypaisa: Number(r.data.balances.easypaisa) || 0,
+              jazzcash: Number(r.data.balances.jazzcash) || 0,
+              bank: Number(r.data.balances.bank) || 0,
+            });
+          }
+        });
+
+        setPaymentDialogOpen(false);
+        setPaymentAsset(null);
+      } else {
+        throw new Error(response.data?.error || "Failed to record payment");
+      }
+    } catch (error: any) {
+      console.error("Error recording payment:", error);
+      toast({
+        title: "❌ Error",
+        description: error.response?.data?.error || error.message || "Failed to record payment",
+        variant: "destructive",
+      });
+    } finally {
+      setRecordingPayment(false);
     }
   };
 
@@ -554,9 +671,10 @@ const handleAddAsset = async (assetData: any) => {
               <tr className="bg-cms-table-header">
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Asset Name</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Category</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Condition</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Price</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Quantity</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Paid</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Status</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Assigned to</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
@@ -570,21 +688,19 @@ const handleAddAsset = async (assetData: any) => {
                 >
                   <td className="px-4 py-3 text-sm text-foreground">{item.assetName}</td>
                   <td className="px-4 py-3 text-sm text-foreground">{item.category}</td>
-                  <td className="px-4 py-3 text-sm text-foreground">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      item.condition === 'New' ? 'bg-green-100 text-green-800' :
-                      item.condition === 'Good' ? 'bg-blue-100 text-blue-800' :
-                      item.condition === 'Fair' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {item.condition}
-                    </span>
+                  <td className="px-4 py-3 text-sm text-foreground font-semibold">
+                    {item.purchasePrice ? `Rs. ${item.purchasePrice.toLocaleString()}` : 'Rs. 0'}
                   </td>
-                  <td className="px-4 py-3 text-sm text-foreground">
-                    {item.purchasePrice ? `Rs. ${item.purchasePrice.toLocaleString()}` : 'N/A'}
+                  <td className="px-4 py-3 text-sm text-emerald-500 font-medium">
+                    Rs. {(item.amountPaid || 0).toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 text-sm text-foreground">{item.quantity}</td>
-                  <td className="px-4 py-3 text-sm text-foreground">{item.assignedTo}</td>
+                  <td className="px-4 py-3 text-sm text-rose-500 font-medium">
+                    Rs. {(item.remainingAmount ?? (item.purchasePrice ? Math.max(0, item.purchasePrice - (item.amountPaid || 0)) : 0)).toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3 text-sm">
+                    {getPaidStatusBadge(item.paidStatus)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-foreground">{item.assignedTo || 'N/A'}</td>
                   <td className="px-4 py-3 text-sm text-foreground">
                     <div className="flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-muted-foreground" />
@@ -593,6 +709,26 @@ const handleAddAsset = async (assetData: any) => {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setPaymentAsset(item);
+                          const rem = item.remainingAmount ?? (item.purchasePrice ? Math.max(0, item.purchasePrice - (item.amountPaid || 0)) : 0);
+                          setPaymentAmount(rem.toString());
+                          setPaymentMethod(item.paymentMethod || "cash");
+                          setPaymentDate(new Date().toISOString().split('T')[0]);
+                          setPaymentNotes("");
+                          setPaymentDialogOpen(true);
+                        }}
+                        disabled={item.paidStatus === 'paid'}
+                        className={`p-1.5 rounded transition-colors ${
+                          item.paidStatus === 'paid'
+                            ? 'text-muted-foreground opacity-40 cursor-not-allowed'
+                            : 'text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-600'
+                        }`}
+                        title={item.paidStatus === 'paid' ? "Fully Paid" : "Record Payment"}
+                      >
+                        <Wallet className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={() => handleEditStart(item)}
                         className="p-1.5 hover:bg-secondary rounded transition-colors text-blue-600 hover:text-blue-700"
@@ -826,6 +962,17 @@ const handleAddAsset = async (assetData: any) => {
                   />
                 </div>
                 <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Amount Paid</label>
+                  <input
+                    type="text"
+                    name="amountPaid"
+                    placeholder="e.g. 70000"
+                    value={editForm.amountPaid || ''}
+                    onChange={handleEditFormChange}
+                    className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div>
                   <label className="block text-xs text-muted-foreground mb-1.5">Purchase From</label>
                   <input
                     type="text"
@@ -846,6 +993,23 @@ const handleAddAsset = async (assetData: any) => {
                     onChange={handleEditFormChange}
                     className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Payment Method</label>
+                  <select
+                    name="paymentMethod"
+                    value={editForm.paymentMethod || 'cash'}
+                    onChange={handleEditFormChange}
+                    className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="cash">Cash (Drawer)</option>
+                    <option value="bank">Bank</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="online">Online</option>
+                    <option value="easypaisa">Easypaisa</option>
+                    <option value="jazzcash">JazzCash</option>
+                  </select>
                 </div>
               </div>
 
@@ -899,6 +1063,159 @@ const handleAddAsset = async (assetData: any) => {
                   <>
                     <Save className="w-4 h-4" />
                     Update Asset
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Record Payment Dialog */}
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent className="bg-background border-border max-w-md p-0">
+          <DialogTitle className="sr-only">Record Asset Payment</DialogTitle>
+          <DialogDescription className="sr-only">
+            Dialog to record payments towards a company asset
+          </DialogDescription>
+          
+          <div className="bg-cms-sidebar px-6 py-3 border-b border-border">
+            <p className="text-xs text-muted-foreground">Assets / Record Payment</p>
+          </div>
+
+          <div className="p-6 bg-background">
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-foreground">Record Payment</h2>
+              <p className="text-xs text-muted-foreground">Record a payment for {paymentAsset?.assetName}</p>
+            </div>
+
+            {paymentAsset && (
+              <div className="mb-6 p-4 bg-cms-card rounded-lg border border-border">
+                <div className="grid grid-cols-2 gap-4 mb-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Total Price</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      Rs. {(paymentAsset.purchasePrice || 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Amount Paid</p>
+                    <p className="text-sm font-semibold text-emerald-500">
+                      Rs. {(paymentAsset.amountPaid || 0).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+                <div className="pt-3 border-t border-border">
+                  <p className="text-xs text-muted-foreground">Remaining Amount</p>
+                  <p className="text-lg font-bold text-rose-500">
+                    Rs. {(paymentAsset.remainingAmount ?? Math.max(0, (paymentAsset.purchasePrice || 0) - (paymentAsset.amountPaid || 0))).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Payment Amount *</label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    type="number"
+                    min="1"
+                    step="any"
+                    max={paymentAsset ? (paymentAsset.remainingAmount ?? Math.max(0, (paymentAsset.purchasePrice || 0) - (paymentAsset.amountPaid || 0))) : undefined}
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    placeholder="Enter amount"
+                    className="w-full bg-cms-card border border-border rounded-md pl-10 pr-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Payment Date *</label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    value={paymentDate}
+                    onChange={(e) => setPaymentDate(e.target.value)}
+                    className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Payment Method *</label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="cash">Cash (Drawer)</option>
+                  <option value="bank">Bank</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="online">Online</option>
+                  <option value="easypaisa">Easypaisa</option>
+                  <option value="jazzcash">JazzCash</option>
+                </select>
+                {financeBalances && (
+                  <div className="mt-2 p-2 bg-primary/5 border border-primary/10 rounded-md">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Available Account Balance:</span>
+                      <span className="font-semibold text-primary">
+                        Rs. {(
+                          paymentMethod === 'bank' || paymentMethod === 'bank_transfer' || paymentMethod === 'cheque' || paymentMethod === 'online'
+                            ? financeBalances.bank
+                            : paymentMethod === 'easypaisa'
+                            ? financeBalances.easypaisa
+                            : paymentMethod === 'jazzcash'
+                            ? financeBalances.jazzcash
+                            : financeBalances.drawer
+                        ).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Notes (Optional)</label>
+                <textarea
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                  placeholder="Payment notes..."
+                  rows={2}
+                  className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-border mt-6">
+              <button
+                onClick={() => {
+                  setPaymentDialogOpen(false);
+                  setPaymentAsset(null);
+                }}
+                disabled={recordingPayment}
+                className="px-4 py-2 bg-cms-card hover:bg-cms-card-hover border border-border text-foreground rounded-md text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRecordPayment}
+                disabled={recordingPayment || !paymentAmount || parseFloat(paymentAmount) <= 0}
+                className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50"
+              >
+                {recordingPayment ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    Record Payment
                   </>
                 )}
               </button>

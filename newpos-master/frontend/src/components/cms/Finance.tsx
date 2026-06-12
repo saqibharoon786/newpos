@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Wallet, Smartphone, Building, Edit, Trash2, Plus, Download, Search, X, Printer, BanknoteIcon, DollarSign, Clock, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Loader2, Users, Truck } from 'lucide-react';
+import { AlertCircle, Wallet, Smartphone, Building, Edit, Trash2, Plus, Download, Search, X, Printer, BanknoteIcon, DollarSign, Clock, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Loader2, Users, Truck, Calendar } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from "sonner";
@@ -26,6 +26,21 @@ function monthEndYmd(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
 }
 
+function todayYmd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function formatDatePickerDate(ymd: string): string {
+  if (!ymd) return '';
+  const parts = ymd.split('-');
+  if (parts.length === 3) {
+    const [year, month, day] = parts;
+    return `${day}/${month}/${year}`;
+  }
+  return ymd;
+}
+
 function formatPeriodLabel(start: string, end: string): string {
   if (!start || !end) return 'All time';
   const fmt = (ymd: string) => {
@@ -38,8 +53,14 @@ function formatPeriodLabel(start: string, end: string): string {
 
 function buildFinanceDateParams(start: string, end: string): Record<string, string> {
   const params: Record<string, string> = {};
-  if (start) params.startDate = `${start}T00:00:00.000`;
-  if (end) params.endDate = `${end}T23:59:59.999`;
+  if (start) {
+    const d = new Date(`${start}T00:00:00`);
+    params.startDate = d.toISOString();
+  }
+  if (end) {
+    const d = new Date(`${end}T23:59:59.999`);
+    params.endDate = d.toISOString();
+  }
   return params;
 }
 
@@ -265,9 +286,9 @@ export default function FinanceModule() {
   const [filterMethod, setFilterMethod] = useState('all');
   const [sourceFilter, setSourceFilter] = useState<'all' | 'pos' | 'asset'>('all');
   const [startDate, setStartDate] = useState(monthStartYmd);
-  const [endDate, setEndDate] = useState(monthEndYmd);
+  const [endDate, setEndDate] = useState(todayYmd);
   const [plPeriodLabel, setPlPeriodLabel] = useState(() =>
-    formatPeriodLabel(monthStartYmd(), monthEndYmd())
+    formatPeriodLabel(monthStartYmd(), todayYmd())
   );
   const [pagination, setPagination] = useState({
     page: 1,
@@ -430,16 +451,31 @@ export default function FinanceModule() {
           (sourceFilter === 'pos' && desc.includes('pos')) ||
           (sourceFilter === 'asset' && desc.includes('asset:'));
 
-        return matchesSearch && matchesType && matchesMethod && matchesSource;
+        // Client-side date filter (yyyy-MM-dd comparison)
+        let matchesDate = true;
+        if (startDate || endDate) {
+          const tDate = new Date(transaction.rawDate || transaction.createdAt || transaction.date);
+          if (!isNaN(tDate.getTime())) {
+            const year = tDate.getFullYear();
+            const month = String(tDate.getMonth() + 1).padStart(2, '0');
+            const day = String(tDate.getDate()).padStart(2, '0');
+            const localDateStr = `${year}-${month}-${day}`;
+            
+            if (startDate && localDateStr < startDate) matchesDate = false;
+            if (endDate && localDateStr > endDate) matchesDate = false;
+          }
+        }
+
+        return matchesSearch && matchesType && matchesMethod && matchesSource && matchesDate;
       })
       .sort((a, b) => {
-        const da = new Date(a.createdAt || a.date || 0).getTime();
-        const db = new Date(b.createdAt || b.date || 0).getTime();
+        const da = new Date(a.rawDate || a.createdAt || a.date || 0).getTime();
+        const db = new Date(b.rawDate || b.createdAt || b.date || 0).getTime();
         return da - db;
       });
 
     setFilteredTransactions(filtered);
-  }, [transactions, searchQuery, filterType, filterMethod, sourceFilter]);
+  }, [transactions, searchQuery, filterType, filterMethod, sourceFilter, startDate, endDate]);
 
   // Calculate total balance from balances
   const totalBalance = Object.values(balances).reduce((sum, balance) => sum + balance, 0);
@@ -736,8 +772,9 @@ export default function FinanceModule() {
           ...transaction,
           id: transaction._id || transaction.id,
           fromTo: getMethodLabel(transaction.method),
+          rawDate: transaction.rawDate || transaction.date || transaction.createdAt,
           // Ensure date is properly formatted
-          date: formatDate(transaction.date || transaction.createdAt)
+          date: formatDate(transaction.rawDate || transaction.date || transaction.createdAt)
         }));
         
         setTransactions(transactionsData);
@@ -2015,39 +2052,63 @@ export default function FinanceModule() {
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center gap-1.5">
                 <Label htmlFor="finance-from" className="text-xs text-muted-foreground whitespace-nowrap">From</Label>
-                <Input
-                  id="finance-from"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    if (endDate && next > endDate) {
-                      toast.error('Start date cannot be after end date');
-                      return;
-                    }
-                    setStartDate(next);
-                  }}
-                  className="bg-card border-border text-foreground w-full sm:w-[150px]"
-                  disabled={loading.transactions}
-                />
+                <div className="relative w-full sm:w-[150px]">
+                  <Input
+                    id="finance-from"
+                    type="date"
+                    value={startDate}
+                    max={todayYmd()}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      const today = todayYmd();
+                      if (next > today) {
+                        toast.error('Future date cannot be selected');
+                        return;
+                      }
+                      if (endDate && next > endDate) {
+                        toast.error('Start date cannot be after end date');
+                        return;
+                      }
+                      setStartDate(next);
+                    }}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                    disabled={loading.transactions}
+                  />
+                  <div className="flex items-center justify-between bg-card border border-border rounded-md px-3 py-2 h-9 text-sm text-foreground">
+                    <span>{formatDatePickerDate(startDate)}</span>
+                    <Calendar className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                </div>
               </div>
               <div className="flex items-center gap-1.5">
                 <Label htmlFor="finance-to" className="text-xs text-muted-foreground whitespace-nowrap">To</Label>
-                <Input
-                  id="finance-to"
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    if (startDate && startDate > next) {
-                      toast.error('End date cannot be before start date');
-                      return;
-                    }
-                    setEndDate(next);
-                  }}
-                  className="bg-card border-border text-foreground w-full sm:w-[150px]"
-                  disabled={loading.transactions}
-                />
+                <div className="relative w-full sm:w-[150px]">
+                  <Input
+                    id="finance-to"
+                    type="date"
+                    value={endDate}
+                    max={todayYmd()}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      const today = todayYmd();
+                      if (next > today) {
+                        toast.error('Future date cannot be selected');
+                        return;
+                      }
+                      if (startDate && startDate > next) {
+                        toast.error('End date cannot be before start date');
+                        return;
+                      }
+                      setEndDate(next);
+                    }}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                    disabled={loading.transactions}
+                  />
+                  <div className="flex items-center justify-between bg-card border border-border rounded-md px-3 py-2 h-9 text-sm text-foreground">
+                    <span>{formatDatePickerDate(endDate)}</span>
+                    <Calendar className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                </div>
               </div>
             </div>
             <Select 

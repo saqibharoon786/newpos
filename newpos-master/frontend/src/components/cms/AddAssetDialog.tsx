@@ -25,6 +25,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
     department: "",
     assignedTo: "",
     purchasePrice: "",
+    amountPaid: "",
     purchaseFrom: "",
     invoiceNo: "",
     date: "",  // DD/MM/YYYY string - USER SELECTED DATE
@@ -210,6 +211,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
       formDataToSend.append('department', formData.department);
       formDataToSend.append('assignedTo', formData.assignedTo || '');
       formDataToSend.append('purchasePrice', formData.purchasePrice || '');
+      formDataToSend.append('amountPaid', formData.amountPaid || '');
       formDataToSend.append('purchaseFrom', formData.purchaseFrom || '');
       formDataToSend.append('invoiceNo', formData.invoiceNo || '');
       
@@ -272,6 +274,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
           department: "",
           assignedTo: "",
           purchasePrice: "",
+          amountPaid: "",
           purchaseFrom: "",
           invoiceNo: "",
           date: "",
@@ -337,6 +340,7 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
         department: "",
         assignedTo: "",
         purchasePrice: "",
+        amountPaid: "",
         purchaseFrom: "",
         invoiceNo: "",
         date: "",
@@ -490,6 +494,18 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
                   name="purchasePrice"
                   placeholder="70000"
                   value={formData.purchasePrice}
+                  onChange={handleInputChange}
+                  className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Amount Paid</label>
+                <input
+                  type="text"
+                  name="amountPaid"
+                  placeholder="e.g. 70000"
+                  value={formData.amountPaid}
                   onChange={handleInputChange}
                   className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 />
