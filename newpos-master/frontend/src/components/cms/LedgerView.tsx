@@ -494,6 +494,11 @@ export default function LedgerView() {
               <p className="font-bold">{fmtRs(data.closingBalance as number)}</p>
             </div>
           </div>
+          <p className="text-xs text-muted-foreground">
+            {isPurchase 
+              ? "Balance = Opening + Debit (Purchase) − Credit (Payment / Advance)"
+              : "Balance = Opening + Credit (Sale) − Debit (Payment / Advance)"}
+          </p>
           {renderTable(
             [
               { key: 'date', label: 'Date' },
