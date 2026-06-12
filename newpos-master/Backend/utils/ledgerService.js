@@ -259,7 +259,7 @@ async function getRmDetail(code, query) {
     return { ...e, closingQty: closing };
   });
 
-  const lines = [...linesAsc].reverse();
+  const lines = linesAsc;
 
   return {
     startDate,
@@ -411,41 +411,92 @@ async function getFpDetail(code, query) {
 
 async function getPurchaseTransactionLedger(query) {
   const { startDate, endDate } = resolveRange(query);
-  const purchases = await Purchase.find().sort({ purchaseDate: 1, createdAt: 1 }).lean();
+  const [purchases, vendors] = await Promise.all([
+    Purchase.find().lean(),
+    Vendor.find({ 'ledger.0': { $exists: true } }).lean(),
+  ]);
 
-  let openingBalance = 0;
-  const periodRows = [];
+  const entries = [];
 
   for (const p of purchases) {
     const ymd = parseYmd(p.purchaseDate);
     const amount = num(p.price);
-    const paid = num(p.amountPaid) || num(p.totalPaid);
+    const paid = num(p.amountPaid);
     const qty = num(p.weight);
     const rate = qty > 0 ? round2(amount / qty) : 0;
-    const row = {
+    const baseTime = p.createdAt ? new Date(p.createdAt).getTime() : new Date(p.purchaseDate).getTime();
+
+    entries.push({
       date: ymd,
       invoiceNo: p.invoiceNo || p.receiptNo || '—',
-      description: `${p.materialName || ''} — ${p.vendor || ''}`.trim(),
-      vendor: p.vendor,
+      description: `Purchase — ${p.materialName || ''}`,
+      vendor: p.vendor || '—',
       qty: round2(qty),
       rate,
-      // Debit should represent the purchase amount, Credit the payment/advance
       debit: round2(amount),
-      credit: round2(paid),
-      amount: round2(amount),
-      paid: round2(paid),
-    };
-    if (ymd && startDate && ymd < startDate) {
-      // opening balance = sum(debit - credit) for prior period
-      openingBalance = round2(openingBalance + amount - paid);
-    } else if (inRange(ymd, startDate, endDate)) {
+      credit: 0,
+      timestamp: baseTime,
+    });
+
+    const cashPaid = round2(Math.max(0, paid));
+    if (cashPaid > 0) {
+      entries.push({
+        date: ymd,
+        invoiceNo: p.invoiceNo || p.receiptNo || '—',
+        description: `Payment to vendor — ${p.materialName || ''}`,
+        vendor: p.vendor || '—',
+        qty: 0,
+        rate: 0,
+        debit: 0,
+        credit: cashPaid,
+        timestamp: baseTime + 1,
+      });
+    }
+  }
+
+  for (const v of vendors) {
+    const name = v.name || 'Vendor';
+    const nonPurchaseEntries = (v.ledger || []).filter(
+      (e) => e.type === 'advance' || e.type === 'adjustment' || (e.type === 'payment' && !e.purchaseId)
+    );
+
+    for (const e of nonPurchaseEntries) {
+      const ymd = parseDateField(e.date);
+      const baseTime = e.date ? new Date(e.date).getTime() : 0;
+      entries.push({
+        date: ymd,
+        invoiceNo: e.reference || '—',
+        description: e.description || (e.type === 'advance' ? `Vendor advance — ${name}` : e.type),
+        vendor: name,
+        qty: 0,
+        rate: 0,
+        debit: round2(e.credit || 0), // vendor ledger credit is debit in purchase ledger
+        credit: round2(e.debit || 0),  // vendor ledger debit is credit in purchase ledger
+        timestamp: baseTime,
+      });
+    }
+  }
+
+  // Sort by date first, then by timestamp
+  entries.sort((a, b) => {
+    const dateComp = String(a.date || '').localeCompare(String(b.date || ''));
+    if (dateComp !== 0) return dateComp;
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
+
+  let openingBalance = 0;
+  const periodRows = [];
+
+  for (const row of entries) {
+    if (startDate && row.date && row.date < startDate) {
+      openingBalance = round2(openingBalance + row.debit - row.credit);
+    } else if (inRange(row.date, startDate, endDate)) {
       periodRows.push(row);
     }
   }
 
   let balance = openingBalance;
   const rows = periodRows.map((row) => {
-    // balance = opening + debit - credit
     balance = round2(balance + row.debit - row.credit);
     return { ...row, balance, closing: balance };
   });
