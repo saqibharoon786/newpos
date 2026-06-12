@@ -27,6 +27,7 @@ exports.createAsset = async (req, res) => {
       department,
       assignedTo,
       purchasePrice,
+      amountPaid,
       purchaseFrom,
       invoiceNo,
       purchaseDate,  // ✅ Changed from 'date' to 'purchaseDate' to match frontend
@@ -101,6 +102,23 @@ exports.createAsset = async (req, res) => {
       }
     }
 
+    // Parse amountPaid
+    let parsedAmountPaid = null;
+    if (amountPaid !== undefined && amountPaid !== "" && amountPaid !== null) {
+      try {
+        const cleanPaid = String(amountPaid).replace(/,/g, '').trim();
+        if (cleanPaid && !isNaN(cleanPaid)) {
+          parsedAmountPaid = parseFloat(cleanPaid);
+        }
+      } catch (e) {
+        console.log('Warning: Could not parse amountPaid:', amountPaid);
+      }
+    }
+    // Default amountPaid to purchasePrice if not provided
+    if (parsedAmountPaid === null && parsedPurchasePrice !== null) {
+      parsedAmountPaid = parsedPurchasePrice;
+    }
+
     // Handle receipt image
     let receiptImagePath = null;
     if (req.file) {
@@ -108,6 +126,8 @@ exports.createAsset = async (req, res) => {
       receiptImagePath = `/uploads/general/${req.file.filename}`;
       console.log('📸 Receipt image saved at:', receiptImagePath);
     }
+
+    const finalInvoiceNo = invoiceNo ? String(invoiceNo).trim() : `AST-${Date.now()}`;
 
     // ✅ Prepare asset data
     const assetData = {
@@ -120,8 +140,9 @@ exports.createAsset = async (req, res) => {
       department: String(department).trim(),
       assignedTo: assignedTo ? String(assignedTo).trim() : null,
       purchasePrice: parsedPurchasePrice,
+      amountPaid: parsedAmountPaid,
       purchaseFrom: purchaseFrom ? String(purchaseFrom).trim() : null,
-      invoiceNo: invoiceNo ? String(invoiceNo).trim() : null,
+      invoiceNo: finalInvoiceNo,
       purchaseDate: parsedPurchaseDate,  // ✅ Use the parsed date
       purchaseTime: purchaseTime || null,
       receiptImage: receiptImagePath,
@@ -153,11 +174,11 @@ exports.createAsset = async (req, res) => {
     const method = rawMethod === 'cash' ? 'drawer' : rawMethod;
     const supportedMethods = ['drawer', 'bank', 'easypaisa', 'jazzcash', 'bank_transfer', 'cheque', 'online'];
 
-    if (parsedPurchasePrice > 0 && supportedMethods.includes(method)) {
+    if (parsedAmountPaid > 0 && supportedMethods.includes(method)) {
       const balances = await Transaction.getBalances();
       const balanceKey = ['bank_transfer', 'cheque', 'online'].includes(method) ? 'bank' : method;
 
-      if ((balances[balanceKey] || 0) < parsedPurchasePrice) {
+      if ((balances[balanceKey] || 0) < parsedAmountPaid) {
         return res.status(400).json({
           success: false,
           error: `Insufficient ${balanceKey} balance`,
@@ -166,11 +187,11 @@ exports.createAsset = async (req, res) => {
       await Transaction.create({
         type: 'withdraw',
         method,
-        amount: parsedPurchasePrice,
-        net: parsedPurchasePrice,
+        amount: parsedAmountPaid,
+        net: parsedAmountPaid,
         date: parsedPurchaseDate,
         description: `Asset: ${assetName}`,
-        reference: invoiceNo || `AST-${Date.now()}`,
+        reference: finalInvoiceNo,
         status: 'completed',
       });
     }
@@ -308,6 +329,12 @@ exports.updateAsset = async (req, res) => {
       });
     }
 
+    const oldPrice = Number(asset.purchasePrice) || 0;
+    const oldAmountPaid = Number(asset.amountPaid) || 0;
+    const oldMethodRaw = (asset.paymentMethod || 'cash').toLowerCase();
+    const oldMethod = oldMethodRaw === 'cash' ? 'drawer' : oldMethodRaw;
+    const oldInvoiceNo = asset.invoiceNo;
+
     // Prepare update data
     const updateData = { ...req.body };
 
@@ -329,6 +356,24 @@ exports.updateAsset = async (req, res) => {
       }
     }
 
+    // Handle amountPaid conversion if present
+    if (updateData.amountPaid !== undefined) {
+      if (updateData.amountPaid && updateData.amountPaid !== "" && updateData.amountPaid !== null) {
+        try {
+          const cleanPaid = String(updateData.amountPaid).replace(/,/g, '').trim();
+          if (cleanPaid && !isNaN(cleanPaid)) {
+            updateData.amountPaid = parseFloat(cleanPaid);
+          } else {
+            updateData.amountPaid = 0;
+          }
+        } catch (e) {
+          updateData.amountPaid = 0;
+        }
+      } else {
+        updateData.amountPaid = 0;
+      }
+    }
+
     // Handle quantity conversion
     if (updateData.quantity !== undefined) {
       updateData.quantity = parseInt(updateData.quantity) || 1;
@@ -337,6 +382,91 @@ exports.updateAsset = async (req, res) => {
     // Handle receiptImage (ensure it's properly set or removed)
     if (updateData.receiptImage !== undefined) {
       updateData.receiptImage = updateData.receiptImage || null;
+    }
+
+    // Parse purchaseDate if present
+    let parsedPurchaseDate = asset.purchaseDate;
+    if (updateData.purchaseDate !== undefined) {
+      if (updateData.purchaseDate) {
+        try {
+          if (updateData.purchaseDate.includes('-')) {
+            const [year, month, day] = updateData.purchaseDate.split('-').map(Number);
+            parsedPurchaseDate = new Date(year, month - 1, day);
+          } else if (updateData.purchaseDate.includes('/')) {
+            const [day, month, year] = updateData.purchaseDate.split('/').map(Number);
+            parsedPurchaseDate = new Date(year, month - 1, day);
+          } else {
+            parsedPurchaseDate = new Date(updateData.purchaseDate);
+          }
+          if (isNaN(parsedPurchaseDate.getTime())) {
+            parsedPurchaseDate = new Date();
+          }
+          updateData.purchaseDate = parsedPurchaseDate;
+        } catch (error) {
+          console.log('⚠️ Date parsing error, using old date:', error);
+        }
+      } else {
+        updateData.purchaseDate = null;
+      }
+    }
+
+    const newPrice = updateData.purchasePrice !== undefined ? (Number(updateData.purchasePrice) || 0) : oldPrice;
+    const newAmountPaid = updateData.amountPaid !== undefined ? (Number(updateData.amountPaid) || 0) : oldAmountPaid;
+    const newMethodRaw = (updateData.paymentMethod !== undefined ? updateData.paymentMethod : (asset.paymentMethod || 'cash')).toLowerCase();
+    const newMethod = newMethodRaw === 'cash' ? 'drawer' : newMethodRaw;
+    const newInvoiceNo = updateData.invoiceNo !== undefined ? String(updateData.invoiceNo).trim() : oldInvoiceNo;
+    const newAssetName = updateData.assetName !== undefined ? String(updateData.assetName).trim() : asset.assetName;
+
+    const finalInvoiceNo = newInvoiceNo || oldInvoiceNo || `AST-${Date.now()}`;
+    updateData.invoiceNo = finalInvoiceNo;
+
+    const supportedMethods = ['drawer', 'bank', 'easypaisa', 'jazzcash', 'bank_transfer', 'cheque', 'online'];
+
+    if (newAmountPaid > 0 && supportedMethods.includes(newMethod)) {
+      const balances = await Transaction.getBalances();
+      const balanceKey = ['bank_transfer', 'cheque', 'online'].includes(newMethod) ? 'bank' : newMethod;
+      const oldBalanceKey = ['bank_transfer', 'cheque', 'online'].includes(oldMethod) ? 'bank' : oldMethod;
+
+      const currentAvailable = balances[balanceKey] || 0;
+      const effectiveAvailable = currentAvailable + (oldBalanceKey === balanceKey ? oldAmountPaid : 0);
+
+      if (effectiveAvailable < newAmountPaid) {
+        return res.status(400).json({
+          success: false,
+          error: `Insufficient ${balanceKey} balance`,
+        });
+      }
+
+      let tx = null;
+      if (oldInvoiceNo) {
+        tx = await Transaction.findOne({ reference: oldInvoiceNo });
+      }
+
+      if (tx) {
+        tx.amount = newAmountPaid;
+        tx.net = newAmountPaid;
+        tx.method = newMethod;
+        tx.reference = finalInvoiceNo;
+        tx.description = `Asset: ${newAssetName}`;
+        tx.date = parsedPurchaseDate || new Date();
+        await tx.save();
+      } else {
+        await Transaction.create({
+          type: 'withdraw',
+          method: newMethod,
+          amount: newAmountPaid,
+          net: newAmountPaid,
+          date: parsedPurchaseDate || new Date(),
+          description: `Asset: ${newAssetName}`,
+          reference: finalInvoiceNo,
+          status: 'completed',
+        });
+      }
+    } else {
+      // If new amountPaid is 0/null or payment method is not supported, delete old transaction if it existed
+      if (oldInvoiceNo) {
+        await Transaction.deleteMany({ reference: oldInvoiceNo });
+      }
     }
 
     console.log('📤 Final update data:', updateData);
@@ -382,6 +512,10 @@ exports.deleteAsset = async (req, res) => {
         success: false,
         error: 'Asset not found'
       });
+    }
+
+    if (asset.invoiceNo) {
+      await Transaction.deleteMany({ reference: asset.invoiceNo });
     }
 
     await asset.deleteOne();
@@ -442,5 +576,75 @@ exports.getAssetStats = async (req, res) => {
       success: false,
       error: 'Server error'
     });
+  }
+};
+
+// @desc    Record a payment for an asset
+// @route   POST /api/assets/:id/payments
+// @access  Private
+exports.recordAssetPayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, paymentMethod, notes, date } = req.body;
+    const amt = parseFloat(amount);
+    
+    if (isNaN(amt) || amt <= 0) {
+      return res.status(400).json({ success: false, error: 'Valid payment amount is required' });
+    }
+
+    const asset = await Asset.findById(id);
+    if (!asset) {
+      return res.status(404).json({ success: false, error: 'Asset not found' });
+    }
+
+    const price = asset.purchasePrice || 0;
+    const currentTotalPaid = asset.amountPaid || 0;
+    const remaining = Math.max(0, price - currentTotalPaid);
+
+    if (amt > remaining) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Payment amount exceeds remaining balance of Rs. ${remaining.toLocaleString()}` 
+      });
+    }
+
+    const rawMethod = (paymentMethod || 'cash').toLowerCase();
+    const method = rawMethod === 'cash' ? 'drawer' : rawMethod;
+    const supportedMethods = ['drawer', 'bank', 'easypaisa', 'jazzcash', 'bank_transfer', 'cheque', 'online'];
+
+    if (supportedMethods.includes(method)) {
+      const balances = await Transaction.getBalances();
+      const balanceKey = ['bank_transfer', 'cheque', 'online'].includes(method) ? 'bank' : method;
+      
+      if ((balances[balanceKey] || 0) < amt) {
+        return res.status(400).json({ 
+          success: false, 
+          error: `Insufficient balance in ${balanceKey}. Available: Rs. ${(balances[balanceKey] || 0).toLocaleString()}` 
+        });
+      }
+
+      await Transaction.create({
+        type: 'withdraw',
+        method,
+        amount: amt,
+        net: amt,
+        date: date ? new Date(date) : new Date(),
+        description: `Payment for Asset: ${asset.assetName}`,
+        reference: asset.invoiceNo || `AST-${Date.now()}`,
+        status: 'completed',
+      });
+    }
+
+    asset.amountPaid = currentTotalPaid + amt;
+    await asset.save();
+
+    res.status(200).json({
+      success: true,
+      data: asset,
+      message: `Payment of Rs. ${amt.toLocaleString()} recorded successfully!`
+    });
+  } catch (error) {
+    console.error('Error recording asset payment:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 };

@@ -91,11 +91,8 @@ function aggregateRmForCode(purchases, productions, salesFromPop, code, startYmd
       const lineCode = String(p.materialName || '').includes(code) ? code : '';
       if (!lineCode && code !== '100') continue;
       const w = num(p.weight);
-      const consumed = num(p.productionConsumedWeight);
-      const sold = num(p.soldWeight);
-      const remaining = Math.max(0, w - consumed - sold);
-      if (inRange(pYmd, null, startYmd ? addDayBefore(startYmd) : null)) {
-        openingQty += remaining;
+      if (pYmd && startYmd && pYmd < startYmd) {
+        openingQty += w;
       } else if (inRange(pYmd, startYmd, endYmd)) {
         purchaseQty += w;
         purchaseAmount += num(p.price);
@@ -106,11 +103,9 @@ function aggregateRmForCode(purchases, productions, salesFromPop, code, startYmd
     for (const m of mats) {
       if (String(m.productCode || '').trim() !== code) continue;
       const w = num(m.weight);
-      const consumed = num(m.productionConsumedWeight);
-      const lineRem = Math.max(0, w - consumed);
       const rate = num(m.pricePerKg);
       if (pYmd && startYmd && pYmd < startYmd) {
-        openingQty += lineRem;
+        openingQty += w;
       } else if (inRange(pYmd, startYmd, endYmd)) {
         purchaseQty += w;
         purchaseAmount += num(m.totalAmount) || w * rate;
@@ -123,7 +118,7 @@ function aggregateRmForCode(purchases, productions, salesFromPop, code, startYmd
     const ymd = parseDateField(prod.productionDate);
     const kg = num(prod.weightUsedFromPOP) || num(prod.totalWeight);
     if (ymd && startYmd && ymd < startYmd) {
-      openingQty = Math.max(0, openingQty - kg);
+      openingQty -= kg;
     } else if (inRange(ymd, startYmd, endYmd)) {
       issueQty += kg;
     }
@@ -134,12 +129,13 @@ function aggregateRmForCode(purchases, productions, salesFromPop, code, startYmd
     const ymd = parseYmd(s.purchaseDate);
     const kg = num(s.weight);
     if (ymd && startYmd && ymd < startYmd) {
-      openingQty = Math.max(0, openingQty - kg);
+      openingQty -= kg;
     } else if (inRange(ymd, startYmd, endYmd)) {
       saleQty += kg;
     }
   }
 
+  openingQty = Math.max(0, openingQty);
   const balance = round2(openingQty + purchaseQty - issueQty - saleQty);
   const avgRate = purchaseQty > 0 ? round2(purchaseAmount / purchaseQty) : 0;
 
@@ -280,11 +276,17 @@ function aggregateFpForCode(productions, sales, code, startYmd, endYmd) {
     const ymd = parseDateField(prod.productionDate);
     const total = num(prod.totalWeight);
     const avail = prod.availableWeight != null ? num(prod.availableWeight) : total;
-    const soldFromBatch = Math.max(0, total - avail);
-    const rate = total > 0 ? num(prod.totalProductionCost) / total : 0;
 
     if (ymd && startYmd && ymd < startYmd) {
-      openingQty += avail;
+      // Find all sales of this batch where sale.date >= startYmd
+      const salesOnOrAfter = sales.filter((s) => {
+        if (!s.productionId) return false;
+        if (String(s.productionId) !== String(prod._id)) return false;
+        const sYmd = parseYmd(s.purchaseDate);
+        return sYmd && sYmd >= startYmd;
+      });
+      const soldOnOrAfter = salesOnOrAfter.reduce((sum, s) => sum + num(s.weight), 0);
+      openingQty += (avail + soldOnOrAfter);
     } else if (inRange(ymd, startYmd, endYmd)) {
       productionQty += total;
       productionAmount += num(prod.totalProductionCost);
@@ -292,10 +294,12 @@ function aggregateFpForCode(productions, sales, code, startYmd, endYmd) {
   }
 
   for (const s of sales) {
-    if (!s.productionId && !s.materialName) continue;
-    const ymd = parseYmd(s.purchaseDate);
-    if (!inRange(ymd, startYmd, endYmd)) continue;
-    if (s.productionId) {
+    if (!s.productionId) continue;
+    const sYmd = parseYmd(s.purchaseDate);
+    if (!inRange(sYmd, startYmd, endYmd)) continue;
+
+    const prodOfSale = productions.find((p) => String(p._id) === String(s.productionId));
+    if (prodOfSale && String(prodOfSale.productCode || '').trim() === code) {
       saleQty += num(s.weight);
     }
   }
@@ -604,15 +608,17 @@ async function getVendorLedger(vendorId, query) {
     return { ...row, balance };
   });
 
+  const closingBalance = lines.length ? lines[lines.length - 1].balance : openingBalance;
+
   return {
     startDate,
     endDate,
     vendor: { _id: vendor._id, name: vendor.name },
     openingBalance: round2(openingBalance),
     advanceBalance: round2(vendor.advanceBalance),
-    payableBalance: round2(vendor.payableBalance),
+    payableBalance: round2(closingBalance),
     lines,
-    closingBalance: lines.length ? lines[lines.length - 1].balance : openingBalance,
+    closingBalance: round2(closingBalance),
   };
 }
 

@@ -64,6 +64,7 @@ router.get('/get-all', assetController.getAllAssets);
 router.get('/stats', assetController.getAssetStats);
 router.get('/:id', assetController.getAssetById);
 router.delete('/:id', assetController.deleteAsset);
+router.post('/:id/payments', assetController.recordAssetPayment);
 
 // Optional: Keep this test route for quick debugging
 router.post(

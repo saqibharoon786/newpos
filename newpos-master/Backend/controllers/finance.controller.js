@@ -118,7 +118,9 @@ exports.getTransactions = async (req, res) => {
     const formattedTransactions = transactions.map(transaction => ({
       id: transaction._id,
       _id: transaction._id,
-      date: new Date(transaction.date).toLocaleString('en-PK'),
+      date: transaction.date,
+      rawDate: transaction.date,
+      createdAt: transaction.createdAt,
       type: transaction.type,
       method: transaction.method,
       fromTo: getMethodLabel(transaction.method),
@@ -213,7 +215,9 @@ exports.createDeposit = async (req, res) => {
       message: `Deposited ${formatCurrency(amount)} successfully`,
       transaction: {
         id: transaction._id,
-        date: new Date(transaction.date).toLocaleString('en-PK'),
+        date: transaction.date,
+        rawDate: transaction.date,
+        createdAt: transaction.createdAt,
         type: transaction.type,
         fromTo: getMethodLabel(transaction.method),
         amount: transaction.amount,
@@ -272,7 +276,9 @@ exports.createWithdrawal = async (req, res) => {
       message: `Withdrew ${formatCurrency(amount)} successfully`,
       transaction: {
         id: transaction._id,
-        date: new Date(transaction.date).toLocaleString('en-PK'),
+        date: transaction.date,
+        rawDate: transaction.date,
+        createdAt: transaction.createdAt,
         type: transaction.type,
         fromTo: getMethodLabel(transaction.method),
         amount: transaction.amount,
@@ -325,7 +331,9 @@ exports.updateTransaction = async (req, res) => {
       message: 'Transaction updated successfully',
       transaction: {
         id: updatedTransaction._id,
-        date: new Date(updatedTransaction.date).toLocaleString('en-PK'),
+        date: updatedTransaction.date,
+        rawDate: updatedTransaction.date,
+        createdAt: updatedTransaction.createdAt,
         type: updatedTransaction.type,
         fromTo: getMethodLabel(updatedTransaction.method),
         amount: updatedTransaction.amount,
