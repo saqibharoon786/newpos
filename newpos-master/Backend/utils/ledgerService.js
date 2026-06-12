@@ -202,6 +202,7 @@ async function getRmDetail(code, query) {
         purchasedRate: rate,
         purchasedAmount: round2(num(m.totalAmount) || qty * rate),
         issuedQty: 0,
+        timestamp: p.createdAt ? new Date(p.createdAt).getTime() : new Date(p.purchaseDate).getTime(),
         sortKey: `${pYmd}P${p._id}`,
       });
     }
@@ -220,6 +221,7 @@ async function getRmDetail(code, query) {
       purchasedRate: 0,
       purchasedAmount: 0,
       issuedQty: kg,
+      timestamp: prod.createdAt ? new Date(prod.createdAt).getTime() : new Date(prod.productionDate).getTime(),
       sortKey: `${ymd}I${prod._id}`,
     });
   }
@@ -240,11 +242,16 @@ async function getRmDetail(code, query) {
       purchasedRate: 0,
       purchasedAmount: 0,
       issuedQty: kg,
+      timestamp: s.createdAt ? new Date(s.createdAt).getTime() : new Date(s.purchaseDate).getTime(),
       sortKey: `${ymd}S${s._id}`,
     });
   }
 
-  entries.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.sortKey).localeCompare(String(b.sortKey)));
+  entries.sort((a, b) => {
+    const dateComp = String(a.date).localeCompare(String(b.date));
+    if (dateComp !== 0) return dateComp;
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
 
   let closing = summary.openingQty;
   const linesAsc = entries.map((e) => {
@@ -355,6 +362,7 @@ async function getFpDetail(code, query) {
       receivedAmount: round2(num(prod.totalProductionCost)),
       saleQty: 0,
       saleRate: 0,
+      timestamp: prod.createdAt ? new Date(prod.createdAt).getTime() : new Date(prod.productionDate).getTime(),
       sortKey: `${ymd}R${prod._id}`,
     });
   }
@@ -373,11 +381,16 @@ async function getFpDetail(code, query) {
       receivedAmount: 0,
       saleQty: qty,
       saleRate: rate,
+      timestamp: s.createdAt ? new Date(s.createdAt).getTime() : new Date(s.purchaseDate).getTime(),
       sortKey: `${ymd}S${s._id}`,
     });
   }
 
-  entries.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.sortKey).localeCompare(String(b.sortKey)));
+  entries.sort((a, b) => {
+    const dateComp = String(a.date).localeCompare(String(b.date));
+    if (dateComp !== 0) return dateComp;
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
 
   let closing = summary.openingQty;
   const lines = entries.map((e) => {
@@ -550,6 +563,7 @@ async function getVendorLedger(vendorId, query) {
     const ymd = parseYmd(p.purchaseDate);
     const bill = num(p.price);
     const paid = num(p.amountPaid);
+    const baseTime = p.createdAt ? new Date(p.createdAt).getTime() : new Date(p.purchaseDate).getTime();
 
     entries.push({
       date: ymd,
@@ -557,6 +571,7 @@ async function getVendorLedger(vendorId, query) {
       description: `Purchase — ${p.materialName || ''}`,
       debit: 0,
       credit: round2(bill),
+      timestamp: baseTime,
       sortKey: `${ymd}S${p._id}`,
     });
 
@@ -568,6 +583,7 @@ async function getVendorLedger(vendorId, query) {
         description: `Payment to vendor — ${p.materialName || ''}`,
         debit: cashPayment,
         credit: 0,
+        timestamp: baseTime + 1,
         sortKey: `${ymd}P${p._id}`,
       });
     }
@@ -586,11 +602,16 @@ async function getVendorLedger(vendorId, query) {
       description: e.description || (e.type === 'advance' ? 'Vendor advance — Finance (full debit)' : e.type),
       debit: round2(e.debit || 0),
       credit: round2(e.credit || 0),
+      timestamp: e.date ? new Date(e.date).getTime() : 0,
       sortKey: `${ymd}${e.type === 'advance' ? 'A' : 'T'}${e._id || e.reference}`,
     });
   }
 
-  entries.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.sortKey).localeCompare(String(b.sortKey)));
+  entries.sort((a, b) => {
+    const dateComp = String(a.date || '').localeCompare(String(b.date || ''));
+    if (dateComp !== 0) return dateComp;
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
 
   let openingBalance = 0;
   const inPeriod = [];
@@ -643,12 +664,15 @@ async function getCustomerLedger(customerId, query) {
     const bill = num(s.finalAmount) || num(s.sellingPrice);
     const paid = num(s.amountPaid);
     const advanceApplied = num(s.advancePayment);
+    const baseTime = s.createdAt ? new Date(s.createdAt).getTime() : new Date(s.purchaseDate).getTime();
+
     entries.push({
       date: ymd,
       invoiceNo: s.invoiceNo || '—',
       description: `Sale — ${s.materialName || ''}`,
       debit: 0,
       credit: round2(bill),
+      timestamp: baseTime,
       sortKey: `${ymd}S${s._id}`,
     });
 
@@ -660,6 +684,7 @@ async function getCustomerLedger(customerId, query) {
         description: `Payment received — ${s.materialName || ''}`,
         debit: cashPayment,
         credit: 0,
+        timestamp: baseTime + 1,
         sortKey: `${ymd}P${s._id}`,
       });
     }
@@ -673,11 +698,16 @@ async function getCustomerLedger(customerId, query) {
       description: a.description || 'Advance (Finance)',
       debit: round2(a.amount),
       credit: 0,
+      timestamp: a.date ? new Date(a.date).getTime() : 0,
       sortKey: `${ymd}A${a._id || a.reference}`,
     });
   }
 
-  entries.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.sortKey).localeCompare(String(b.sortKey)));
+  entries.sort((a, b) => {
+    const dateComp = String(a.date || '').localeCompare(String(b.date || ''));
+    if (dateComp !== 0) return dateComp;
+    return (a.timestamp || 0) - (b.timestamp || 0);
+  });
 
   let openingBalance = 0;
   const inPeriod = [];

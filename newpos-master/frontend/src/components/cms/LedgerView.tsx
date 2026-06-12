@@ -183,7 +183,7 @@ export default function LedgerView() {
     const ledgerRows = (data.lines ?? data.rows ?? []) as Record<string, unknown>[];
 
     if (activeTab === 'rm-detail' && data.lines) {
-      headers = ['Date', 'Invoice #', 'Vendor', 'Description', 'Purch Qty', 'Rate', 'Amount', 'Issued', 'Closing'];
+      headers = ['Date', 'Invoice #', 'Vendor', 'Description', 'Purch Qty', 'Rate', 'Amount', 'Production', 'Closing'];
       rows = (data.lines as Record<string, unknown>[]).map((l) => ({
         Date: String(l.date ?? ''),
         'Invoice #': String(l.invoiceNo ?? '—'),
@@ -192,7 +192,7 @@ export default function LedgerView() {
         'Purch Qty': l.purchasedQty ? fmtKg(l.purchasedQty as number) : '—',
         Rate: l.purchasedRate ? fmtRs(l.purchasedRate as number) : '—',
         Amount: l.purchasedAmount ? fmtRs(l.purchasedAmount as number) : '—',
-        Issued: l.issuedQty ? fmtKg(l.issuedQty as number) : '—',
+        Production: l.issuedQty ? fmtKg(l.issuedQty as number) : '—',
         Closing: fmtKg(l.closingQty as number),
       }));
     } else if (activeTab === 'fp-detail' && data.lines) {
@@ -207,7 +207,7 @@ export default function LedgerView() {
         'Sale Rate': l.saleRate ? fmtRs(l.saleRate as number) : '—',
         Closing: fmtKg(l.closingQty as number),
       }));
-    } else if (activeTab === 'vendor' || activeTab === 'customer') {
+    } else if (activeTab === 'vendor') {
       headers = ['Date', 'Invoice #', 'Description', 'Debit', 'Credit', 'Balance'];
       rows = ledgerRows.map((l) => ({
         Date: String(l.date ?? ''),
@@ -215,6 +215,16 @@ export default function LedgerView() {
         Description: String(l.description ?? ''),
         Debit: l.debit ? fmtRs(l.debit as number) : '—',
         Credit: l.credit ? fmtRs(l.credit as number) : '—',
+        Balance: fmtRs(l.balance as number),
+      }));
+    } else if (activeTab === 'customer') {
+      headers = ['Date', 'Invoice #', 'Description', 'Debit (Sale)', 'Credit (Payment / Advance)', 'Balance'];
+      rows = ledgerRows.map((l) => ({
+        Date: String(l.date ?? ''),
+        'Invoice #': String(l.invoiceNo ?? '—'),
+        Description: String(l.description ?? ''),
+        'Debit (Sale)': l.credit ? fmtRs(l.credit as number) : '—',
+        'Credit (Payment / Advance)': l.debit ? fmtRs(l.debit as number) : '—',
         Balance: fmtRs(l.balance as number),
       }));
     } else if (activeTab === 'owner' || activeTab === 'employee') {
@@ -386,6 +396,9 @@ export default function LedgerView() {
             {String(data.itemName)} — Opening: {fmtKg(data.openingQty as number)} | Closing:{' '}
             {fmtKg(data.closingQty as number)}
           </p>
+          <p className="text-xs text-muted-foreground">
+            Closing = Opening + Purchased − Production
+          </p>
           {renderTable(
             [
               { key: 'date', label: 'Date' },
@@ -395,7 +408,7 @@ export default function LedgerView() {
               { key: 'purchasedQty', label: 'Purch Qty', align: 'right' },
               { key: 'purchasedRate', label: 'Rate', align: 'right' },
               { key: 'purchasedAmount', label: 'Amount', align: 'right' },
-              { key: 'issuedQty', label: 'Issued', align: 'right' },
+              { key: 'issuedQty', label: 'Production', align: 'right' },
               { key: 'closingQty', label: 'Closing', align: 'right' },
             ],
             (data.lines as Record<string, unknown>[]).map((l) => ({
@@ -567,15 +580,15 @@ export default function LedgerView() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Balance = Opening + Credit (Sale) − Debit (Payment / Advance)
+            Balance = Opening + Debit (Sale) − Credit (Payment / Advance)
           </p>
           {renderTable(
             [
               { key: 'date', label: 'Date' },
               { key: 'invoiceNo', label: 'Invoice #' },
               { key: 'description', label: 'Description' },
-              { key: 'debit', label: 'Debit (Payment / Advance)', align: 'right' },
-              { key: 'credit', label: 'Credit (Sale)', align: 'right' },
+              { key: 'credit', label: 'Debit (Sale)', align: 'right' },
+              { key: 'debit', label: 'Credit (Payment / Advance)', align: 'right' },
               { key: 'balance', label: 'Balance (Rs)', align: 'right' },
             ],
             (data.lines as Record<string, unknown>[]).map((l) => ({
