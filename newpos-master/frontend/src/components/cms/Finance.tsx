@@ -508,7 +508,7 @@ export default function FinanceModule() {
         const matchesSource =
           sourceFilter === 'all' ||
           (sourceFilter === 'pos' && desc.includes('pos')) ||
-          (sourceFilter === 'asset' && desc.includes('asset:'));
+          (sourceFilter === 'asset' && (desc.includes('asset:') || transaction.category === 'asset_purchase'));
 
         // Client-side date filter (yyyy-MM-dd comparison)
         let matchesDate = true;

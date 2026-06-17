@@ -51,6 +51,7 @@ interface Sale {
   materialName: string;
   supplierName: string;
   invoiceNo: string;
+  billNo: string;
   weight: string;
   unit: string;
   purchaseDate: string;
@@ -135,6 +136,7 @@ export function AddSaleDialog({
     materialName: "",
     supplierName: "",
     invoiceNo: "",
+    billNo: "",
     weight: "",
     unit: "",
     purchaseDate: "",
@@ -414,6 +416,7 @@ export function AddSaleDialog({
       materialName: editData.materialName || "",
       supplierName: editData.supplierName || "",
       invoiceNo: editData.invoiceNo || "",
+      billNo: (editData as Sale & { billNo?: string }).billNo || "",
       weight: editData.weight || "",
       unit: editData.unit || "1",
       purchaseDate: saleDateStr,
@@ -959,6 +962,7 @@ export function AddSaleDialog({
       materialName: formData.materialName.trim() || editData.materialName || "",
       supplierName: formData.supplierName.trim() || editData.supplierName || "-",
       invoiceNo: formData.invoiceNo.trim() || editData.invoiceNo || "",
+      billNo: formData.billNo.trim() || (editData as Sale & { billNo?: string }).billNo || "",
       weight: formData.weight.trim() || editData.weight || "",
       unit: formData.unit.trim() || editData.unit || "1",
       purchaseDate: purchaseDateFallback,
@@ -1124,8 +1128,8 @@ export function AddSaleDialog({
       if (customerIdForSale) {
         formDataToSend.append('customerId', customerIdForSale);
       }
-      if (fd.invoiceNo.trim()) {
-        formDataToSend.append('invoiceNo', fd.invoiceNo.trim());
+      if (fd.billNo.trim()) {
+        formDataToSend.append('billNo', fd.billNo.trim());
       }
       formDataToSend.append('transportationCost', fd.transportationCost);
       formDataToSend.append('notes', fd.notes);
@@ -1205,6 +1209,7 @@ export function AddSaleDialog({
       materialName: "",
       supplierName: "",
       invoiceNo: "",
+      billNo: "",
       weight: "",
       unit: "",
       purchaseDate: todayStr,
@@ -1699,13 +1704,25 @@ export function AddSaleDialog({
               <input
                 type="text"
                 name="invoiceNo"
-                readOnly={!isEdit}
+                readOnly
                 placeholder="SI052600001"
                 value={formData.invoiceNo}
-                onChange={handleInputChange}
                 className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary read-only:opacity-80"
               />
-              <p className="text-xs text-muted-foreground mt-1">SI se start — sale identify karne ke liye</p>
+              <p className="text-xs text-muted-foreground mt-1">System-generated — sale identify karne ke liye</p>
+            </div>
+
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">Bill Number (manual)</label>
+              <input
+                type="text"
+                name="billNo"
+                placeholder="e.g. customer bill / challan no."
+                value={formData.billNo}
+                onChange={handleInputChange}
+                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Vendor/customer ki bill — manually enter karein</p>
             </div>
           </div>
 

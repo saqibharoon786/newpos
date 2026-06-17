@@ -1,5 +1,18 @@
 const Vendor = require('../models/vendor.model');
 const { getMaterialNameForCode } = require('../constants/productCodes');
+const ledgerService = require('../utils/ledgerService');
+
+const LEDGER_ALL_TIME = { startDate: '1970-01-01', endDate: '2099-12-31' };
+
+async function attachLedgerBalances(vendor) {
+  const ledger = await ledgerService.getVendorLedger(String(vendor._id), LEDGER_ALL_TIME);
+  return {
+    ...vendor,
+    ledgerClosingBalance: ledger?.closingBalance ?? 0,
+    ledgerOpeningBalance: ledger?.openingBalance ?? 0,
+    ledgerAdvanceBalance: ledger?.advanceBalance ?? vendor.advanceBalance ?? 0,
+  };
+}
 
 function normalizeMaterials(materials) {
   if (!Array.isArray(materials)) return [];
@@ -23,7 +36,21 @@ function normalizeMaterials(materials) {
 exports.getVendors = async (req, res) => {
   try {
     const vendors = await Vendor.find().sort({ name: 1 }).lean();
-    res.json({ success: true, data: vendors });
+    const withLedger = req.query.withLedger === '1' || req.query.withLedger === 'true';
+    const data = withLedger
+      ? await Promise.all(vendors.map((v) => attachLedgerBalances(v)))
+      : vendors;
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getVendorLedgerBalances = async (req, res) => {
+  try {
+    const vendors = await Vendor.find().sort({ name: 1 }).lean();
+    const data = await Promise.all(vendors.map((v) => attachLedgerBalances(v)));
+    res.json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -38,7 +65,8 @@ exports.getVendorById = async (req, res) => {
     if (!vendor) {
       return res.status(404).json({ success: false, message: 'Vendor not found' });
     }
-    res.json({ success: true, data: vendor });
+    const data = await attachLedgerBalances(vendor);
+    res.json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

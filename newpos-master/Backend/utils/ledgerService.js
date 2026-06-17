@@ -6,6 +6,7 @@ const Employee = require('../models/employee.model');
 const InvestmentAccount = require('../models/investment.model');
 const { ProductionData } = require('../models/process.model');
 const { PRODUCT_CODES, getMaterialNameForCode } = require('../constants/productCodes');
+const { computePurchasePayment } = require('./purchasePayment');
 
 function num(v) {
   const n = parseFloat(v);
@@ -641,7 +642,8 @@ async function getVendorLedger(vendorId, query) {
   for (const p of purchases) {
     const ymd = parseYmd(p.purchaseDate);
     const bill = num(p.price);
-    const paid = num(p.amountPaid);
+    const payment = computePurchasePayment(p);
+    const paidOnBill = round2(payment.totalPaid);
     const baseTime = p.createdAt ? new Date(p.createdAt).getTime() : new Date(p.purchaseDate).getTime();
 
     entries.push({
@@ -654,13 +656,12 @@ async function getVendorLedger(vendorId, query) {
       sortKey: `${ymd}S${p._id}`,
     });
 
-    const cashPayment = round2(Math.max(0, paid));
-    if (cashPayment > 0) {
+    if (paidOnBill > 0) {
       entries.push({
         date: ymd,
         invoiceNo: p.invoiceNo || p.receiptNo || '—',
         description: `Payment to vendor — ${p.materialName || ''}`,
-        debit: cashPayment,
+        debit: paidOnBill,
         credit: 0,
         timestamp: baseTime + 1,
         sortKey: `${ymd}P${p._id}`,

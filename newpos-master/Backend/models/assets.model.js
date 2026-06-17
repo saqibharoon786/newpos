@@ -68,7 +68,7 @@ const assetSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['drawer', 'bank', 'easypaisa', 'jazzcash', 'cash'],
+    enum: ['drawer', 'bank', 'easypaisa', 'jazzcash', 'cash', 'bank_transfer', 'cheque', 'online'],
     default: 'drawer',
   },
   accountType: {

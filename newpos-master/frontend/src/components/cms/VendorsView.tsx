@@ -35,6 +35,9 @@ interface Vendor {
   materials: VendorMaterial[];
   payableBalance?: number;
   advanceBalance?: number;
+  ledgerClosingBalance?: number;
+  ledgerOpeningBalance?: number;
+  ledgerAdvanceBalance?: number;
   createdAt?: string;
 }
 
@@ -79,7 +82,7 @@ export default function VendorsView() {
 
   const fetchVendors = async () => {
     try {
-      const res = await api.get("/api/vendors");
+      const res = await api.get("/api/vendors", { params: { withLedger: "1" } });
       if (res.data.success) {
         setVendors(res.data.data || []);
       }
@@ -234,14 +237,21 @@ export default function VendorsView() {
   };
 
   const exportVendors = (format: "csv" | "excel" | "pdf") => {
-    const headers = ["Vendor ID", "Name", "Phone", "Address", "Payable", "Advance"];
+    const headers = [
+      "Vendor ID",
+      "Name",
+      "Phone",
+      "Address",
+      "Closing Balance",
+      "Advance Balance",
+    ];
     const rows = filteredVendors.map((v) => ({
       "Vendor ID": v.vendorId || v._id,
       Name: v.name,
       Phone: v.phone || "",
       Address: v.address || "",
-      Payable: v.payableBalance ?? 0,
-      Advance: v.advanceBalance ?? 0,
+      "Closing Balance": v.ledgerClosingBalance ?? v.payableBalance ?? 0,
+      "Advance Balance": v.ledgerAdvanceBalance ?? v.advanceBalance ?? 0,
     }));
     const name = `Vendors_${Date.now()}`;
     if (format === "csv") exportAsCsv(`${name}.csv`, headers, rows);
@@ -453,18 +463,30 @@ export default function VendorsView() {
                 </div>
               </div>
 
-              {(viewingVendor.payableBalance != null || viewingVendor.advanceBalance != null) && (
+              {(viewingVendor.ledgerClosingBalance != null ||
+                viewingVendor.payableBalance != null ||
+                viewingVendor.advanceBalance != null) && (
                 <div className="grid grid-cols-2 gap-3 p-3 bg-muted/30 border border-border rounded-lg">
                   <div>
-                    <p className="text-xs text-muted-foreground">Payable Balance</p>
+                    <p className="text-xs text-muted-foreground">Closing Balance (Ledger)</p>
                     <p className="text-sm font-semibold text-red-600">
-                      Rs. {(viewingVendor.payableBalance || 0).toLocaleString()}
+                      Rs.{" "}
+                      {(
+                        viewingVendor.ledgerClosingBalance ??
+                        viewingVendor.payableBalance ??
+                        0
+                      ).toLocaleString()}
                     </p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Advance Balance</p>
                     <p className="text-sm font-semibold text-green-600">
-                      Rs. {(viewingVendor.advanceBalance || 0).toLocaleString()}
+                      Rs.{" "}
+                      {(
+                        viewingVendor.ledgerAdvanceBalance ??
+                        viewingVendor.advanceBalance ??
+                        0
+                      ).toLocaleString()}
                     </p>
                   </div>
                 </div>

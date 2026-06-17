@@ -93,6 +93,33 @@ const getMonthName = (monthNumber: number): string => {
   return months[monthNumber - 1] || "";
 };
 
+const formatPaymentMethod = (method?: string) => {
+  const m = (method || "cash").toLowerCase();
+  const labels: Record<string, string> = {
+    cash: "Cash (Drawer)",
+    drawer: "Cash (Drawer)",
+    bank: "Bank",
+    bank_transfer: "Bank Transfer",
+    cheque: "Cheque",
+    online: "Online",
+    easypaisa: "Easypaisa",
+    jazzcash: "JazzCash",
+  };
+  return labels[m] || method || "—";
+};
+
+const getBalanceForMethod = (
+  method: string,
+  balances: { drawer: number; bank: number; easypaisa: number; jazzcash: number } | null
+) => {
+  if (!balances) return 0;
+  const m = method.toLowerCase();
+  if (m === "bank" || m === "bank_transfer" || m === "cheque" || m === "online") return balances.bank;
+  if (m === "easypaisa") return balances.easypaisa;
+  if (m === "jazzcash") return balances.jazzcash;
+  return balances.drawer;
+};
+
 export function AssetsView() {
   const [data, setData] = useState<AssetItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -346,6 +373,16 @@ const handleAddAsset = async (assetData: any) => {
       purchaseTime: asset.purchaseTime
     });
     setEditDialogOpen(true);
+    api.get("/api/finance/balances").then((r) => {
+      if (r.data?.success && r.data.balances) {
+        setFinanceBalances({
+          drawer: Number(r.data.balances.drawer) || 0,
+          easypaisa: Number(r.data.balances.easypaisa) || 0,
+          jazzcash: Number(r.data.balances.jazzcash) || 0,
+          bank: Number(r.data.balances.bank) || 0,
+        });
+      }
+    });
   };
 
   // Handle edit form input changes
@@ -387,6 +424,30 @@ const handleAddAsset = async (assetData: any) => {
           updateData.amountPaid = updateData.amountPaid;
         }
       }
+
+      const paidNum = Number(updateData.amountPaid ?? editingAsset.amountPaid ?? 0);
+      const method = String(updateData.paymentMethod || editingAsset.paymentMethod || 'cash');
+      if (paidNum > 0 && financeBalances) {
+        const available = getBalanceForMethod(method, financeBalances);
+        const oldPaid = Number(editingAsset.amountPaid) || 0;
+        const oldMethod = editingAsset.paymentMethod || 'cash';
+        const bucket = (m: string) => {
+          const x = m.toLowerCase();
+          if (x === 'bank' || x === 'bank_transfer' || x === 'cheque' || x === 'online') return 'bank';
+          if (x === 'cash') return 'drawer';
+          return x;
+        };
+        const credit = bucket(method) === bucket(oldMethod) ? oldPaid : 0;
+        if (paidNum > available + credit) {
+          toast({
+            title: "❌ Insufficient Balance",
+            description: `Available: Rs. ${(available + credit).toLocaleString()}`,
+            variant: "destructive",
+          });
+          setUpdating(false);
+          return;
+        }
+      }
       
       // Convert quantity to number if it's a string
       if (typeof updateData.quantity === 'string') {
@@ -410,6 +471,16 @@ const handleAddAsset = async (assetData: any) => {
         setEditDialogOpen(false);
         setEditingAsset(null);
         setEditForm({});
+        api.get("/api/finance/balances").then((r) => {
+          if (r.data?.success && r.data.balances) {
+            setFinanceBalances({
+              drawer: Number(r.data.balances.drawer) || 0,
+              easypaisa: Number(r.data.balances.easypaisa) || 0,
+              jazzcash: Number(r.data.balances.jazzcash) || 0,
+              bank: Number(r.data.balances.bank) || 0,
+            });
+          }
+        });
       } else {
         const errorMsg = result.error || result.message || "Failed to update asset";
         console.error("❌ Update backend error:", result);
@@ -675,6 +746,7 @@ const handleAddAsset = async (assetData: any) => {
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Paid</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Remaining</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Status</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Payment</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Assigned to</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Date</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Actions</th>
@@ -699,6 +771,9 @@ const handleAddAsset = async (assetData: any) => {
                   </td>
                   <td className="px-4 py-3 text-sm">
                     {getPaidStatusBadge(item.paidStatus)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-foreground">
+                    {formatPaymentMethod(item.paymentMethod)}
                   </td>
                   <td className="px-4 py-3 text-sm text-foreground">{item.assignedTo || 'N/A'}</td>
                   <td className="px-4 py-3 text-sm text-foreground">
@@ -1010,6 +1085,16 @@ const handleAddAsset = async (assetData: any) => {
                     <option value="easypaisa">Easypaisa</option>
                     <option value="jazzcash">JazzCash</option>
                   </select>
+                  {financeBalances && Number(editForm.amountPaid) > 0 && (
+                    <div className="mt-2 p-2 bg-primary/5 border border-primary/10 rounded-md">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">Available balance:</span>
+                        <span className="font-semibold text-primary">
+                          Rs. {getBalanceForMethod(editForm.paymentMethod || "cash", financeBalances).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

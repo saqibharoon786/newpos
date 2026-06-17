@@ -14,6 +14,7 @@ interface Sale {
   materialName: string;
   supplierName: string;
   invoiceNo: string;
+  billNo?: string;
   weight: string;
   unit: string;
   purchaseDate: string;
@@ -1440,6 +1441,7 @@ export function POSView() {
       (sale.materialName?.toLowerCase() || '').includes(searchLower) ||
       (sale.supplierName?.toLowerCase() || '').includes(searchLower) ||
       (sale.invoiceNo?.toLowerCase() || '').includes(searchLower) ||
+      (sale.billNo?.toLowerCase() || '').includes(searchLower) ||
       (sale.buyerName?.toLowerCase() || '').includes(searchLower) ||
       (sale.vehicleNumber?.toLowerCase() || '').includes(searchLower) ||
       (sale.buyerPhone?.toLowerCase() || '').includes(searchLower) ||
@@ -1496,6 +1498,7 @@ export function POSView() {
     const headers = [
       "Date",
       "Invoice No",
+      "Bill No",
       "Material",
       "Customer",
       "Weight (kg)",
@@ -1508,6 +1511,7 @@ export function POSView() {
     const rows = exportRows.map((sale) => ({
       "Date": formatDate(sale.purchaseDate || sale.createdAt),
       "Invoice No": sale.invoiceNo || "N/A",
+      "Bill No": sale.billNo || "N/A",
       "Material": sale.materialName || "N/A",
       "Customer": sale.buyerName || "N/A",
       "Weight (kg)": sale.weight || "0",
@@ -1972,7 +1976,7 @@ const handleExportCustomerSummary = (format: "excel" | "word" | "pdf") => {
                       className="flex-1 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
                     >
                       <DollarSign className="w-3.5 h-3.5" />
-                      Pay
+                      Receive
                     </button>
                   <div className="flex gap-2">
                     <button
@@ -2107,6 +2111,7 @@ const handleExportCustomerSummary = (format: "excel" | "word" | "pdf") => {
               <thead>
                 <tr className="bg-cms-table-header">
                   <th className="text-left px-2 sm:px-4 py-3 text-xs sm:text-sm font-medium text-foreground">Invoice No.</th>
+                  <th className="text-left px-2 sm:px-4 py-3 text-xs sm:text-sm font-medium text-foreground">Bill No.</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Customer Name</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Weight (kg)</th>
@@ -2131,7 +2136,10 @@ const handleExportCustomerSummary = (format: "excel" | "word" | "pdf") => {
                       className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'} hover:bg-cms-card-hover transition-colors`}
                     >
                       <td className="px-4 py-3">
-                        <span className="text-sm font-medium text-foreground">{sale.invoiceNo || 'N/A'}</span>
+                        <span className="text-sm font-mono font-medium text-foreground">{sale.invoiceNo || 'N/A'}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-sm text-foreground">{sale.billNo || '—'}</span>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -2359,7 +2367,7 @@ const handleExportCustomerSummary = (format: "excel" | "word" | "pdf") => {
         allPayments={allPayments}
       />
 
-      {/* Customer Pay Modal — total remaining + one Pay total button */}
+      {/* Customer Receive Modal — total remaining + one Receive total button */}
       {customerPayModalOpen && selectedCustomerName && (() => {
         const customerSales = filteredSales.filter(
           (s) => (s.buyerName || "").trim() === selectedCustomerName && (s.remainingAmount || 0) > 0
@@ -2369,7 +2377,7 @@ const handleExportCustomerSummary = (format: "excel" | "word" | "pdf") => {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-background border border-border rounded-xl shadow-lg w-full max-w-md overflow-hidden flex flex-col">
               <div className="bg-cms-table-header px-4 py-3 border-b border-border flex justify-between items-center">
-                <h3 className="text-sm font-semibold text-foreground">Pay — {selectedCustomerName}</h3>
+                <h3 className="text-sm font-semibold text-foreground">Receive — {selectedCustomerName}</h3>
                 <button onClick={() => { setCustomerPayModalOpen(false); setSelectedCustomerName(null); }} className="p-1 hover:bg-cms-card-hover rounded">
                   <X className="w-4 h-4 text-muted-foreground" />
                 </button>
@@ -2390,10 +2398,10 @@ const handleExportCustomerSummary = (format: "excel" | "word" | "pdf") => {
                     className="w-full px-4 py-3 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center justify-center gap-2"
                   >
                     <DollarSign className="w-4 h-4" />
-                    Pay total
+                    Receive total
                   </button>
                 ) : (
-                  <p className="text-sm text-muted-foreground text-center py-4">No remaining amount to pay for this customer.</p>
+                  <p className="text-sm text-muted-foreground text-center py-4">Is customer se receive karne ke liye koi amount baqi nahi.</p>
                 )}
               </div>
             </div>

@@ -261,7 +261,7 @@ const addSale = async (req, res) => {
       paymentMethod,
       paymentStatus,
       amountPaid = 0,
-      invoiceNo,
+      billNo: bodyBillNo,
       transportationCost,
       notes,
       materialName: bodyMaterialName,
@@ -279,7 +279,8 @@ const addSale = async (req, res) => {
       });
     }
 
-    const finalInvoiceNo = invoiceNo || (await generateSaleInvoiceNo());
+    const finalInvoiceNo = await generateSaleInvoiceNo();
+    const billNo = String(bodyBillNo || req.body.billNo || "").trim();
     const dup = await Sale.findOne({ invoiceNo: finalInvoiceNo });
     if (dup) {
       return res.status(409).json({
@@ -580,6 +581,7 @@ const addSale = async (req, res) => {
     }
 
     salePayload.invoiceNo = finalInvoiceNo;
+    salePayload.billNo = billNo;
     salePayload.paymentMethod = paymentMethod || 'cash';
     salePayload.customerId = req.body.customerId;
     salePayload.approvalStatus = 'pending';
@@ -805,6 +807,10 @@ const updateSale = async (req, res) => {
 
     // Prepare update data
     const updateData = { ...req.body };
+    delete updateData.invoiceNo;
+    if (updateData.billNo !== undefined) {
+      updateData.billNo = String(updateData.billNo || "").trim();
+    }
 
     // Align with add-sale API: frontend sends sellingWeight; Sale model uses weight
     if (updateData.sellingWeight !== undefined && updateData.weight === undefined) {

@@ -32,6 +32,7 @@ interface Purchase {
   deliveryDate: string;
   receiptNo: string;
   invoiceNo?: string;
+  billNo?: string;
   vehicleImage: string;
   materials?: PurchaseMaterial[];
   remainingWeight?: number;
@@ -43,6 +44,14 @@ interface Purchase {
   approvalStatus?: string;
   createdAt: string;
   updatedAt: string;
+  vendorBalance?: {
+    previousBalance: number;
+    previousPayable?: number;
+    previousAdvance?: number;
+    currentPayableBalance?: number;
+    currentAdvanceBalance?: number;
+    currentNetBalance?: number;
+  };
 }
 
 interface PurchaseDetailsViewProps {
@@ -404,9 +413,10 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
           <div class="print-header">
             ${logo ? `<img src="${logo}" style="max-height:60px;margin-bottom:8px;" />` : ''}
             <h1>${settings.companyName}</h1>
-            <div class="subtitle">Purchase Invoice — ${purchase?.invoiceNo || purchase?.receiptNo || 'N/A'}</div>
+            <div class="subtitle">Purchase Invoice — ${purchase?.invoiceNo || 'N/A'}</div>
             <div class="print-badges">
-              <span class="print-badge">ID: ${purchase?._id.substring(0, 8)}...</span>
+              <span class="print-badge">Invoice: ${purchase?.invoiceNo || 'N/A'}</span>
+              ${(purchase?.billNo || purchase?.receiptNo) ? `<span class="print-badge">Bill: ${purchase?.billNo || purchase?.receiptNo}</span>` : ''}
               <span class="print-badge">Purchase Date: ${formatDate(purchase?.purchaseDate || '')}</span>
               <span class="print-badge">Vehicle: ${purchase?.vehicleNumber || purchase?.vehicleName || 'N/A'}</span>
               ${purchase?.vehicleImage ? '<span class="print-badge">Vehicle Image: Available</span>' : ''}
@@ -437,6 +447,10 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
                 <span class="print-value">${purchase?.vendor || 'N/A'}</span>
               </div>
               <div class="print-row">
+                <span class="print-label">Vendor Previous Balance:</span>
+                <span class="print-value">${formatCurrency(purchase?.vendorBalance?.previousBalance ?? 0)}</span>
+              </div>
+              <div class="print-row">
                 <span class="print-label">Quality:</span>
                 <span class="print-value">${purchase?.quality || 'N/A'}</span>
               </div>
@@ -446,11 +460,15 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
               </div>
               <div class="print-row">
                 <span class="print-label">Purchase Date:</span>
-              <span class="print-value">${formatDate(purchase?.purchaseDate || '')}</span>dsvarf  t~fr
+                <span class="print-value">${formatDate(purchase?.purchaseDate || '')}</span>
               </div>
               <div class="print-row">
-                <span class="print-label">Receipt No:</span>
-                <span class="print-value">${purchase?.receiptNo || 'N/A'}</span>
+                <span class="print-label">Invoice Number:</span>
+                <span class="print-value">${purchase?.invoiceNo || 'N/A'}</span>
+              </div>
+              <div class="print-row">
+                <span class="print-label">Bill Number:</span>
+                <span class="print-value">${purchase?.billNo || purchase?.receiptNo || 'N/A'}</span>
               </div>
             </div>
             
@@ -743,6 +761,25 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
+                <IndianRupee className="w-4 h-4" />
+                <span className="text-sm">Vendor Previous Balance</span>
+              </div>
+              <span className="text-sm font-semibold text-amber-700">
+                {formatCurrency(purchase.vendorBalance?.previousBalance ?? 0)}
+              </span>
+            </div>
+            {purchase.vendorBalance && (
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground pl-7">Current payable / advance</span>
+                <span className="text-muted-foreground">
+                  <span className="text-red-600">{formatCurrency(purchase.vendorBalance.currentPayableBalance ?? 0)}</span>
+                  {' / '}
+                  <span className="text-green-600">{formatCurrency(purchase.vendorBalance.currentAdvanceBalance ?? 0)}</span>
+                </span>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 text-muted-foreground">
                 <Award className="w-4 h-4" />
                 <span className="text-sm">Quality</span>
               </div>
@@ -764,10 +801,17 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
-                <CreditCard className="w-4 h-4" />
-                <span className="text-sm">Receipt No.</span>
+                <FileText className="w-4 h-4" />
+                <span className="text-sm">Invoice No.</span>
               </div>
-              <span className="text-sm text-foreground">{purchase.receiptNo || 'N/A'}</span>
+              <span className="text-sm text-foreground font-mono">{purchase.invoiceNo || 'N/A'}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 text-muted-foreground">
+                <CreditCard className="w-4 h-4" />
+                <span className="text-sm">Bill No.</span>
+              </div>
+              <span className="text-sm text-foreground">{purchase.billNo || purchase.receiptNo || 'N/A'}</span>
             </div>
           </div>
         </div>
@@ -956,7 +1000,13 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
         <h3 className="text-base font-semibold text-foreground mb-4 pb-3 border-b border-border">
           Payment & Weight
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div>
+            <label className="text-xs text-muted-foreground">Vendor Previous Balance</label>
+            <p className="text-sm font-semibold text-amber-700 mt-1">
+              {formatCurrency(purchase.vendorBalance?.previousBalance ?? 0)}
+            </p>
+          </div>
           <div>
             <label className="text-xs text-muted-foreground">Total Paid</label>
             <p className="text-sm font-medium text-foreground mt-1">
@@ -997,8 +1047,12 @@ export function PurchaseDetailsView({ purchaseId, onBack }: PurchaseDetailsViewP
             <p className="text-sm text-foreground mt-1">{formatDate(purchase.updatedAt)}</p>
           </div>
           <div>
-            <label className="text-xs text-muted-foreground">Invoice / Receipt</label>
-            <p className="text-sm text-foreground mt-1">{purchase.invoiceNo || purchase.receiptNo || 'N/A'}</p>
+            <label className="text-xs text-muted-foreground">Invoice Number</label>
+            <p className="text-sm text-foreground mt-1 font-mono">{purchase.invoiceNo || 'N/A'}</p>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Bill Number</label>
+            <p className="text-sm text-foreground mt-1">{purchase.billNo || purchase.receiptNo || 'N/A'}</p>
           </div>
         </div>
       </div>

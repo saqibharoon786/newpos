@@ -11,6 +11,7 @@ interface Sale {
   materialName: string;
   supplierName: string;
   invoiceNo: string;
+  billNo?: string;
   weight: string;
   unit: string;
   purchaseDate: string;
@@ -438,6 +439,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
             <div class="subtitle">Invoice #${sale?.invoiceNo || 'N/A'}</div>
             <div class="print-badges">
               <span class="print-badge">Invoice: ${sale?.invoiceNo || 'N/A'}</span>
+              ${sale?.billNo ? `<span class="print-badge">Bill: ${sale.billNo}</span>` : ''}
               <span class="print-badge">Sale Date: ${formatDate(sale?.purchaseDate || '')}</span>
               ${hasVehicleData ? '<span class="print-badge">Vehicle: Assigned</span>' : ''}
             </div>
@@ -475,6 +477,11 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                 <span class="print-label">Invoice Number:</span>
                 <span class="print-value">${sale?.invoiceNo || 'N/A'}</span>
               </div>
+              ${sale?.billNo ? `
+              <div class="print-row">
+                <span class="print-label">Bill Number:</span>
+                <span class="print-value">${sale.billNo}</span>
+              </div>` : ''}
               <div class="print-row">
                 <span class="print-label">Sale Date:</span>
                 <span class="print-value">${formatDate(sale?.purchaseDate || '')}</span>
@@ -875,6 +882,15 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
               </div>
               <span className="text-sm text-foreground font-mono">{sale.invoiceNo || 'N/A'}</span>
             </div>
+            {sale.billNo ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 text-muted-foreground">
+                <CreditCard className="w-4 h-4" />
+                <span className="text-sm">Bill Number</span>
+              </div>
+              <span className="text-sm text-foreground">{sale.billNo}</span>
+            </div>
+            ) : null}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
                 <Calendar className="w-4 h-4" />
