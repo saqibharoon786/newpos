@@ -16,6 +16,7 @@ import SettingsView from "./SettingsView";
 import UsersView from "./UsersView";
 import ActivityLogView from "./ActivityLogView";
 import ReportsView from "./ReportsView";
+import OwnersView from "./OwnersView";
 import LedgerView from "./LedgerView";
 import { LogOut, Menu } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -93,6 +94,8 @@ export function CMSDashboard() {
         return <Process />;
       case "reports":
         return <ReportsView />;
+      case "owners":
+        return <OwnersView />;
       case "ledger":
         return <LedgerView />;
       case "settings":

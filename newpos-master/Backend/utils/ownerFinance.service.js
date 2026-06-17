@@ -1,5 +1,6 @@
 const Transaction = require('../models/transaction.model');
 const InvestmentAccount = require('../models/investment.model');
+const Owner = require('../models/owner.model');
 
 const ADVANCE_METHODS = ['drawer', 'easypaisa', 'jazzcash', 'bank'];
 const OWNER_ACCOUNT_TYPES = ['advance_to_owner', 'loan_to_owner'];
@@ -80,7 +81,14 @@ async function getDefaultOwnerAccount() {
   return account;
 }
 
-async function resolveOwnerAccount(accountId) {
+async function resolveOwnerAccount(accountId, ownerId) {
+  if (ownerId) {
+    const owner = await Owner.findById(ownerId);
+    if (owner?.investmentAccountId) {
+      const account = await findOwnerAccount(owner.investmentAccountId);
+      if (account) return account;
+    }
+  }
   if (accountId) {
     const account = await findOwnerAccount(accountId);
     if (account) return account;
@@ -89,6 +97,32 @@ async function resolveOwnerAccount(accountId) {
 }
 
 async function listOwnerAdvanceAccounts() {
+  const owners = await Owner.find({ isActive: true })
+    .sort({ name: 1 })
+    .lean();
+
+  if (owners.length > 0) {
+    const accounts = await InvestmentAccount.find({
+      _id: { $in: owners.map((o) => o.investmentAccountId).filter(Boolean) },
+    }).lean();
+    const accMap = new Map(accounts.map((a) => [String(a._id), a]));
+
+    return owners.map((o) => {
+      const acc = o.investmentAccountId ? accMap.get(String(o.investmentAccountId)) : null;
+      return {
+        _id: acc?._id || o.investmentAccountId || o._id,
+        ownerId: o._id,
+        accountName: acc?.accountName || `${o.name} — Owner Advance`,
+        ownerName: o.name,
+        subHead: acc?.subHead || 'Loan/Advance to Owner',
+        accountType: acc?.accountType || 'advance_to_owner',
+        profitSharePercent: num(o.profitSharePercent),
+        advanceBalance: round2(num(acc?.balance)),
+        totalProfitReceived: round2(num(o.totalProfitReceived)),
+      };
+    });
+  }
+
   const accounts = await InvestmentAccount.find({
     isActive: true,
     accountType: { $in: OWNER_ACCOUNT_TYPES },
@@ -107,7 +141,7 @@ async function listOwnerAdvanceAccounts() {
 }
 
 async function getOwnerLinkedProfile(accountId, query = {}) {
-  const account = await resolveOwnerAccount(accountId);
+  const account = await resolveOwnerAccount(accountId, query.ownerId);
   if (!account) return null;
 
   const startDate = query.startDate ? new Date(query.startDate) : null;
@@ -155,7 +189,7 @@ async function getOwnerLinkedProfile(accountId, query = {}) {
 }
 
 /** Owner takes advance — withdraw from company account */
-async function recordOwnerAdvance({ accountId, ownerName, method, amount, description, reference }) {
+async function recordOwnerAdvance({ accountId, ownerId, ownerName, method, amount, description, reference }) {
   const amt = num(amount);
   if (!isValidAdvanceMethod(method)) {
     return {
@@ -168,7 +202,7 @@ async function recordOwnerAdvance({ accountId, ownerName, method, amount, descri
     return { ok: false, status: 400, message: 'Valid amount required' };
   }
 
-  const account = await resolveOwnerAccount(accountId);
+  const account = await resolveOwnerAccount(accountId, ownerId);
   if (!account) {
     return { ok: false, status: 404, message: 'Owner advance account not found' };
   }
@@ -235,7 +269,7 @@ async function recordOwnerAdvance({ accountId, ownerName, method, amount, descri
 }
 
 /** Owner repays advance — deposit to company account */
-async function recordOwnerRepayment({ accountId, method, amount, description, reference }) {
+async function recordOwnerRepayment({ accountId, ownerId, method, amount, description, reference }) {
   const amt = num(amount);
   if (!isValidAdvanceMethod(method)) {
     return {
@@ -248,7 +282,7 @@ async function recordOwnerRepayment({ accountId, method, amount, description, re
     return { ok: false, status: 400, message: 'Valid amount required' };
   }
 
-  const account = await resolveOwnerAccount(accountId);
+  const account = await resolveOwnerAccount(accountId, ownerId);
   if (!account) {
     return { ok: false, status: 404, message: 'Owner advance account not found' };
   }

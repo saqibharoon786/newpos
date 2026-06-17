@@ -48,7 +48,7 @@ const TransactionSchema = new mongoose.Schema({
   partyName: { type: String, trim: true },
   category: {
     type: String,
-    enum: ['general', 'advance', 'salary', 'pos_payment'],
+    enum: ['general', 'advance', 'salary', 'pos_payment', 'profit_distribution'],
     default: 'general',
   },
 }, {

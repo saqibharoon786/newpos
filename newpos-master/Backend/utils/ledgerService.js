@@ -832,9 +832,16 @@ async function getOwnerAdvanceLedger(query) {
       acc.financeLedger && acc.financeLedger.length > 0
         ? acc.financeLedger.map((e) => ({
             date: parseDateField(e.date),
-            debit: e.type === 'advance' ? round2(num(e.amount)) : 0,
+            debit:
+              e.type === 'advance' || e.type === 'profit_payout'
+                ? round2(num(e.amount))
+                : 0,
             credit: e.type === 'repayment' ? round2(num(e.amount)) : 0,
-            description: e.description || `${e.type} (${e.method || ''})`,
+            description:
+              e.description ||
+              (e.type === 'profit_payout'
+                ? 'Profit distribution'
+                : `${e.type} (${e.method || ''})`),
             reference: e.reference || '',
             method: e.method || '',
           }))

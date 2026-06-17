@@ -96,9 +96,15 @@ export default function LedgerView() {
       .get(`${LEDGER_API}/meta`, { params })
       .then((r) => {
         if (r.data?.success) {
-          setVendors(r.data.vendors || []);
-          setCustomers(r.data.customers || []);
-          setEmployees(r.data.employees || []);
+          const vList = r.data.vendors || [];
+          const cList = r.data.customers || [];
+          const eList = r.data.employees || [];
+          setVendors(vList);
+          setCustomers(cList);
+          setEmployees(eList);
+          if (vList.length && !vendorId) setVendorId(vList[0]._id);
+          if (cList.length && !customerId) setCustomerId(cList[0]._id);
+          if (eList.length && !employeeId) setEmployeeId(eList[0]._id);
         }
       })
       .catch(() => {});
@@ -182,6 +188,13 @@ export default function LedgerView() {
       setLoading(false);
     }
   }, [activeTab, startDate, endDate, selectedCode, vendorId, customerId, employeeId]);
+
+  useEffect(() => {
+    if (activeTab === 'vendor' && !vendorId) return;
+    if (activeTab === 'customer' && !customerId) return;
+    if (activeTab === 'employee' && !employeeId) return;
+    load();
+  }, [load, activeTab, vendorId, customerId, employeeId]);
 
   const exportLedger = (format: 'excel' | 'pdf' | 'csv') => {
     if (!data) {
@@ -686,7 +699,11 @@ export default function LedgerView() {
       );
     }
 
-    return null;
+    return (
+      <p className="text-sm text-muted-foreground py-6 text-center">
+        Is period mein koi entry nahi — dates change karke dubara try karen
+      </p>
+    );
   };
 
   const needsCode = activeTab === 'rm-detail' || activeTab === 'fp-detail';

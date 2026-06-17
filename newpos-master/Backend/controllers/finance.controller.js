@@ -1054,7 +1054,12 @@ exports.recordOwnerAdvance = async (req, res) => {
       });
     }
     const updatedBalances = await Transaction.getBalances();
-    const linked = await getOwnerLinkedProfile(result.owner._id);
+    let linked = null;
+    try {
+      linked = await getOwnerLinkedProfile(result.owner._id);
+    } catch (_) {
+      /* advance saved — linked profile optional */
+    }
     res.json({
       success: true,
       message: result.message,
@@ -1082,7 +1087,12 @@ exports.recordOwnerRepayment = async (req, res) => {
       });
     }
     const updatedBalances = await Transaction.getBalances();
-    const linked = await getOwnerLinkedProfile(result.owner._id);
+    let linked = null;
+    try {
+      linked = await getOwnerLinkedProfile(result.owner._id);
+    } catch (_) {
+      /* repayment saved — linked profile optional */
+    }
     res.json({
       success: true,
       message: result.message,
