@@ -57,6 +57,9 @@ router.patch("/:id/approve", popController.approvePurchase);
 // Get purchase statistics
 router.get("/statistics", popController.getPurchaseStatistics);
 
+// Next auto-generated purchase invoice number (must be before /:id)
+router.get("/next-invoice", popController.getNextPurchaseInvoiceNo);
+
 // Get all purchases with remaining weight calculation
 router.get("/with-remaining", popController.getAllPurchasesWithRemainingWeight);
 

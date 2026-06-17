@@ -2,6 +2,14 @@ const multer = require('multer');
 const Asset = require('../models/assets.model');
 const Transaction = require('../models/transaction.model');
 const Employee = require('../models/employee.model');
+const {
+  normalizeAssetPaymentMethod,
+  getBalanceKey,
+  checkSufficientBalance,
+  recordAssetWithdraw,
+  findPrimaryAssetTransaction,
+  deleteAssetTransactions,
+} = require('../utils/assetFinance.service');
 
 // @desc    Create a new asset
 // @route   POST /api/assets
@@ -128,6 +136,7 @@ exports.createAsset = async (req, res) => {
     }
 
     const finalInvoiceNo = invoiceNo ? String(invoiceNo).trim() : `AST-${Date.now()}`;
+    const normalizedMethod = normalizeAssetPaymentMethod(paymentMethod);
 
     // ✅ Prepare asset data
     const assetData = {
@@ -143,11 +152,11 @@ exports.createAsset = async (req, res) => {
       amountPaid: parsedAmountPaid,
       purchaseFrom: purchaseFrom ? String(purchaseFrom).trim() : null,
       invoiceNo: finalInvoiceNo,
-      purchaseDate: parsedPurchaseDate,  // ✅ Use the parsed date
+      purchaseDate: parsedPurchaseDate,
       purchaseTime: purchaseTime || null,
       receiptImage: receiptImagePath,
       status: 'Active',
-      paymentMethod: paymentMethod || 'drawer',
+      paymentMethod: normalizedMethod,
       accountType: accountType || 'fixed_asset',
     };
 
@@ -170,33 +179,27 @@ exports.createAsset = async (req, res) => {
       purchaseDate: assetData.purchaseDate.toISOString()
     });
 
-    const rawMethod = (paymentMethod || 'cash').toLowerCase();
-    const method = rawMethod === 'cash' ? 'drawer' : rawMethod;
-    const supportedMethods = ['drawer', 'bank', 'easypaisa', 'jazzcash', 'bank_transfer', 'cheque', 'online'];
+    const asset = await Asset.create(assetData);
 
-    if (parsedAmountPaid > 0 && supportedMethods.includes(method)) {
-      const balances = await Transaction.getBalances();
-      const balanceKey = ['bank_transfer', 'cheque', 'online'].includes(method) ? 'bank' : method;
-
-      if ((balances[balanceKey] || 0) < parsedAmountPaid) {
-        return res.status(400).json({
+    if (parsedAmountPaid > 0) {
+      try {
+        await recordAssetWithdraw({
+          amount: parsedAmountPaid,
+          paymentMethod: normalizedMethod,
+          date: parsedPurchaseDate,
+          description: `Asset: ${assetName} (${normalizedMethod})`,
+          reference: finalInvoiceNo,
+          assetId: asset._id,
+          assetName: String(assetName).trim(),
+        });
+      } catch (payErr) {
+        await Asset.findByIdAndDelete(asset._id);
+        return res.status(payErr.statusCode || 400).json({
           success: false,
-          error: `Insufficient ${balanceKey} balance`,
+          error: payErr.message || 'Payment could not be recorded',
         });
       }
-      await Transaction.create({
-        type: 'withdraw',
-        method,
-        amount: parsedAmountPaid,
-        net: parsedAmountPaid,
-        date: parsedPurchaseDate,
-        description: `Asset: ${assetName}`,
-        reference: finalInvoiceNo,
-        status: 'completed',
-      });
     }
-
-    const asset = await Asset.create(assetData);
 
     console.log('✅ Asset created successfully:', {
       id: asset._id,
@@ -331,8 +334,7 @@ exports.updateAsset = async (req, res) => {
 
     const oldPrice = Number(asset.purchasePrice) || 0;
     const oldAmountPaid = Number(asset.amountPaid) || 0;
-    const oldMethodRaw = (asset.paymentMethod || 'cash').toLowerCase();
-    const oldMethod = oldMethodRaw === 'cash' ? 'drawer' : oldMethodRaw;
+    const oldMethod = normalizeAssetPaymentMethod(asset.paymentMethod);
     const oldInvoiceNo = asset.invoiceNo;
 
     // Prepare update data
@@ -412,61 +414,57 @@ exports.updateAsset = async (req, res) => {
 
     const newPrice = updateData.purchasePrice !== undefined ? (Number(updateData.purchasePrice) || 0) : oldPrice;
     const newAmountPaid = updateData.amountPaid !== undefined ? (Number(updateData.amountPaid) || 0) : oldAmountPaid;
-    const newMethodRaw = (updateData.paymentMethod !== undefined ? updateData.paymentMethod : (asset.paymentMethod || 'cash')).toLowerCase();
-    const newMethod = newMethodRaw === 'cash' ? 'drawer' : newMethodRaw;
+    const newMethod = normalizeAssetPaymentMethod(
+      updateData.paymentMethod !== undefined ? updateData.paymentMethod : asset.paymentMethod
+    );
+    updateData.paymentMethod = newMethod;
     const newInvoiceNo = updateData.invoiceNo !== undefined ? String(updateData.invoiceNo).trim() : oldInvoiceNo;
     const newAssetName = updateData.assetName !== undefined ? String(updateData.assetName).trim() : asset.assetName;
 
     const finalInvoiceNo = newInvoiceNo || oldInvoiceNo || `AST-${Date.now()}`;
     updateData.invoiceNo = finalInvoiceNo;
 
-    const supportedMethods = ['drawer', 'bank', 'easypaisa', 'jazzcash', 'bank_transfer', 'cheque', 'online'];
+    const oldBalanceKey = getBalanceKey(oldMethod);
+    const newBalanceKey = getBalanceKey(newMethod);
 
-    if (newAmountPaid > 0 && supportedMethods.includes(newMethod)) {
-      const balances = await Transaction.getBalances();
-      const balanceKey = ['bank_transfer', 'cheque', 'online'].includes(newMethod) ? 'bank' : newMethod;
-      const oldBalanceKey = ['bank_transfer', 'cheque', 'online'].includes(oldMethod) ? 'bank' : oldMethod;
-
-      const currentAvailable = balances[balanceKey] || 0;
-      const effectiveAvailable = currentAvailable + (oldBalanceKey === balanceKey ? oldAmountPaid : 0);
-
-      if (effectiveAvailable < newAmountPaid) {
+    if (newAmountPaid > 0) {
+      const creditBack = oldBalanceKey === newBalanceKey ? oldAmountPaid : 0;
+      const check = await checkSufficientBalance(newMethod, newAmountPaid, creditBack);
+      if (!check.ok) {
         return res.status(400).json({
           success: false,
-          error: `Insufficient ${balanceKey} balance`,
+          error: `Insufficient ${check.balanceKey} balance. Available: Rs. ${(check.available || 0).toLocaleString()}`,
         });
       }
 
-      let tx = null;
-      if (oldInvoiceNo) {
-        tx = await Transaction.findOne({ reference: oldInvoiceNo });
-      }
+      let tx = await findPrimaryAssetTransaction(asset._id, oldInvoiceNo);
 
       if (tx) {
         tx.amount = newAmountPaid;
         tx.net = newAmountPaid;
         tx.method = newMethod;
         tx.reference = finalInvoiceNo;
-        tx.description = `Asset: ${newAssetName}`;
+        tx.description = `Asset: ${newAssetName} (${newMethod})`;
         tx.date = parsedPurchaseDate || new Date();
+        tx.partyType = 'asset';
+        tx.partyId = asset._id;
+        tx.partyName = newAssetName;
+        tx.category = 'asset_purchase';
         await tx.save();
       } else {
-        await Transaction.create({
-          type: 'withdraw',
-          method: newMethod,
+        await recordAssetWithdraw({
           amount: newAmountPaid,
-          net: newAmountPaid,
+          paymentMethod: newMethod,
           date: parsedPurchaseDate || new Date(),
-          description: `Asset: ${newAssetName}`,
+          description: `Asset: ${newAssetName} (${newMethod})`,
           reference: finalInvoiceNo,
-          status: 'completed',
+          assetId: asset._id,
+          assetName: newAssetName,
         });
       }
     } else {
-      // If new amountPaid is 0/null or payment method is not supported, delete old transaction if it existed
-      if (oldInvoiceNo) {
-        await Transaction.deleteMany({ reference: oldInvoiceNo });
-      }
+      const primary = await findPrimaryAssetTransaction(asset._id, oldInvoiceNo);
+      if (primary) await primary.deleteOne();
     }
 
     console.log('📤 Final update data:', updateData);
@@ -514,9 +512,7 @@ exports.deleteAsset = async (req, res) => {
       });
     }
 
-    if (asset.invoiceNo) {
-      await Transaction.deleteMany({ reference: asset.invoiceNo });
-    }
+    await deleteAssetTransactions(asset._id, asset.invoiceNo);
 
     await asset.deleteOne();
 
@@ -608,34 +604,22 @@ exports.recordAssetPayment = async (req, res) => {
       });
     }
 
-    const rawMethod = (paymentMethod || 'cash').toLowerCase();
-    const method = rawMethod === 'cash' ? 'drawer' : rawMethod;
-    const supportedMethods = ['drawer', 'bank', 'easypaisa', 'jazzcash', 'bank_transfer', 'cheque', 'online'];
+    const normalizedMethod = normalizeAssetPaymentMethod(paymentMethod);
 
-    if (supportedMethods.includes(method)) {
-      const balances = await Transaction.getBalances();
-      const balanceKey = ['bank_transfer', 'cheque', 'online'].includes(method) ? 'bank' : method;
-      
-      if ((balances[balanceKey] || 0) < amt) {
-        return res.status(400).json({ 
-          success: false, 
-          error: `Insufficient balance in ${balanceKey}. Available: Rs. ${(balances[balanceKey] || 0).toLocaleString()}` 
-        });
-      }
-
-      await Transaction.create({
-        type: 'withdraw',
-        method,
-        amount: amt,
-        net: amt,
-        date: date ? new Date(date) : new Date(),
-        description: `Payment for Asset: ${asset.assetName}`,
-        reference: asset.invoiceNo || `AST-${Date.now()}`,
-        status: 'completed',
-      });
-    }
+    await recordAssetWithdraw({
+      amount: amt,
+      paymentMethod: normalizedMethod,
+      date: date ? new Date(date) : new Date(),
+      description: `Payment for Asset: ${asset.assetName} (${normalizedMethod})`,
+      reference: `${asset.invoiceNo || 'AST'}-PAY-${Date.now()}`,
+      assetId: asset._id,
+      assetName: asset.assetName,
+    });
 
     asset.amountPaid = currentTotalPaid + amt;
+    if (normalizedMethod) {
+      asset.paymentMethod = normalizedMethod;
+    }
     await asset.save();
 
     res.status(200).json({

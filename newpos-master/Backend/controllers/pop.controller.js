@@ -12,6 +12,71 @@ const { logActivity } = require("../utils/activityLogger");
 const notificationController = require("./notification.controller");
 const { getPurchaseDisplayWeights } = require("../utils/popMaterialConsumption");
 const { cascadeDeletePurchase } = require("../utils/purchaseCascadeDelete");
+const Vendor = require("../models/vendor.model");
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+/** Vendor ledger balance immediately before this purchase bill was posted */
+async function getVendorBalanceContextForPurchase(purchase) {
+  const vendorName = String(purchase?.vendor || "").trim();
+  if (!vendorName) {
+    return {
+      previousBalance: 0,
+      previousPayable: 0,
+      previousAdvance: 0,
+      currentPayableBalance: 0,
+      currentAdvanceBalance: 0,
+      currentNetBalance: 0,
+    };
+  }
+
+  const vendor = await Vendor.findOne({ name: vendorName }).lean();
+  if (!vendor) {
+    return {
+      previousBalance: 0,
+      previousPayable: 0,
+      previousAdvance: 0,
+      currentPayableBalance: 0,
+      currentAdvanceBalance: 0,
+      currentNetBalance: 0,
+    };
+  }
+
+  const pid = String(purchase._id);
+  const ledger = [...(vendor.ledger || [])].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+
+  const purchaseIdx = ledger.findIndex(
+    (e) => e.type === "purchase" && String(e.purchaseId) === pid
+  );
+
+  let previousBalance = 0;
+  if (purchaseIdx > 0) {
+    previousBalance = Number(ledger[purchaseIdx - 1].balance) || 0;
+  } else if (purchaseIdx === 0) {
+    const pe = ledger[0];
+    previousBalance = Math.max(
+      0,
+      (Number(pe.balance) || 0) - (Number(pe.credit) || 0)
+    );
+  }
+
+  const currentPayable = Number(vendor.payableBalance) || 0;
+  const currentAdvance = Number(vendor.advanceBalance) || 0;
+
+  return {
+    vendorName: vendor.name,
+    previousBalance: round2(previousBalance),
+    previousPayable: round2(Math.max(0, previousBalance)),
+    previousAdvance: 0,
+    currentPayableBalance: round2(currentPayable),
+    currentAdvanceBalance: round2(currentAdvance),
+    currentNetBalance: round2(currentPayable - currentAdvance),
+  };
+}
 
 // Add Purchase
 const addPurchase = async (req, res) => {
@@ -95,6 +160,7 @@ const addPurchase = async (req, res) => {
     const payment = paymentCheck.payment;
 
     const invoiceNo = await generatePurchaseInvoiceNo(new Date(purchaseDate));
+    const billNo = String(req.body.billNo || receiptNo || "").trim();
 
     console.log("Payment calculations:");
     console.log("Total Price:", priceNum);
@@ -110,7 +176,7 @@ const addPurchase = async (req, res) => {
     // Create purchase
     const purchase = await Purchase.create({
       invoiceNo,
-      billNo: req.body.billNo || receiptNo || '',
+      billNo,
       materialName,
       vendor,
       vendorId: vendorDoc?._id,
@@ -125,7 +191,7 @@ const addPurchase = async (req, res) => {
       driverName,
       vehicleColor,
       deliveryDate,
-      receiptNo: receiptNo || invoiceNo,
+      receiptNo: billNo,
       advancePayment: advancePaymentNum,
       amountPaid: amountPaidNum,
       totalPaid: payment.totalPaid,
@@ -280,9 +346,10 @@ const getPurchaseById = async (req, res) => {
     if (!purchase)
       return res.status(404).json({ success: false, message: "Not Found" });
     const weights = getPurchaseDisplayWeights(purchase);
+    const vendorBalance = await getVendorBalanceContextForPurchase(purchase);
     res.status(200).json({
       success: true,
-      data: withComputedPayment({ ...purchase, ...weights }),
+      data: withComputedPayment({ ...purchase, ...weights, vendorBalance }),
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -403,8 +470,12 @@ const updatePurchase = async (req, res) => {
       driverName: req.body.driverName ?? existing.driverName,
       vehicleColor: req.body.vehicleColor ?? existing.vehicleColor,
       deliveryDate: req.body.deliveryDate ?? existing.deliveryDate,
-      receiptNo: req.body.receiptNo ?? existing.receiptNo,
-      billNo: req.body.billNo ?? req.body.receiptNo ?? existing.billNo,
+      billNo: String(
+        req.body.billNo ?? req.body.receiptNo ?? existing.billNo ?? existing.receiptNo ?? ""
+      ).trim(),
+      receiptNo: String(
+        req.body.billNo ?? req.body.receiptNo ?? existing.billNo ?? existing.receiptNo ?? ""
+      ).trim(),
       paymentMethod: req.body.paymentMethod ?? existing.paymentMethod,
       materials: materialsToSave,
       advancePayment: advancePaymentNum,
@@ -691,6 +762,15 @@ const getVendorBalance = async (req, res) => {
   }
 };
 
+const getNextPurchaseInvoiceNo = async (req, res) => {
+  try {
+    const invoiceNo = await generatePurchaseInvoiceNo();
+    res.status(200).json({ success: true, data: { invoiceNo } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   addPurchase,
   getPurchases,
@@ -702,4 +782,5 @@ module.exports = {
   getPurchaseStatistics,
   approvePurchase,
   getVendorBalance,
+  getNextPurchaseInvoiceNo,
 };

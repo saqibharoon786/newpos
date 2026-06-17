@@ -5,6 +5,7 @@ import { AddCustomerQuickDialog } from "./AddCustomerQuickDialog";
 import { CustomerWiseSummary } from "./CustomerWiseSummary";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { exportAsCsv, exportAsExcelTable, exportAsPdf } from "@/lib/exportUtils";
 
 interface Customer {
   _id: string;
@@ -318,6 +319,75 @@ export default function CustomersView() {
     customer.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
     customer.customerId.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const exportCustomers = (format: "csv" | "excel" | "pdf") => {
+    if (!filteredCustomers.length) {
+      toast.error("Export ke liye koi customer nahi");
+      return;
+    }
+
+    const headers = [
+      "Customer ID",
+      "Customer Name",
+      "Phone",
+      "Email",
+      "City",
+      "Province",
+      "Total Amount (PKR)",
+      "Paid (PKR)",
+      "Pending (PKR)",
+      "Payment Status",
+      "Finance Advance (PKR)",
+      "Registration Date",
+    ];
+
+    const rows = filteredCustomers.map((c) => {
+      const pending = calculatePendingAmount(c.amount, c.amountPaid);
+      return {
+        "Customer ID": c.customerId,
+        "Customer Name": c.customerName,
+        Phone: c.phoneNo || "",
+        Email: c.email || "",
+        City: c.city || "",
+        Province: c.province || "",
+        "Total Amount (PKR)": c.amount,
+        "Paid (PKR)": c.amountPaid,
+        "Pending (PKR)": pending,
+        "Payment Status": getPaymentStatusText(c.paidAmount),
+        "Finance Advance (PKR)": c.financeAdvanceBalance ?? 0,
+        "Registration Date": formatDateWithMonthName(c.registrationDate),
+      };
+    });
+
+    const name = `Customers_${new Date().toISOString().slice(0, 10)}`;
+
+    if (format === "csv") {
+      exportAsCsv(`${name}.csv`, headers, rows);
+    } else if (format === "excel") {
+      exportAsExcelTable(`${name}.xls`, "Customers", headers, rows);
+    } else {
+      const body = rows
+        .map(
+          (r) =>
+            `<tr>${headers.map((h) => `<td>${r[h as keyof typeof r] ?? ""}</td>`).join("")}</tr>`
+        )
+        .join("");
+      exportAsPdf(
+        "Customers",
+        `<table border="1" cellpadding="4"><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>`
+      );
+    }
+
+    toast.success(`${rows.length} customer(s) exported`);
+  };
+
+  const handlePrintAllCustomers = () => {
+    if (!filteredCustomers.length) {
+      toast.error("Print ke liye koi customer nahi");
+      return;
+    }
+    exportCustomers("pdf");
+  };
 
   // Calculate summary statistics
   const totalAmount = customers.reduce((sum, customer) => sum + customer.amount, 0);
@@ -1306,13 +1376,37 @@ export default function CustomersView() {
                 <Plus className="w-4 h-4" />
                 <span>Add Customer</span>
               </button>
-              <button className="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-xs sm:text-sm font-medium flex items-center justify-center gap-2 transition-colors">
+              <button
+                type="button"
+                onClick={handlePrintAllCustomers}
+                className="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-xs sm:text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+              >
                 <Printer className="w-4 h-4" />
                 <span className="hidden sm:inline">Print</span>
               </button>
-              <button className="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-xs sm:text-sm font-medium flex items-center justify-center gap-2 transition-colors">
+              <button
+                type="button"
+                onClick={() => exportCustomers("excel")}
+                className="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-xs sm:text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+              >
                 <Download className="w-4 h-4" />
                 <span className="hidden sm:inline">Export</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportCustomers("pdf")}
+                title="Export PDF"
+                className="hidden sm:flex px-3 py-2.5 bg-cms-card border border-border hover:bg-cms-card-hover text-foreground rounded-lg text-xs font-medium items-center gap-2 transition-colors"
+              >
+                PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => exportCustomers("csv")}
+                title="Export CSV"
+                className="hidden sm:flex px-3 py-2.5 bg-cms-card border border-border hover:bg-cms-card-hover text-foreground rounded-lg text-xs font-medium items-center gap-2 transition-colors"
+              >
+                CSV
               </button>
             </div>
           </div>

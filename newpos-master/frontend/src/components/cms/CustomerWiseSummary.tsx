@@ -50,7 +50,7 @@ export function CustomerWiseSummary({
       "Customer",
       "Sales",
       "Total Amount",
-      "Total Pay",
+      "Payment Received",
       "Remaining",
       "Total Weight (kg)",
       "Total Units",
@@ -77,7 +77,7 @@ export function CustomerWiseSummary({
         Customer: row.customerName,
         Sales: row.sales,
         "Total Amount": row.totalAmount,
-        "Total Pay": row.amountPaid,
+        "Payment Received": row.amountPaid,
         Remaining: row.remainingAmount,
         "Total Weight (kg)": row.weight,
         "Total Units": row.units,
@@ -160,7 +160,7 @@ export function CustomerWiseSummary({
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Total Pay</span>
+                <span className="text-muted-foreground">Payment Received</span>
                 <span className="font-semibold text-green-600">
                   Rs. {formatCurrency(row.amountPaid)}
                 </span>
@@ -257,7 +257,7 @@ export function CustomerWiseSummary({
                       className="flex-1 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-xs font-medium disabled:opacity-50 flex items-center justify-center gap-1"
                     >
                       <DollarSign className="w-3.5 h-3.5" />
-                      Pay
+                      Receive
                     </button>
                   )}
                   {onView && (

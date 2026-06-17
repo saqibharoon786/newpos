@@ -7,6 +7,19 @@ import {
   DialogDescription 
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import api from "@/lib/api";
+
+function getBalanceForMethod(
+  method: string,
+  balances: { drawer: number; bank: number; easypaisa: number; jazzcash: number } | null
+) {
+  if (!balances) return 0;
+  const m = method.toLowerCase();
+  if (m === "bank" || m === "bank_transfer" || m === "cheque" || m === "online") return balances.bank;
+  if (m === "easypaisa") return balances.easypaisa;
+  if (m === "jazzcash") return balances.jazzcash;
+  return balances.drawer;
+}
 
 interface AddAssetDialogProps {
   open: boolean;
@@ -41,6 +54,12 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showReceiptPreview, setShowReceiptPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [financeBalances, setFinanceBalances] = useState<{
+    drawer: number;
+    bank: number;
+    easypaisa: number;
+    jazzcash: number;
+  } | null>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
 
@@ -76,6 +95,18 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
         time: "12:00",
         paymentMethod: "cash",
       }));
+      api.get("/api/finance/balances")
+        .then((r) => {
+          if (r.data?.success && r.data.balances) {
+            setFinanceBalances({
+              drawer: Number(r.data.balances.drawer) || 0,
+              bank: Number(r.data.balances.bank) || 0,
+              easypaisa: Number(r.data.balances.easypaisa) || 0,
+              jazzcash: Number(r.data.balances.jazzcash) || 0,
+            });
+          }
+        })
+        .catch(() => setFinanceBalances(null));
     }
   }, [open]);
 
@@ -193,6 +224,15 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
     if (!formData.date) {
       toast.error("Date is required");
       return;
+    }
+
+    const paidAmount = parseFloat(String(formData.amountPaid || formData.purchasePrice || "0").replace(/,/g, "")) || 0;
+    if (paidAmount > 0) {
+      const available = getBalanceForMethod(formData.paymentMethod, financeBalances);
+      if (paidAmount > available) {
+        toast.error(`Insufficient balance. Available: Rs. ${available.toLocaleString()}`);
+        return;
+      }
     }
 
     setIsLoading(true);
@@ -551,6 +591,19 @@ export function AddAssetDialog({ open, onOpenChange, onSave }: AddAssetDialogPro
                   <option value="easypaisa">Easypaisa</option>
                   <option value="jazzcash">JazzCash</option>
                 </select>
+                {financeBalances && (
+                  <div className="mt-2 p-2 bg-primary/5 border border-primary/10 rounded-md">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Available balance:</span>
+                      <span className="font-semibold text-primary">
+                        Rs. {getBalanceForMethod(formData.paymentMethod, financeBalances).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  Amount paid is withdrawn from the selected account (Finance ledger)
+                </p>
               </div>
             </div>
 

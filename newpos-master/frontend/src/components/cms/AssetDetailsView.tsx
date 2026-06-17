@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Printer, IndianRupee, Building2, FileText, Calendar, Package, Settings, Box, Cpu, CheckCircle, AlignLeft, Building, User, ArrowLeft, Loader2, Image, Download, Eye } from "lucide-react";
+import { Printer, IndianRupee, Building2, FileText, Calendar, Package, Settings, Box, Cpu, CheckCircle, AlignLeft, Building, User, ArrowLeft, Loader2, Image, Download, Eye, CreditCard } from "lucide-react";
 import api, { API_BASE_URL } from "@/lib/api";
 
 interface AssetItem {
@@ -8,6 +8,8 @@ interface AssetItem {
   category: string;
   condition: string;
   purchasePrice?: number;
+  amountPaid?: number;
+  paymentMethod?: string;
   assignedTo: string;
   purchaseDate: string;
   purchaseTime?: string;
@@ -149,6 +151,21 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
     const formatPrice = (price?: number) => {
       if (!price) return 'N/A';
       return `Rs. ${price.toLocaleString()}`;
+    };
+
+    const formatPaymentMethodLabel = (method?: string) => {
+      const m = (method || 'cash').toLowerCase();
+      const labels: Record<string, string> = {
+        cash: 'Cash (Drawer)',
+        drawer: 'Cash (Drawer)',
+        bank: 'Bank',
+        bank_transfer: 'Bank Transfer',
+        cheque: 'Cheque',
+        online: 'Online',
+        easypaisa: 'Easypaisa',
+        jazzcash: 'JazzCash',
+      };
+      return labels[m] || method || 'N/A';
     };
 
     printWindow.document.write(`
@@ -424,6 +441,11 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
               <div class="detail-row">
                 <span class="detail-label">Invoice Number:</span>
                 <span class="detail-value">${asset.invoiceNo || 'N/A'}</span>
+              </div>
+              
+              <div class="detail-row">
+                <span class="detail-label">Payment Method:</span>
+                <span class="detail-value">${formatPaymentMethodLabel(asset.paymentMethod)}</span>
               </div>
               
               <div class="detail-row">
@@ -772,6 +794,19 @@ export function AssetDetailsView({ onBack, assetId }: AssetDetailsViewProps) {
                 value={asset.purchasePrice ? `Rs. ${asset.purchasePrice.toLocaleString()}` : 'N/A'} />
               <DetailRow icon={<Building2 className="w-4 h-4" />} label="Purchase From" value={asset.purchaseFrom || 'N/A'} />
               <DetailRow icon={<FileText className="w-4 h-4" />} label="Invoice No." value={asset.invoiceNo || 'N/A'} />
+              <DetailRow icon={<CreditCard className="w-4 h-4" />} label="Payment Method"
+                value={
+                  ({
+                    cash: 'Cash (Drawer)',
+                    drawer: 'Cash (Drawer)',
+                    bank: 'Bank',
+                    bank_transfer: 'Bank Transfer',
+                    cheque: 'Cheque',
+                    online: 'Online',
+                    easypaisa: 'Easypaisa',
+                    jazzcash: 'JazzCash',
+                  } as Record<string, string>)[(asset.paymentMethod || 'cash').toLowerCase()] || asset.paymentMethod || 'N/A'
+                } />
               <DetailRow icon={<Calendar className="w-4 h-4" />} label="Date & Time" 
                 value={formatDateTime(asset.purchaseDate, asset.purchaseTime)} />
             </div>

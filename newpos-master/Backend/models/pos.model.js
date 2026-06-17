@@ -6,6 +6,8 @@ const saleSchema = new mongoose.Schema(
     materialName: { type: String, required: true },
     supplierName: { type: String, required: true },
     invoiceNo: { type: String, required: true, unique: true },
+    /** Manual vendor/customer bill reference — separate from system invoiceNo */
+    billNo: { type: String, default: "" },
     customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
     paymentMethod: {
       type: String,

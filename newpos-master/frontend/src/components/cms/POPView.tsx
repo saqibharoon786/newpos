@@ -162,6 +162,8 @@ interface Purchase {
   vehicleColor: string;
   deliveryDate: string;
   deliveryTime?: string;
+  invoiceNo?: string;
+  billNo?: string;
   receiptNo: string;
   vehicleImage: string;
   advancePayment: number;
@@ -1475,7 +1477,7 @@ const PaymentModal = ({
           await financeApi.updateBalance(
             financeMethod,
             amount,
-            `Payment for Purchase #${purchase.receiptNo} - ${purchase.materialName}`
+            `Payment for Purchase ${purchase.invoiceNo || purchase.receiptNo || ''} - ${purchase.materialName}`
           );
           paymentRecord.financeUpdated = true;
           toast({
@@ -1543,7 +1545,10 @@ const PaymentModal = ({
           <div className="mb-6">
             <h2 className="text-xl font-bold text-foreground">Record Payment</h2>
             <p className="text-sm text-muted-foreground">
-              Purchase #{purchase.receiptNo} - {purchase.materialName}
+              Purchase {purchase.invoiceNo || `#${purchase.receiptNo}`} - {purchase.materialName}
+              {(purchase.billNo || purchase.receiptNo) ? (
+                <span className="text-xs text-muted-foreground ml-1">(Bill: {purchase.billNo || purchase.receiptNo})</span>
+              ) : null}
             </p>
           </div>
 
@@ -2091,7 +2096,7 @@ const MarkAsPaidModal = ({
           await financeApi.updateBalance(
             financeMethod,
             remainingAmount,
-            `Full payment for Purchase #${purchase.receiptNo} - ${purchase.materialName}`
+            `Full payment for Purchase ${purchase.invoiceNo || purchase.receiptNo || ''} - ${purchase.materialName}`
           );
           paymentRecord.financeUpdated = true;
           toast({
@@ -2333,7 +2338,10 @@ const PaymentHistoryModal = ({
           <div>
             <p className="text-xs text-muted-foreground">Payment History</p>
             <h2 className="text-lg font-bold text-foreground">
-              Purchase #{purchase.receiptNo} - {purchase.materialName}
+              Purchase {purchase.invoiceNo || `#${purchase.receiptNo}`} - {purchase.materialName}
+              {(purchase.billNo || purchase.receiptNo) ? (
+                <span className="text-xs text-muted-foreground ml-1">(Bill: {purchase.billNo || purchase.receiptNo})</span>
+              ) : null}
             </h2>
           </div>
           <button
@@ -2637,7 +2645,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     vehicleColor: "",
     deliveryDate: "",
     deliveryTime: "",
-    receiptNo: "",
+    billNo: "",
     advancePayment: "",
     amountPaid: "",
     paymentMethod: "cash",
@@ -2657,6 +2665,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(null);
+  const [previewInvoiceNo, setPreviewInvoiceNo] = useState("");
   
   const [qualityOptions, setQualityOptions] = useState(initialQualityOptions);
   const [showCustomQualityInput, setShowCustomQualityInput] = useState(false);
@@ -2717,8 +2726,17 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     if (open) {
       fetchMaterialCatalog();
       fetchRegisteredVendors();
+      if (!isEdit) {
+        api.get("/api/purchases/next-invoice")
+          .then((res) => {
+            if (res.data?.success && res.data.data?.invoiceNo) {
+              setPreviewInvoiceNo(res.data.data.invoiceNo);
+            }
+          })
+          .catch(() => setPreviewInvoiceNo(""));
+      }
     }
-  }, [open]);
+  }, [open, isEdit]);
 
   useEffect(() => {
     if (!formData.vendor.trim() || registeredVendors.length === 0) return;
@@ -2897,7 +2915,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           vehicleColor: editData.vehicleColor || "",
           deliveryDate: deliveryDateStr,
           deliveryTime: deliveryTimeStr,
-          receiptNo: editData.receiptNo || "",
+          billNo: editData.billNo || editData.receiptNo || "",
           advancePayment: editData.advancePayment?.toString() || "",
           amountPaid: editData.amountPaid?.toString() || "",
           paymentMethod: editData.paymentMethod || "cash",
@@ -2970,6 +2988,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           setImagePreview(null);
           setOriginalImageUrl(null);
         }
+        setPreviewInvoiceNo(editData.invoiceNo || "");
       } else {
         resetForm();
       }
@@ -3413,8 +3432,8 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         driverName: formData.driverName,
         vehicleColor: formData.vehicleColor,
         deliveryDate: deliveryDateTime,
-        receiptNo: formData.receiptNo,
-        billNo: formData.receiptNo,
+        receiptNo: formData.billNo,
+        billNo: formData.billNo,
         paymentMethod: formData.paymentMethod,
         advancePayment: advancePaymentNum,
         amountPaid: amountPaidNum,
@@ -3495,7 +3514,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
             paymentDate: purchaseDateTime.split('T')[0],
             paymentMethod: formData.paymentMethod,
             notes: `Initial payment of Rs. ${totalAmountPaid.toLocaleString()}`,
-            receiptNo: formData.receiptNo,
+            receiptNo: formData.billNo,
             materialName: formData.materialName,
             financeUpdated: false
           };
@@ -3581,13 +3600,14 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       vehicleColor: "",
       deliveryDate: "",
       deliveryTime: "09:00 AM",
-      receiptNo: "",
+      billNo: "",
       advancePayment: "",
       amountPaid: "",
       paymentMethod: "cash",
       vehicleImage: null,
     });
     
+    setPreviewInvoiceNo("");
     setVendorBalance(null);
     setSelectedVendorId("");
     setMaterialRows([
@@ -4444,20 +4464,31 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
 
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Bill Number</label>
+                <label className="block text-xs text-muted-foreground mb-1.5">Purchase Invoice No. (PV — auto)</label>
                 <input
                   type="text"
-                  name="receiptNo"
-                  placeholder="e.g AB1232"
-                  value={formData.receiptNo}
-                  onChange={handleInputChange}
-                  className={`w-full bg-cms-card border ${errors.receiptNo ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                  readOnly
+                  placeholder="PV052600001"
+                  value={previewInvoiceNo}
+                  className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary read-only:opacity-80"
                 />
-                {errors.receiptNo && (
-                  <p className="text-xs text-red-500 mt-1">{errors.receiptNo}</p>
+                <p className="text-xs text-muted-foreground mt-1">System-generated purchase invoice</p>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Bill Number (manual)</label>
+                <input
+                  type="text"
+                  name="billNo"
+                  placeholder="e.g. vendor bill / challan no."
+                  value={formData.billNo}
+                  onChange={handleInputChange}
+                  className={`w-full bg-cms-card border ${errors.billNo ? 'border-red-500' : 'border-border'} rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary`}
+                />
+                {errors.billNo && (
+                  <p className="text-xs text-red-500 mt-1">{errors.billNo}</p>
                 )}
               </div>
-              <div className="col-span-2">
+              <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Recepiet Image</label>
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 px-4 py-2 bg-cms-card border border-border rounded-md cursor-pointer hover:bg-cms-card-hover transition-colors">
@@ -4871,6 +4902,8 @@ export function POPView() {
     if (purchase.materialName?.toLowerCase().includes(searchLower)) return true;
     if (purchase.vendor?.toLowerCase().includes(searchLower)) return true;
     if (purchase.quality?.toLowerCase().includes(searchLower)) return true;
+    if (purchase.invoiceNo?.toLowerCase().includes(searchLower)) return true;
+    if (purchase.billNo?.toLowerCase().includes(searchLower)) return true;
     if (purchase.receiptNo?.toLowerCase().includes(searchLower)) return true;
     if (purchase.materialColor?.toLowerCase().includes(searchLower)) return true;
     if (purchase.materialColorName?.toLowerCase().includes(searchLower)) return true;
@@ -4918,7 +4951,8 @@ export function POPView() {
     }
     const headers = [
       "Date",
-      "Receipt No",
+      "Invoice No",
+      "Bill No",
       "Material Name",
       "Quality",
       "Vendor",
@@ -4932,7 +4966,8 @@ export function POPView() {
     ];
     const rows = exportRows.map((p) => ({
       "Date": formatDateTime(p.purchaseDate || p.createdAt),
-      "Receipt No": p.receiptNo || "N/A",
+      "Invoice No": p.invoiceNo || "N/A",
+      "Bill No": p.billNo || p.receiptNo || "N/A",
       "Material Name": p.materialName || "N/A",
       "Quality": p.quality || "N/A",
       "Vendor": p.vendor || "N/A",
@@ -5250,7 +5285,8 @@ export function POPView() {
             <table className="w-full">
               <thead>
                 <tr className="bg-cms-table-header">
-                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Receipt No.</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Invoice No.</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Bill No.</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Material Name</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Quality</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-foreground">Price</th>
@@ -5274,12 +5310,15 @@ export function POPView() {
                       className={`border-t border-border ${index % 2 === 0 ? 'bg-cms-table-row' : 'bg-cms-table-row-alt'} hover:bg-cms-card-hover transition-colors`}
                     >
                       <td className="px-4 py-3">
+                        <span className="text-sm font-mono font-medium text-foreground">{purchase.invoiceNo || 'N/A'}</span>
+                      </td>
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <div 
                             className="w-3 h-3 rounded-full border border-border"
                             style={{ backgroundColor: purchase.materialColor || '#FFFFFF' }}
                           />
-                          <span className="text-sm font-medium text-foreground">{purchase.receiptNo || 'N/A'}</span>
+                          <span className="text-sm font-medium text-foreground">{purchase.billNo || purchase.receiptNo || 'N/A'}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground">
