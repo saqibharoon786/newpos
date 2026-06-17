@@ -37,6 +37,7 @@ const activityLogRoutes = require("./routes/activityLog.route");
 const notificationRoutes = require("./routes/notification.route");
 const vendorRoutes = require("./routes/vendor.route");
 const investmentRoutes = require("./routes/investment.route");
+const ownerRoutes = require("./routes/owner.route");
 const reportRoutes = require("./routes/report.route");
 const ledgerRoutes = require("./routes/ledger.route");
 const materialCatalogRoutes = require("./routes/materialCatalog.route");
@@ -202,6 +203,7 @@ app.use("/api/activity-logs", cmsProtect, activityLogRoutes);
 app.use("/api/notifications", cmsProtect, notificationRoutes);
 app.use("/api/vendors", cmsProtect, vendorRoutes);
 app.use("/api/investment", cmsProtect, investmentRoutes);
+app.use("/api/owners", cmsProtect, ownerRoutes);
 app.use("/api/reports", cmsProtect, reportRoutes);
 app.use("/api/ledger", cmsProtect, ledgerRoutes);
 

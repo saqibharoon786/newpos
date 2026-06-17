@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LayoutDashboard, ShoppingCart, Store, BookOpen, Package, Users, UserCog, X, Settings, FileBarChart, ScrollText, Shield, Truck, BookMarked } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Store, BookOpen, Package, Users, UserCog, X, Settings, FileBarChart, ScrollText, Shield, Truck, BookMarked, Crown } from "lucide-react";
 import { getCurrentUser, canApprove } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { fetchCompanySettings, getLogoUrl } from "@/lib/companySettings";
@@ -23,6 +23,7 @@ const baseMenuItems = [
   { id: "roznamcha", label: "Kharcha", icon: BookOpen },
   { id: "assets", label: "Assets", icon: Package },
   { id: "employees", label: "Employee", icon: UserCog },
+  { id: "owners", label: "Owners", icon: Crown },
   { id: "Finance", label: "Finance", icon: UserCog },
   { id: "reports", label: "Reports", icon: FileBarChart },
   { id: "ledger", label: "Ledgers", icon: BookMarked },

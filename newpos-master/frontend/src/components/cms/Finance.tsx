@@ -109,9 +109,12 @@ interface EmployeeOption {
 
 interface OwnerAccountOption {
   _id: string;
+  ownerId?: string;
   accountName: string;
   ownerName?: string;
   advanceBalance?: number;
+  profitSharePercent?: number;
+  totalProfitReceived?: number;
 }
 
 interface AdvanceHistoryRow {
@@ -257,6 +260,7 @@ export default function FinanceModule() {
   const [ownerAccounts, setOwnerAccounts] = useState<OwnerAccountOption[]>([]);
   const [ownerFinance, setOwnerFinance] = useState({
     accountId: '',
+    ownerId: '',
     ownerName: '',
     method: 'drawer',
     amount: '',
@@ -589,6 +593,7 @@ export default function FinanceModule() {
       setOwnerFinance((p) => ({
         ...p,
         accountId: first._id,
+        ownerId: first.ownerId || '',
         ownerName: first.ownerName || '',
       }));
       fetchOwnerAdvanceHistory(first._id);
@@ -708,6 +713,7 @@ export default function FinanceModule() {
       }
       const base = {
         accountId: ownerFinance.accountId || undefined,
+        ownerId: ownerFinance.ownerId || undefined,
         ownerName: ownerFinance.ownerName || undefined,
         method: ownerFinance.method,
         amount: amt,
@@ -724,7 +730,7 @@ export default function FinanceModule() {
         const accId = res.data.owner?._id || ownerFinance.accountId;
         setOwnerFinance((p) => ({ ...p, amount: '', description: '', reference: '' }));
         if (res.data.balances) setBalances(res.data.balances);
-        await Promise.all([
+        await Promise.allSettled([
           fetchTransactions(1),
           fetchBalances(),
           fetchOwnerAccountsList(),
@@ -1643,7 +1649,7 @@ export default function FinanceModule() {
               { id: 'vendor' as const, label: 'Vendor Advance', icon: Truck },
               { id: 'customer' as const, label: 'Customer Advance', icon: Users },
               { id: 'employee' as const, label: 'Employee Finance', icon: Wallet },
-              { id: 'owner' as const, label: 'Owner Advance', icon: Crown },
+              { id: 'owner' as const, label: 'Owner', icon: Crown },
             ]
           ).map((tab) => (
             <button
@@ -2372,12 +2378,12 @@ export default function FinanceModule() {
                     Owner Advance
                   </CardTitle>
                   <CardDescription>
-                    Owner advance account se cut — wapasi par deposit — ledger auto update
+                    Owners module se add kiye gaye owners — advance lena / wapas dena
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="pt-5 space-y-4">
                   <div className="space-y-2">
-                    <Label>Owner Account</Label>
+                    <Label>Owner *</Label>
                     <Select
                       value={ownerFinance.accountId}
                       onValueChange={(id) => {
@@ -2385,6 +2391,7 @@ export default function FinanceModule() {
                         setOwnerFinance((p) => ({
                           ...p,
                           accountId: id,
+                          ownerId: acc?.ownerId || '',
                           ownerName: acc?.ownerName || '',
                         }));
                         fetchOwnerAdvanceHistory(id);
@@ -2392,27 +2399,30 @@ export default function FinanceModule() {
                       disabled={loadingAdvance.ownerAccounts}
                     >
                       <SelectTrigger className="bg-secondary border-border">
-                        <SelectValue placeholder={loadingAdvance.ownerAccounts ? 'Loading...' : 'Default owner account'} />
+                        <SelectValue placeholder={loadingAdvance.ownerAccounts ? 'Loading...' : 'Owner select karen'} />
                       </SelectTrigger>
                       <SelectContent>
-                        {ownerAccounts.map((a) => (
-                          <SelectItem key={a._id} value={a._id}>
-                            {a.ownerName || a.accountName}
-                            {(a.advanceBalance ?? 0) > 0 ? ` — Adv: Rs. ${a.advanceBalance?.toLocaleString()}` : ''}
+                        {ownerAccounts.length === 0 ? (
+                          <SelectItem value="_none" disabled>
+                            Pehle Owners module se owner add karen
                           </SelectItem>
-                        ))}
+                        ) : (
+                          ownerAccounts.map((a) => (
+                            <SelectItem key={a._id} value={a._id}>
+                              {a.ownerName || a.accountName}
+                              {a.profitSharePercent != null ? ` (${a.profitSharePercent}%)` : ''}
+                              {(a.advanceBalance ?? 0) > 0 ? ` — Adv: Rs. ${a.advanceBalance?.toLocaleString()}` : ''}
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Owner Name (optional)</Label>
-                    <Input
-                      value={ownerFinance.ownerName}
-                      onChange={(e) => setOwnerFinance((p) => ({ ...p, ownerName: e.target.value }))}
-                      placeholder="e.g. Mr. Owner"
-                      className="bg-secondary border-border"
-                    />
-                  </div>
+                  {ownerAccounts.length === 0 && (
+                    <p className="text-xs text-amber-600">
+                      Sidebar → Owners se pehle owner add karen, phir yahan dropdown mein show hoga.
+                    </p>
+                  )}
                   {ownerLinked?.owner && (
                     <div className="rounded-lg border border-purple-200 bg-purple-50/50 dark:bg-purple-950/20 p-3 text-sm grid grid-cols-2 gap-2">
                       <span className="text-muted-foreground">Outstanding advance:</span>

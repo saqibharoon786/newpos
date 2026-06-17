@@ -11,6 +11,7 @@ const investmentAccountSchema = new mongoose.Schema(
       default: 'other',
     },
     ownerName: { type: String, default: '' },
+    ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Owner' },
     balance: { type: Number, default: 0 },
     /** Finance-linked owner advance ledger */
     financeLedger: [
@@ -18,7 +19,7 @@ const investmentAccountSchema = new mongoose.Schema(
         date: { type: Date, default: Date.now },
         type: {
           type: String,
-          enum: ['advance', 'repayment'],
+          enum: ['advance', 'repayment', 'profit_payout'],
           required: true,
         },
         amount: { type: Number, required: true, min: 0 },
