@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Wallet, Smartphone, Building, Edit, Trash2, Plus, Download, Search, X, Printer, BanknoteIcon, DollarSign, Clock, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Loader2, Users, Truck, Calendar } from 'lucide-react';
+import { AlertCircle, Wallet, Smartphone, Building, Edit, Trash2, Plus, Download, Search, X, Printer, BanknoteIcon, DollarSign, Clock, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Loader2, Users, Truck, Calendar, Crown } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from "sonner";
@@ -77,7 +77,7 @@ interface Transaction {
   status: string;
   description: string;
   reference?: string;
-  partyType?: 'vendor' | 'customer' | 'employee' | null;
+  partyType?: 'vendor' | 'customer' | 'employee' | 'owner' | null;
   partyName?: string;
   category?: string;
   runningBalance?: number;
@@ -105,6 +105,13 @@ interface EmployeeOption {
   employeeId?: string;
   advancePayment?: number;
   salary?: string | number;
+}
+
+interface OwnerAccountOption {
+  _id: string;
+  accountName: string;
+  ownerName?: string;
+  advanceBalance?: number;
 }
 
 interface AdvanceHistoryRow {
@@ -215,7 +222,7 @@ export default function FinanceModule() {
     initial: true
   });
   const [plReport, setPlReport] = useState<any>(null);
-  const [financeTab, setFinanceTab] = useState<'general' | 'vendor' | 'customer' | 'employee'>('general');
+  const [financeTab, setFinanceTab] = useState<'general' | 'vendor' | 'customer' | 'employee' | 'owner'>('general');
 
   const [vendors, setVendors] = useState<VendorOption[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
@@ -247,6 +254,22 @@ export default function FinanceModule() {
   });
   const [employeeFinanceDateFrom, setEmployeeFinanceDateFrom] = useState(monthStartYmd);
   const [employeeFinanceDateTo, setEmployeeFinanceDateTo] = useState(todayYmd);
+  const [ownerAccounts, setOwnerAccounts] = useState<OwnerAccountOption[]>([]);
+  const [ownerFinance, setOwnerFinance] = useState({
+    accountId: '',
+    ownerName: '',
+    method: 'drawer',
+    amount: '',
+    description: '',
+    reference: '',
+    action: 'advance' as 'advance' | 'repayment',
+  });
+  const [ownerAdvanceHistory, setOwnerAdvanceHistory] = useState<AdvanceHistoryRow[]>([]);
+  const [ownerLinked, setOwnerLinked] = useState<{
+    owner: { accountName: string; ownerName: string; advanceBalance: number };
+  } | null>(null);
+  const [ownerFinanceDateFrom, setOwnerFinanceDateFrom] = useState(monthStartYmd);
+  const [ownerFinanceDateTo, setOwnerFinanceDateTo] = useState(todayYmd);
   const [employeeAdvanceHistory, setEmployeeAdvanceHistory] = useState<AdvanceHistoryRow[]>([]);
   const [employeeLinked, setEmployeeLinked] = useState<{
     employee: { name: string; salary: number; advanceBalance: number; netSalaryAfterAdvance: number };
@@ -265,6 +288,9 @@ export default function FinanceModule() {
     vendorHistory: false,
     customerHistory: false,
     employeeHistory: false,
+    ownerAccounts: false,
+    ownerSubmit: false,
+    ownerHistory: false,
     summary: false,
   });
   const [advanceSummary, setAdvanceSummary] = useState<{
@@ -553,8 +579,21 @@ export default function FinanceModule() {
     fetchVendorsList();
     fetchCustomersList();
     fetchEmployeesList();
+    fetchOwnerAccountsList();
     fetchAdvanceSummary();
   }, []);
+
+  useEffect(() => {
+    if (financeTab === 'owner' && ownerAccounts.length > 0 && !ownerFinance.accountId) {
+      const first = ownerAccounts[0];
+      setOwnerFinance((p) => ({
+        ...p,
+        accountId: first._id,
+        ownerName: first.ownerName || '',
+      }));
+      fetchOwnerAdvanceHistory(first._id);
+    }
+  }, [financeTab, ownerAccounts]);
 
   const fetchAdvanceSummary = async () => {
     setLoadingAdvance((p) => ({ ...p, summary: true }));
@@ -614,6 +653,93 @@ export default function FinanceModule() {
       toast.error('Employees load nahi ho sakay');
     } finally {
       setLoadingAdvance((p) => ({ ...p, employees: false }));
+    }
+  };
+
+  const fetchOwnerAccountsList = async () => {
+    setLoadingAdvance((p) => ({ ...p, ownerAccounts: true }));
+    try {
+      const res = await api.get(`${FINANCE_API}/owner-accounts`);
+      if (res.data?.success) {
+        setOwnerAccounts(res.data.data || []);
+      }
+    } catch {
+      toast.error('Owner accounts load nahi ho sakay');
+    } finally {
+      setLoadingAdvance((p) => ({ ...p, ownerAccounts: false }));
+    }
+  };
+
+  const fetchOwnerAdvanceHistory = async (accountId: string) => {
+    if (!accountId) {
+      setOwnerAdvanceHistory([]);
+      setOwnerLinked(null);
+      return;
+    }
+    setLoadingAdvance((p) => ({ ...p, ownerHistory: true }));
+    const params: Record<string, string> = {};
+    if (ownerFinanceDateFrom) params.startDate = ownerFinanceDateFrom;
+    if (ownerFinanceDateTo) params.endDate = ownerFinanceDateTo;
+    try {
+      const [histRes, linkRes] = await Promise.all([
+        api.get(`${FINANCE_API}/owner-advance/${accountId}/history`, { params }),
+        api.get(`${FINANCE_API}/owner-linked/${accountId}`, { params }),
+      ]);
+      if (histRes.data?.success) {
+        setOwnerAdvanceHistory(histRes.data.history || []);
+        if (histRes.data.owner) setOwnerLinked({ owner: histRes.data.owner });
+      }
+      if (linkRes.data?.success) setOwnerLinked(linkRes.data.data);
+    } catch {
+      setOwnerAdvanceHistory([]);
+      setOwnerLinked(null);
+    } finally {
+      setLoadingAdvance((p) => ({ ...p, ownerHistory: false }));
+    }
+  };
+
+  const handleOwnerFinanceSubmit = async () => {
+    setLoadingAdvance((p) => ({ ...p, ownerSubmit: true }));
+    try {
+      const amt = parseFloat(ownerFinance.amount);
+      if (!amt || amt <= 0) {
+        toast.error('Valid amount enter karen');
+        return;
+      }
+      const base = {
+        accountId: ownerFinance.accountId || undefined,
+        ownerName: ownerFinance.ownerName || undefined,
+        method: ownerFinance.method,
+        amount: amt,
+        description: ownerFinance.description,
+        reference: ownerFinance.reference,
+      };
+      const endpoint =
+        ownerFinance.action === 'advance'
+          ? `${FINANCE_API}/owner-advance`
+          : `${FINANCE_API}/owner-repayment`;
+      const res = await api.post(endpoint, base);
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Saved');
+        const accId = res.data.owner?._id || ownerFinance.accountId;
+        setOwnerFinance((p) => ({ ...p, amount: '', description: '', reference: '' }));
+        if (res.data.balances) setBalances(res.data.balances);
+        await Promise.all([
+          fetchTransactions(1),
+          fetchBalances(),
+          fetchOwnerAccountsList(),
+          accId ? fetchOwnerAdvanceHistory(accId) : Promise.resolve(),
+        ]);
+        if (accId && !ownerFinance.accountId) {
+          setOwnerFinance((p) => ({ ...p, accountId: accId }));
+        }
+      } else {
+        toast.error(res.data?.message || 'Failed');
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Owner finance failed');
+    } finally {
+      setLoadingAdvance((p) => ({ ...p, ownerSubmit: false }));
     }
   };
 
@@ -1304,7 +1430,7 @@ export default function FinanceModule() {
     }
   };
 
-  const handleDeletePartyAdvance = async (transactionId: string, party: 'vendor' | 'customer' | 'employee') => {
+  const handleDeletePartyAdvance = async (transactionId: string, party: 'vendor' | 'customer' | 'employee' | 'owner') => {
     if (party === 'customer') {
       await handleDeleteCustomerAdvanceRow({ transactionId, amount: 0, date: '' });
       return;
@@ -1330,6 +1456,9 @@ export default function FinanceModule() {
         }
         if (employeeFinance.employeeId) {
           fetchEmployeeAdvanceHistory(employeeFinance.employeeId);
+        }
+        if (ownerFinance.accountId) {
+          fetchOwnerAdvanceHistory(ownerFinance.accountId);
         }
         fetchTransactions(1);
       } else {
@@ -1514,6 +1643,7 @@ export default function FinanceModule() {
               { id: 'vendor' as const, label: 'Vendor Advance', icon: Truck },
               { id: 'customer' as const, label: 'Customer Advance', icon: Users },
               { id: 'employee' as const, label: 'Employee Finance', icon: Wallet },
+              { id: 'owner' as const, label: 'Owner Advance', icon: Crown },
             ]
           ).map((tab) => (
             <button
@@ -2217,6 +2347,183 @@ export default function FinanceModule() {
                               <td className="p-3 text-right">
                                 {row.canDelete && row.transactionId ? (
                                   <button type="button" onClick={() => handleDeletePartyAdvance(row.transactionId!, 'employee')}
+                                    className="p-1.5 rounded hover:bg-destructive/10">
+                                    <Trash2 className="w-4 h-4 text-destructive" />
+                                  </button>
+                                ) : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {financeTab === 'owner' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="bg-card border-border">
+                <CardHeader className="border-b border-border">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Crown className="w-5 h-5 text-primary" />
+                    Owner Advance
+                  </CardTitle>
+                  <CardDescription>
+                    Owner advance account se cut — wapasi par deposit — ledger auto update
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-5 space-y-4">
+                  <div className="space-y-2">
+                    <Label>Owner Account</Label>
+                    <Select
+                      value={ownerFinance.accountId}
+                      onValueChange={(id) => {
+                        const acc = ownerAccounts.find((a) => a._id === id);
+                        setOwnerFinance((p) => ({
+                          ...p,
+                          accountId: id,
+                          ownerName: acc?.ownerName || '',
+                        }));
+                        fetchOwnerAdvanceHistory(id);
+                      }}
+                      disabled={loadingAdvance.ownerAccounts}
+                    >
+                      <SelectTrigger className="bg-secondary border-border">
+                        <SelectValue placeholder={loadingAdvance.ownerAccounts ? 'Loading...' : 'Default owner account'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ownerAccounts.map((a) => (
+                          <SelectItem key={a._id} value={a._id}>
+                            {a.ownerName || a.accountName}
+                            {(a.advanceBalance ?? 0) > 0 ? ` — Adv: Rs. ${a.advanceBalance?.toLocaleString()}` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Owner Name (optional)</Label>
+                    <Input
+                      value={ownerFinance.ownerName}
+                      onChange={(e) => setOwnerFinance((p) => ({ ...p, ownerName: e.target.value }))}
+                      placeholder="e.g. Mr. Owner"
+                      className="bg-secondary border-border"
+                    />
+                  </div>
+                  {ownerLinked?.owner && (
+                    <div className="rounded-lg border border-purple-200 bg-purple-50/50 dark:bg-purple-950/20 p-3 text-sm grid grid-cols-2 gap-2">
+                      <span className="text-muted-foreground">Outstanding advance:</span>
+                      <span className="font-bold text-purple-700 text-right">
+                        {formatCurrency(ownerLinked.owner.advanceBalance)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label>Action *</Label>
+                    <Select
+                      value={ownerFinance.action}
+                      onValueChange={(v) => setOwnerFinance((p) => ({ ...p, action: v as 'advance' | 'repayment' }))}
+                    >
+                      <SelectTrigger className="bg-secondary border-border"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="advance">Owner Advance Lena (account se cut)</SelectItem>
+                        <SelectItem value="repayment">Owner Wapas Dena (account mein deposit)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Account *</Label>
+                    <Select
+                      value={ownerFinance.method}
+                      onValueChange={(method) => setOwnerFinance((p) => ({ ...p, method }))}
+                    >
+                      <SelectTrigger className="bg-secondary border-border"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {ADVANCE_PAYMENT_METHODS.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Amount (PKR) *</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={ownerFinance.amount}
+                      onChange={(e) => setOwnerFinance((p) => ({ ...p, amount: e.target.value }))}
+                      className="bg-secondary border-border"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Description</Label>
+                    <Input
+                      value={ownerFinance.description}
+                      onChange={(e) => setOwnerFinance((p) => ({ ...p, description: e.target.value }))}
+                      className="bg-secondary border-border"
+                    />
+                  </div>
+                  <Button
+                    className="w-full"
+                    onClick={handleOwnerFinanceSubmit}
+                    disabled={loadingAdvance.ownerSubmit}
+                  >
+                    {loadingAdvance.ownerSubmit ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                    Confirm
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card className="bg-card border-border">
+                <CardHeader className="border-b border-border">
+                  <CardTitle className="text-lg">Owner Advance Ledger</CardTitle>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    <Input type="date" value={ownerFinanceDateFrom}
+                      onChange={(e) => setOwnerFinanceDateFrom(e.target.value)}
+                      className="w-auto bg-secondary border-border text-xs h-8" />
+                    <span className="text-xs text-muted-foreground self-center">—</span>
+                    <Input type="date" value={ownerFinanceDateTo}
+                      onChange={(e) => setOwnerFinanceDateTo(e.target.value)}
+                      className="w-auto bg-secondary border-border text-xs h-8" />
+                    <Button type="button" size="sm" variant="outline"
+                      onClick={() => ownerFinance.accountId && fetchOwnerAdvanceHistory(ownerFinance.accountId)}>
+                      Filter
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  {loadingAdvance.ownerHistory ? (
+                    <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>
+                  ) : ownerAdvanceHistory.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">
+                      No records — owner advance len ya wapasi record karen
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr>
+                            <th className="text-left p-3">Date</th>
+                            <th className="text-left p-3">Type</th>
+                            <th className="text-left p-3">Account</th>
+                            <th className="text-right p-3">Amount</th>
+                            <th className="text-right p-3 w-16"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ownerAdvanceHistory.map((row, i) => (
+                            <tr key={row.transactionId || i} className="border-t border-border">
+                              <td className="p-3">{formatDate(String(row.date))}</td>
+                              <td className="p-3">
+                                {row.type === 'advance' ? 'Advance Liya' : row.type === 'repayment' ? 'Wapas Diya' : row.type}
+                              </td>
+                              <td className="p-3 capitalize">{row.method || '—'}</td>
+                              <td className="p-3 text-right font-medium">{formatCurrency(row.amount)}</td>
+                              <td className="p-3 text-right">
+                                {row.canDelete && row.transactionId ? (
+                                  <button type="button" onClick={() => handleDeletePartyAdvance(row.transactionId!, 'owner')}
                                     className="p-1.5 rounded hover:bg-destructive/10">
                                     <Trash2 className="w-4 h-4 text-destructive" />
                                   </button>

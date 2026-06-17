@@ -108,6 +108,18 @@ export default function LedgerView() {
     setLoading(true);
     setData(null);
     try {
+      if (
+        (activeTab === 'sales' || activeTab === 'customer') &&
+        !sessionStorage.getItem('pos_payment_ledger_synced')
+      ) {
+        try {
+          await api.post('/api/sales/sync-payments', { payments: [] });
+          sessionStorage.setItem('pos_payment_ledger_synced', '1');
+        } catch {
+          /* optional rebuild */
+        }
+      }
+
       let url = '';
       switch (activeTab) {
         case 'rm-summary':
@@ -633,7 +645,7 @@ export default function LedgerView() {
               credit: l.credit ? fmtRs(l.credit as number) : '—',
               balance: fmtRs(l.balance as number),
             })),
-            'No owner advance transactions — Investment module se add karen'
+            'No owner advance — Finance module se Owner Advance tab use karen'
           )}
         </div>
       );
