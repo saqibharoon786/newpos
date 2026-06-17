@@ -2,6 +2,10 @@ const Transaction = require('../models/transaction.model');
 const Vendor = require('../models/vendor.model');
 const Customer = require('../models/customer.model');
 const { rebuildVendorLedger } = require('./purchaseCascadeDelete');
+const {
+  syncEmployeeAdvanceBalance,
+  findEmployeeByAnyId,
+} = require('./employeeFinance.service');
 
 function num(v) {
   const n = parseFloat(v);
@@ -11,6 +15,7 @@ function num(v) {
 function isPartyAdvanceTransaction(transaction) {
   if (!transaction?.partyType) return false;
   if (transaction.category === 'advance') return true;
+  if (transaction.category === 'salary') return true;
   const desc = String(transaction.description || '').toLowerCase();
   return desc.includes('advance');
 }
@@ -56,7 +61,7 @@ async function deletePartyAdvanceTransaction(transactionId) {
     return {
       ok: false,
       status: 400,
-      message: 'Sirf vendor/customer advance entries delete ho sakti hain',
+      message: 'Sirf vendor/customer/employee advance ya salary entries delete ho sakti hain',
     };
   }
 
@@ -112,6 +117,44 @@ async function deletePartyAdvanceTransaction(transactionId) {
     );
     syncCustomerFinanceAdvance(customer);
     await customer.save();
+  } else if (transaction.partyType === 'employee') {
+    const employee = await findEmployeeByAnyId(transaction.partyId);
+    if (!employee) {
+      return { ok: false, status: 404, message: 'Employee not found' };
+    }
+
+    const tid = String(transaction._id);
+    const entry = (employee.financeLedger || []).find(
+      (e) => e.transactionId && String(e.transactionId) === tid
+    );
+
+    if (!entry) {
+      return {
+        ok: false,
+        status: 404,
+        message: 'Employee finance ledger entry not found',
+      };
+    }
+
+    if (entry.type === 'advance') {
+      const usedInSalary = (employee.financeLedger || []).some(
+        (e) => e.type === 'salary_payment' && num(e.advanceDeducted) > 0 && new Date(e.date) > new Date(entry.date)
+      );
+      if (usedInSalary) {
+        return {
+          ok: false,
+          status: 400,
+          message:
+            'Ye advance salary mein adjust ho chuka hai — pehle salary entry delete karen ya adjust karen',
+        };
+      }
+    }
+
+    employee.financeLedger = (employee.financeLedger || []).filter(
+      (e) => !(e.transactionId && String(e.transactionId) === tid)
+    );
+    syncEmployeeAdvanceBalance(employee);
+    await employee.save();
   } else {
     return { ok: false, status: 400, message: 'Unknown party type' };
   }
