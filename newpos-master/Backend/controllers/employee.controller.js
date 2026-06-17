@@ -106,7 +106,9 @@ const getEmployees = async (req, res) => {
                 reportingManager: emp.reportingManager || '',
                 hireDate: emp.hireDate ? emp.hireDate.toISOString().split('T')[0] : '',
                 responsibilities: emp.responsibilities || '',
-                advancePayment: emp.advancePayment || 0, // ADDED THIS LINE
+                advancePayment: emp.advancePayment || 0,
+                advanceRecoveryMode: emp.advanceRecoveryMode || 'salary_deduct',
+                monthlyAdvanceDeduction: emp.monthlyAdvanceDeduction || 0,
                 isActive: emp.isActive !== undefined ? emp.isActive : true
             };
         });
@@ -330,7 +332,6 @@ const createEmployee = async (req, res) => {
             reportingManager: req.body.reportingManager || '',
             hireDate: hireDate,
             responsibilities: req.body.responsibilities || '',
-            advancePayment: parseFloat(req.body.advancePayment) || 0,
             isActive: req.body.isActive !== undefined ? req.body.isActive : true
         };
         
@@ -518,12 +519,10 @@ const updateEmployee = async (req, res) => {
     // Prepare update data
     const updateData = {
       ...req.body,
-      // Parse dates
       dob: req.body.dob ? parseDateString(req.body.dob) : existingEmployee.dob,
       hireDate: req.body.hireDate ? parseDateString(req.body.hireDate) : existingEmployee.hireDate,
       // Handle numeric conversions
       salary: req.body.salary ? parseFloat(req.body.salary.replace(/[^0-9.-]+/g, "")) || existingEmployee.salary : existingEmployee.salary,
-      advancePayment: req.body.advancePayment !== undefined ? parseFloat(req.body.advancePayment) || 0 : existingEmployee.advancePayment,
       // Handle strings
       name: req.body.name || existingEmployee.name,
       address: req.body.address !== undefined ? req.body.address : existingEmployee.address,
@@ -539,6 +538,10 @@ const updateEmployee = async (req, res) => {
       endTime: req.body.endTime || existingEmployee.endTime || "17:00",
       isActive: req.body.isActive !== undefined ? req.body.isActive : existingEmployee.isActive !== undefined ? existingEmployee.isActive : true,
     };
+
+    // Advance & finance ledger only via Finance module
+    delete updateData.advancePayment;
+    delete updateData.financeLedger;
 
     console.log('Update data prepared:', updateData);
 

@@ -11,6 +11,13 @@ const {
   deletePartyAdvanceTransaction,
   deleteCustomerAdvanceEntry,
 } = require('../utils/financeAdvanceDelete');
+const {
+  getEmployeeLinkedProfile,
+  recordEmployeeAdvance,
+  recordEmployeeRepayment,
+  recordEmployeeSalary,
+  updateEmployeeAdvanceSettings,
+} = require('../utils/employeeFinance.service');
 
 const ADVANCE_METHODS = ['drawer', 'easypaisa', 'jazzcash', 'bank'];
 
@@ -369,6 +376,7 @@ exports.deleteTransaction = async (req, res) => {
     const isPartyAdvance =
       transaction.partyType &&
       (transaction.category === 'advance' ||
+        transaction.category === 'salary' ||
         String(transaction.description || '').toLowerCase().includes('advance'));
     if (isPartyAdvance) {
       const result = await deletePartyAdvanceTransaction(id);
@@ -879,5 +887,144 @@ exports.getCustomerAdvanceHistory = async (req, res) => {
       success: false,
       message: error.message,
     });
+  }
+};
+
+/** Employee advance: account se cut kar employee ko advance */
+exports.recordEmployeeAdvance = async (req, res) => {
+  try {
+    const result = await recordEmployeeAdvance(req.body);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.message,
+      });
+    }
+    const updatedBalances = await Transaction.getBalances();
+    const linked = await getEmployeeLinkedProfile(result.employee._id);
+    res.json({
+      success: true,
+      message: result.message,
+      transaction: result.transaction,
+      employee: result.employee,
+      linked,
+      balances: updatedBalances,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error recording employee advance',
+      error: error.message,
+    });
+  }
+};
+
+/** Employee advance repayment: employee se wapas receive — account mein deposit */
+exports.recordEmployeeRepayment = async (req, res) => {
+  try {
+    const result = await recordEmployeeRepayment(req.body);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.message,
+      });
+    }
+    const updatedBalances = await Transaction.getBalances();
+    const linked = await getEmployeeLinkedProfile(result.employee._id);
+    res.json({
+      success: true,
+      message: result.message,
+      transaction: result.transaction,
+      employee: result.employee,
+      linked,
+      balances: updatedBalances,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error recording employee repayment',
+      error: error.message,
+    });
+  }
+};
+
+/** Pay salary with automatic advance adjustment */
+exports.recordEmployeeSalary = async (req, res) => {
+  try {
+    const result = await recordEmployeeSalary(req.body);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.message,
+      });
+    }
+    const updatedBalances = await Transaction.getBalances();
+    const linked = await getEmployeeLinkedProfile(result.employee._id);
+    res.json({
+      success: true,
+      message: result.message,
+      transaction: result.transaction,
+      salary: result.salary,
+      employee: result.employee,
+      linked,
+      balances: updatedBalances,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error paying employee salary',
+      error: error.message,
+    });
+  }
+};
+
+exports.getEmployeeLinked = async (req, res) => {
+  try {
+    const linked = await getEmployeeLinkedProfile(req.params.employeeId, req.query);
+    if (!linked) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+    res.json({ success: true, data: linked });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.updateEmployeeAdvanceSettings = async (req, res) => {
+  try {
+    const result = await updateEmployeeAdvanceSettings(req.body);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.message,
+      });
+    }
+    res.json({
+      success: true,
+      message: result.message,
+      employee: result.employee,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error updating advance settings',
+      error: error.message,
+    });
+  }
+};
+
+exports.getEmployeeAdvanceHistory = async (req, res) => {
+  try {
+    const linked = await getEmployeeLinkedProfile(req.params.employeeId, req.query);
+    if (!linked) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+    res.json({
+      success: true,
+      employee: linked.employee,
+      history: linked.history,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

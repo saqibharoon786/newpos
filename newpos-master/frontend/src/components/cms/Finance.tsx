@@ -77,7 +77,7 @@ interface Transaction {
   status: string;
   description: string;
   reference?: string;
-  partyType?: 'vendor' | 'customer' | null;
+  partyType?: 'vendor' | 'customer' | 'employee' | null;
   partyName?: string;
   category?: string;
   runningBalance?: number;
@@ -97,6 +97,14 @@ interface CustomerOption {
   customerId?: string;
   financeAdvanceBalance?: number;
   advanceCredit?: number;
+}
+
+interface EmployeeOption {
+  _id: string;
+  name: string;
+  employeeId?: string;
+  advancePayment?: number;
+  salary?: string | number;
 }
 
 interface AdvanceHistoryRow {
@@ -207,10 +215,11 @@ export default function FinanceModule() {
     initial: true
   });
   const [plReport, setPlReport] = useState<any>(null);
-  const [financeTab, setFinanceTab] = useState<'general' | 'vendor' | 'customer'>('general');
+  const [financeTab, setFinanceTab] = useState<'general' | 'vendor' | 'customer' | 'employee'>('general');
 
   const [vendors, setVendors] = useState<VendorOption[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [vendorAdvance, setVendorAdvance] = useState({
     vendorId: '',
     method: 'drawer',
@@ -225,6 +234,23 @@ export default function FinanceModule() {
     description: '',
     reference: '',
   });
+  const [employeeFinance, setEmployeeFinance] = useState({
+    employeeId: '',
+    method: 'drawer',
+    amount: '',
+    description: '',
+    reference: '',
+    action: 'advance' as 'advance' | 'repayment' | 'salary',
+    grossSalary: '',
+    periodLabel: '',
+    deductFromSalary: true,
+  });
+  const [employeeFinanceDateFrom, setEmployeeFinanceDateFrom] = useState(monthStartYmd);
+  const [employeeFinanceDateTo, setEmployeeFinanceDateTo] = useState(todayYmd);
+  const [employeeAdvanceHistory, setEmployeeAdvanceHistory] = useState<AdvanceHistoryRow[]>([]);
+  const [employeeLinked, setEmployeeLinked] = useState<{
+    employee: { name: string; salary: number; advanceBalance: number; netSalaryAfterAdvance: number };
+  } | null>(null);
   const [vendorAdvanceHistory, setVendorAdvanceHistory] = useState<AdvanceHistoryRow[]>([]);
   const [customerAdvanceHistory, setCustomerAdvanceHistory] = useState<AdvanceHistoryRow[]>([]);
   const [vendorLinked, setVendorLinked] = useState<VendorLinkedProfile | null>(null);
@@ -232,10 +258,13 @@ export default function FinanceModule() {
   const [loadingAdvance, setLoadingAdvance] = useState({
     vendors: false,
     customers: false,
+    employees: false,
     vendorSubmit: false,
     customerSubmit: false,
+    employeeSubmit: false,
     vendorHistory: false,
     customerHistory: false,
+    employeeHistory: false,
     summary: false,
   });
   const [advanceSummary, setAdvanceSummary] = useState<{
@@ -523,6 +552,7 @@ export default function FinanceModule() {
     fetchInitialData();
     fetchVendorsList();
     fetchCustomersList();
+    fetchEmployeesList();
     fetchAdvanceSummary();
   }, []);
 
@@ -570,6 +600,105 @@ export default function FinanceModule() {
       toast.error('Customers load nahi ho sakay');
     } finally {
       setLoadingAdvance((p) => ({ ...p, customers: false }));
+    }
+  };
+
+  const fetchEmployeesList = async () => {
+    setLoadingAdvance((p) => ({ ...p, employees: true }));
+    try {
+      const res = await api.get('/api/employees/get-all');
+      if (res.data?.success) {
+        setEmployees(res.data.data || []);
+      }
+    } catch {
+      toast.error('Employees load nahi ho sakay');
+    } finally {
+      setLoadingAdvance((p) => ({ ...p, employees: false }));
+    }
+  };
+
+  const fetchEmployeeAdvanceHistory = async (employeeId: string) => {
+    if (!employeeId) {
+      setEmployeeAdvanceHistory([]);
+      setEmployeeLinked(null);
+      return;
+    }
+    setLoadingAdvance((p) => ({ ...p, employeeHistory: true }));
+    const params: Record<string, string> = {};
+    if (employeeFinanceDateFrom) params.startDate = employeeFinanceDateFrom;
+    if (employeeFinanceDateTo) params.endDate = employeeFinanceDateTo;
+    try {
+      const [histRes, linkRes] = await Promise.all([
+        api.get(`${FINANCE_API}/employee-advance/${employeeId}/history`, { params }),
+        api.get(`${FINANCE_API}/employee-linked/${employeeId}`, { params }),
+      ]);
+      if (histRes.data?.success) {
+        setEmployeeAdvanceHistory(histRes.data.history || []);
+      }
+      if (linkRes.data?.success) {
+        setEmployeeLinked(linkRes.data.data);
+      }
+    } catch {
+      setEmployeeAdvanceHistory([]);
+      setEmployeeLinked(null);
+    } finally {
+      setLoadingAdvance((p) => ({ ...p, employeeHistory: false }));
+    }
+  };
+
+  const handleEmployeeFinanceSubmit = async () => {
+    if (!employeeFinance.employeeId) {
+      toast.error('Employee select karen');
+      return;
+    }
+    setLoadingAdvance((p) => ({ ...p, employeeSubmit: true }));
+    try {
+      const base = {
+        employeeId: employeeFinance.employeeId,
+        method: employeeFinance.method,
+        description: employeeFinance.description,
+        reference: employeeFinance.reference,
+      };
+      let res;
+      if (employeeFinance.action === 'advance') {
+        const amt = parseFloat(employeeFinance.amount);
+        if (!amt || amt <= 0) {
+          toast.error('Valid amount enter karen');
+          return;
+        }
+        res = await api.post(`${FINANCE_API}/employee-advance`, { ...base, amount: amt });
+      } else if (employeeFinance.action === 'repayment') {
+        const amt = parseFloat(employeeFinance.amount);
+        if (!amt || amt <= 0) {
+          toast.error('Valid amount enter karen');
+          return;
+        }
+        res = await api.post(`${FINANCE_API}/employee-repayment`, { ...base, amount: amt });
+      } else {
+        res = await api.post(`${FINANCE_API}/employee-salary`, {
+          ...base,
+          grossSalary: employeeFinance.grossSalary || undefined,
+          periodLabel: employeeFinance.periodLabel || undefined,
+          deductFromSalary: employeeFinance.deductFromSalary,
+        });
+      }
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Saved');
+        setEmployeeFinance((p) => ({ ...p, amount: '', description: '', reference: '' }));
+        if (res.data.balances) setBalances(res.data.balances);
+        await Promise.all([
+          fetchTransactions(1),
+          fetchBalances(),
+          fetchEmployeeAdvanceHistory(employeeFinance.employeeId),
+          fetchEmployeesList(),
+        ]);
+      } else {
+        toast.error(res.data?.message || 'Failed');
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Employee finance failed');
+    } finally {
+      setLoadingAdvance((p) => ({ ...p, employeeSubmit: false }));
     }
   };
 
@@ -1175,14 +1304,14 @@ export default function FinanceModule() {
     }
   };
 
-  const handleDeletePartyAdvance = async (transactionId: string, party: 'vendor' | 'customer') => {
+  const handleDeletePartyAdvance = async (transactionId: string, party: 'vendor' | 'customer' | 'employee') => {
     if (party === 'customer') {
       await handleDeleteCustomerAdvanceRow({ transactionId, amount: 0, date: '' });
       return;
     }
     if (
       !confirm(
-        'Ye advance entry delete karen? Amount vendor/customer balance aur cash account se adjust ho jayegi.'
+        'Ye entry delete karen? Amount balance aur cash account se adjust ho jayegi.'
       )
     ) {
       return;
@@ -1190,7 +1319,7 @@ export default function FinanceModule() {
     try {
       const res = await api.delete(`${FINANCE_API}/party-advance/${transactionId}`);
       if (res.data?.success) {
-        toast.success(res.data.message || 'Advance delete ho gayi');
+        toast.success(res.data.message || 'Entry delete ho gayi');
         if (res.data.balances) setBalances(res.data.balances);
         if (res.data.vendor) {
           setVendorLinked(res.data.vendor);
@@ -1198,6 +1327,9 @@ export default function FinanceModule() {
         fetchAdvanceSummary();
         if (vendorAdvance.vendorId) {
           fetchVendorAdvanceHistory(vendorAdvance.vendorId);
+        }
+        if (employeeFinance.employeeId) {
+          fetchEmployeeAdvanceHistory(employeeFinance.employeeId);
         }
         fetchTransactions(1);
       } else {
@@ -1381,6 +1513,7 @@ export default function FinanceModule() {
               { id: 'general' as const, label: 'General Finance', icon: BanknoteIcon },
               { id: 'vendor' as const, label: 'Vendor Advance', icon: Truck },
               { id: 'customer' as const, label: 'Customer Advance', icon: Users },
+              { id: 'employee' as const, label: 'Employee Finance', icon: Wallet },
             ]
           ).map((tab) => (
             <button
@@ -1910,6 +2043,184 @@ export default function FinanceModule() {
                                 ) : (
                                   <span className="text-xs text-muted-foreground">—</span>
                                 )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {financeTab === 'employee' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="bg-card border-border">
+                <CardHeader className="border-b border-border">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Wallet className="w-5 h-5 text-primary" />
+                    Employee Advance & Salary
+                  </CardTitle>
+                  <CardDescription>
+                    Advance account se cut — repayment deposit — salary mein advance adjust
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-5 space-y-4">
+                  <div className="space-y-2">
+                    <Label>Employee *</Label>
+                    <Select
+                      value={employeeFinance.employeeId}
+                      onValueChange={(id) => {
+                        const emp = employees.find((e) => e._id === id);
+                        setEmployeeFinance((p) => ({
+                          ...p,
+                          employeeId: id,
+                          grossSalary: emp?.salary
+                            ? String(typeof emp.salary === 'string' ? emp.salary.replace(/[^0-9.-]+/g, '') : emp.salary)
+                            : '',
+                        }));
+                        fetchEmployeeAdvanceHistory(id);
+                      }}
+                      disabled={loadingAdvance.employees}
+                    >
+                      <SelectTrigger className="bg-secondary border-border">
+                        <SelectValue placeholder={loadingAdvance.employees ? 'Loading...' : 'Select employee'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {employees.map((e) => (
+                          <SelectItem key={e._id} value={e._id}>
+                            {e.name}
+                            {e.employeeId ? ` (${e.employeeId})` : ''}
+                            {(e.advancePayment ?? 0) > 0 ? ` — Adv: Rs. ${e.advancePayment?.toLocaleString()}` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {employeeLinked?.employee && (
+                    <div className="rounded-lg border border-orange-200 bg-orange-50/50 dark:bg-orange-950/20 p-3 text-sm grid grid-cols-2 gap-2">
+                      <span className="text-muted-foreground">Salary:</span>
+                      <span className="font-medium text-right">{formatCurrency(employeeLinked.employee.salary)}</span>
+                      <span className="text-muted-foreground">Outstanding advance:</span>
+                      <span className="font-medium text-orange-600 text-right">{formatCurrency(employeeLinked.employee.advanceBalance)}</span>
+                      <span className="text-muted-foreground">Net after advance:</span>
+                      <span className="font-bold text-right">{formatCurrency(employeeLinked.employee.netSalaryAfterAdvance)}</span>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label>Action *</Label>
+                    <Select
+                      value={employeeFinance.action}
+                      onValueChange={(v) => setEmployeeFinance((p) => ({ ...p, action: v as 'advance' | 'repayment' | 'salary' }))}
+                    >
+                      <SelectTrigger className="bg-secondary border-border"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="advance">Give Advance (withdraw)</SelectItem>
+                        <SelectItem value="repayment">Khud Wapas (self pay — deposit)</SelectItem>
+                        <SelectItem value="salary">Pay Salary (advance cut optional)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Account *</Label>
+                    <Select
+                      value={employeeFinance.method}
+                      onValueChange={(method) => setEmployeeFinance((p) => ({ ...p, method }))}
+                    >
+                      <SelectTrigger className="bg-secondary border-border"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {ADVANCE_PAYMENT_METHODS.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {employeeFinance.action !== 'salary' ? (
+                    <div className="space-y-2">
+                      <Label>Amount (PKR) *</Label>
+                      <Input type="number" min="0" value={employeeFinance.amount}
+                        onChange={(e) => setEmployeeFinance((p) => ({ ...p, amount: e.target.value }))}
+                        className="bg-secondary border-border" />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <Label>Gross Salary</Label>
+                        <Input type="number" min="0" value={employeeFinance.grossSalary}
+                          onChange={(e) => setEmployeeFinance((p) => ({ ...p, grossSalary: e.target.value }))}
+                          className="bg-secondary border-border" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Period</Label>
+                        <Input value={employeeFinance.periodLabel}
+                          onChange={(e) => setEmployeeFinance((p) => ({ ...p, periodLabel: e.target.value }))}
+                          placeholder="June 2026" className="bg-secondary border-border" />
+                      </div>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={employeeFinance.deductFromSalary}
+                          onChange={(e) => setEmployeeFinance((p) => ({ ...p, deductFromSalary: e.target.checked }))}
+                        />
+                        Salary se advance cut karen (employee monthly setting use hogi)
+                      </label>
+                    </>
+                  )}
+                  <Button className="w-full" onClick={handleEmployeeFinanceSubmit}
+                    disabled={loadingAdvance.employeeSubmit || !employeeFinance.employeeId}>
+                    {loadingAdvance.employeeSubmit ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                    Confirm
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card className="bg-card border-border">
+                <CardHeader className="border-b border-border">
+                  <CardTitle className="text-lg">Employee Finance History</CardTitle>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    <Input type="date" value={employeeFinanceDateFrom}
+                      onChange={(e) => setEmployeeFinanceDateFrom(e.target.value)}
+                      className="w-auto bg-secondary border-border text-xs h-8" />
+                    <span className="text-xs text-muted-foreground self-center">—</span>
+                    <Input type="date" value={employeeFinanceDateTo}
+                      onChange={(e) => setEmployeeFinanceDateTo(e.target.value)}
+                      className="w-auto bg-secondary border-border text-xs h-8" />
+                    <Button type="button" size="sm" variant="outline"
+                      onClick={() => employeeFinance.employeeId && fetchEmployeeAdvanceHistory(employeeFinance.employeeId)}>
+                      Filter
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  {loadingAdvance.employeeHistory ? (
+                    <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>
+                  ) : employeeAdvanceHistory.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">No history — employee select karen</p>
+                  ) : (
+                    <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr>
+                            <th className="text-left p-3">Date</th>
+                            <th className="text-left p-3">Type</th>
+                            <th className="text-right p-3">Amount</th>
+                            <th className="text-right p-3 w-16"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {employeeAdvanceHistory.map((row, i) => (
+                            <tr key={row.transactionId || i} className="border-t border-border">
+                              <td className="p-3">{formatDate(String(row.date))}</td>
+                              <td className="p-3 capitalize">{row.type?.replace('_', ' ') || '—'}</td>
+                              <td className="p-3 text-right font-medium">{formatCurrency(row.amount)}</td>
+                              <td className="p-3 text-right">
+                                {row.canDelete && row.transactionId ? (
+                                  <button type="button" onClick={() => handleDeletePartyAdvance(row.transactionId!, 'employee')}
+                                    className="p-1.5 rounded hover:bg-destructive/10">
+                                    <Trash2 className="w-4 h-4 text-destructive" />
+                                  </button>
+                                ) : '—'}
                               </td>
                             </tr>
                           ))}

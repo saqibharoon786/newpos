@@ -28,11 +28,56 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Banknote,
+  ArrowDownLeft,
+  ArrowUpRight,
+  History,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import api, { API_BASE_URL } from "@/lib/api";
 
 const EMPLOYEES_API = "/api/employees";
+const FINANCE_API = "/api/finance";
+
+const PAYMENT_METHODS = [
+  { value: "drawer", label: "Cash Drawer" },
+  { value: "easypaisa", label: "Easypaisa" },
+  { value: "jazzcash", label: "JazzCash" },
+  { value: "bank", label: "Bank Account" },
+] as const;
+
+interface FinanceHistoryRow {
+  _id?: string;
+  date: string;
+  type: string;
+  amount: number;
+  method?: string;
+  description?: string;
+  reference?: string;
+  grossSalary?: number;
+  advanceDeducted?: number;
+  netPaid?: number;
+  transactionId?: string;
+  canDelete?: boolean;
+}
+
+interface FinanceBalances {
+  drawer: number;
+  easypaisa: number;
+  jazzcash: number;
+  bank: number;
+}
+
+function monthStartYmd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+function monthEndYmd(): string {
+  const d = new Date();
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+}
 
 interface EmployeeType {
   _id: string;
@@ -59,6 +104,8 @@ interface EmployeeType {
   createdAt?: string;
   updatedAt?: string;
   advancePayment: number;
+  advanceRecoveryMode?: "self_pay" | "salary_deduct";
+  monthlyAdvanceDeduction?: number;
   cnicFrontImage?: string;
   cnicBackImage?: string;
 }
@@ -115,6 +162,38 @@ const Employee = () => {
   const hireDatePickerRef = useRef<HTMLDivElement>(null);
   const editDobPickerRef = useRef<HTMLDivElement>(null);
   const editHireDatePickerRef = useRef<HTMLDivElement>(null);
+
+  const [financeBalances, setFinanceBalances] = useState<FinanceBalances | null>(null);
+  const [financeHistory, setFinanceHistory] = useState<FinanceHistoryRow[]>([]);
+  const [financeLinked, setFinanceLinked] = useState<{
+    employee: {
+      salary: number;
+      advanceBalance: number;
+      netSalaryAfterAdvance: number;
+      advanceRecoveryMode?: "self_pay" | "salary_deduct";
+      monthlyAdvanceDeduction?: number;
+      plannedMonthlyDeduction?: number;
+    };
+  } | null>(null);
+  const [financeLoading, setFinanceLoading] = useState(false);
+  const [financeAction, setFinanceAction] = useState<"advance" | "repayment" | "salary" | null>(null);
+  const [financeDateFrom, setFinanceDateFrom] = useState(monthStartYmd);
+  const [financeDateTo, setFinanceDateTo] = useState(monthEndYmd);
+  const [advanceSettings, setAdvanceSettings] = useState({
+    advanceRecoveryMode: "salary_deduct" as "self_pay" | "salary_deduct",
+    monthlyAdvanceDeduction: "",
+  });
+  const [savingAdvanceSettings, setSavingAdvanceSettings] = useState(false);
+  const [financeForm, setFinanceForm] = useState({
+    method: "drawer",
+    amount: "",
+    description: "",
+    reference: "",
+    grossSalary: "",
+    advanceToDeduct: "",
+    periodLabel: "",
+    deductFromSalary: true,
+  });
 
   const [formData, setFormData] = useState({
     employeeId: "",
@@ -585,6 +664,13 @@ const Employee = () => {
     }
   }, [employees, searchParams]);
 
+  useEffect(() => {
+    if (view === "detail" && selectedEmployee?._id) {
+      fetchEmployeeFinance(selectedEmployee._id, financeDateFrom, financeDateTo);
+      fetchFinanceBalances();
+    }
+  }, [view, selectedEmployee?._id, financeDateFrom, financeDateTo]);
+
   // Click outside handlers for date pickers
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -616,6 +702,8 @@ const Employee = () => {
         const employeesData = (response.data.data || []).map((emp: any) => ({
           ...emp,
           advancePayment: emp.advancePayment || 0,
+          advanceRecoveryMode: emp.advanceRecoveryMode || "salary_deduct",
+          monthlyAdvanceDeduction: emp.monthlyAdvanceDeduction || 0,
           cnicFrontImage: emp.cnicFrontImage || "",
           cnicBackImage: emp.cnicBackImage || "",
           avatar: emp.avatar || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face"
@@ -636,7 +724,6 @@ const Employee = () => {
   const fetchEmployeeStats = async () => {
     try {
       const response = await api.get(`${EMPLOYEES_API}/stats`);
-      
       if (response.data.success) {
         const statsData = response.data.data || {};
         setStats({
@@ -648,6 +735,239 @@ const Employee = () => {
     } catch (error: any) {
       console.error("Failed to load stats:", error);
     }
+  };
+
+  const fetchFinanceBalances = async () => {
+    try {
+      const res = await api.get(`${FINANCE_API}/balances`);
+      if (res.data?.success) {
+        setFinanceBalances(res.data.balances || null);
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const fetchEmployeeFinance = async (employeeId: string, startDate?: string, endDate?: string) => {
+    setFinanceLoading(true);
+    const params: Record<string, string> = {};
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    try {
+      const [histRes, linkRes] = await Promise.all([
+        api.get(`${FINANCE_API}/employee-advance/${employeeId}/history`, { params }),
+        api.get(`${FINANCE_API}/employee-linked/${employeeId}`, { params }),
+      ]);
+      if (histRes.data?.success) {
+        setFinanceHistory(histRes.data.history || []);
+        if (histRes.data.employee) {
+          setFinanceLinked({ employee: histRes.data.employee });
+          setAdvanceSettings({
+            advanceRecoveryMode: histRes.data.employee.advanceRecoveryMode || "salary_deduct",
+            monthlyAdvanceDeduction: histRes.data.employee.monthlyAdvanceDeduction
+              ? String(histRes.data.employee.monthlyAdvanceDeduction)
+              : "",
+          });
+        }
+      }
+      if (linkRes.data?.success && linkRes.data.data?.employee) {
+        setFinanceLinked({ employee: linkRes.data.data.employee });
+        setAdvanceSettings({
+          advanceRecoveryMode: linkRes.data.data.employee.advanceRecoveryMode || "salary_deduct",
+          monthlyAdvanceDeduction: linkRes.data.data.employee.monthlyAdvanceDeduction
+            ? String(linkRes.data.data.employee.monthlyAdvanceDeduction)
+            : "",
+        });
+      }
+    } catch {
+      setFinanceHistory([]);
+      setFinanceLinked(null);
+    } finally {
+      setFinanceLoading(false);
+    }
+  };
+
+  const refreshEmployeeAfterFinance = async (employeeId: string, advanceBalance?: number) => {
+    await fetchEmployeeFinance(employeeId, financeDateFrom, financeDateTo);
+    await fetchFinanceBalances();
+    if (advanceBalance !== undefined) {
+      setSelectedEmployee((prev) =>
+        prev ? { ...prev, advancePayment: advanceBalance } : prev
+      );
+      setEmployees((prev) =>
+        prev.map((emp) =>
+          emp._id === employeeId ? { ...emp, advancePayment: advanceBalance } : emp
+        )
+      );
+    } else {
+      await fetchEmployees();
+    }
+  };
+
+  const getBalanceForMethod = (method: string) => {
+    if (!financeBalances) return 0;
+    if (method === "bank") return financeBalances.bank;
+    return financeBalances[method as keyof FinanceBalances] ?? 0;
+  };
+
+  const parseEmployeeSalary = (salary: string | number) => {
+    if (typeof salary === "number") return salary;
+    return parseFloat(String(salary).replace(/[^0-9.-]+/g, "")) || 0;
+  };
+
+  const calcSalaryDeduction = () => {
+    const gross = parseFloat(financeForm.grossSalary) || parseEmployeeSalary(selectedEmployee?.salary || 0);
+    const outstanding = selectedEmployee?.advancePayment || 0;
+    if (!financeForm.deductFromSalary) return 0;
+    if (financeForm.advanceToDeduct) {
+      return Math.min(parseFloat(financeForm.advanceToDeduct) || 0, outstanding, gross);
+    }
+    const monthly = parseFloat(advanceSettings.monthlyAdvanceDeduction) || 0;
+    const mode = advanceSettings.advanceRecoveryMode;
+    if (mode === "self_pay") return 0;
+    const toDeduct = monthly > 0 ? monthly : outstanding;
+    return Math.min(toDeduct, outstanding, gross);
+  };
+
+  const handleSaveAdvanceSettings = async () => {
+    if (!selectedEmployee?._id) return;
+    setSavingAdvanceSettings(true);
+    try {
+      const res = await api.patch(`${FINANCE_API}/employee-advance-settings`, {
+        employeeId: selectedEmployee._id,
+        advanceRecoveryMode: advanceSettings.advanceRecoveryMode,
+        monthlyAdvanceDeduction: advanceSettings.monthlyAdvanceDeduction || 0,
+      });
+      if (res.data?.success) {
+        alert(res.data.message || "Settings saved");
+        if (res.data.employee) {
+          setFinanceLinked({ employee: res.data.employee });
+        }
+        await fetchEmployees();
+      } else {
+        alert(res.data?.message || "Save failed");
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || "Settings save failed");
+    } finally {
+      setSavingAdvanceSettings(false);
+    }
+  };
+
+  const setFinanceMonthPreset = (preset: "this_month" | "last_month" | "all") => {
+    const now = new Date();
+    if (preset === "all") {
+      setFinanceDateFrom("");
+      setFinanceDateTo("");
+      return;
+    }
+    if (preset === "this_month") {
+      setFinanceDateFrom(monthStartYmd());
+      setFinanceDateTo(monthEndYmd());
+      return;
+    }
+    const last = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+    setFinanceDateFrom(
+      `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, "0")}-01`
+    );
+    setFinanceDateTo(
+      `${lastEnd.getFullYear()}-${String(last.getMonth() + 1).padStart(2, "0")}-${String(lastEnd.getDate()).padStart(2, "0")}`
+    );
+  };
+
+  const handleFinanceSubmit = async () => {
+    if (!selectedEmployee?._id || !financeAction) return;
+
+    setFinanceLoading(true);
+    try {
+      let endpoint = "";
+      let payload: Record<string, unknown> = {
+        employeeId: selectedEmployee._id,
+        method: financeForm.method,
+        description: financeForm.description,
+        reference: financeForm.reference,
+      };
+
+      if (financeAction === "advance") {
+        const amt = parseFloat(financeForm.amount);
+        if (!amt || amt <= 0) {
+          alert("Valid advance amount enter karen");
+          return;
+        }
+        endpoint = `${FINANCE_API}/employee-advance`;
+        payload.amount = amt;
+      } else if (financeAction === "repayment") {
+        const amt = parseFloat(financeForm.amount);
+        if (!amt || amt <= 0) {
+          alert("Valid repayment amount enter karen");
+          return;
+        }
+        endpoint = `${FINANCE_API}/employee-repayment`;
+        payload.amount = amt;
+      } else if (financeAction === "salary") {
+        endpoint = `${FINANCE_API}/employee-salary`;
+        payload.grossSalary = financeForm.grossSalary || parseEmployeeSalary(selectedEmployee.salary);
+        payload.deductFromSalary = financeForm.deductFromSalary;
+        if (financeForm.deductFromSalary && financeForm.advanceToDeduct) {
+          payload.advanceToDeduct = parseFloat(financeForm.advanceToDeduct);
+        }
+        if (financeForm.periodLabel) {
+          payload.periodLabel = financeForm.periodLabel;
+        }
+      }
+
+      const res = await api.post(endpoint, payload);
+      if (res.data?.success) {
+        alert(res.data.message || "Transaction saved");
+        setFinanceAction(null);
+        setFinanceForm({
+          method: "drawer",
+          amount: "",
+          description: "",
+          reference: "",
+          grossSalary: "",
+          advanceToDeduct: "",
+          periodLabel: "",
+          deductFromSalary: advanceSettings.advanceRecoveryMode === "salary_deduct",
+        });
+        await refreshEmployeeAfterFinance(
+          selectedEmployee._id,
+          res.data.employee?.advanceBalance
+        );
+      } else {
+        alert(res.data?.message || "Transaction failed");
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || "Finance transaction failed");
+    } finally {
+      setFinanceLoading(false);
+    }
+  };
+
+  const handleDeleteFinanceEntry = async (transactionId: string) => {
+    if (!window.confirm("Ye entry delete karen? Account balance adjust ho jayega.")) return;
+    setFinanceLoading(true);
+    try {
+      const res = await api.delete(`${FINANCE_API}/party-advance/${transactionId}`);
+      if (res.data?.success && selectedEmployee?._id) {
+        alert(res.data.message || "Entry deleted");
+        await refreshEmployeeAfterFinance(selectedEmployee._id);
+      } else {
+        alert(res.data?.message || "Delete failed");
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || "Delete failed");
+    } finally {
+      setFinanceLoading(false);
+    }
+  };
+
+  const getFinanceTypeLabel = (type: string) => {
+    if (type === "advance") return "Advance Given";
+    if (type === "repayment") return "Khud Wapas (Self Pay)";
+    if (type === "salary_payment") return "Salary Paid";
+    return type;
   };
 
   const createEmployee = async (formDataToSend: FormData) => {
@@ -689,7 +1009,7 @@ const Employee = () => {
       const formDataToSend = new FormData();
       
       Object.keys(employeeData).forEach(key => {
-        if (key !== '_id') {
+        if (key !== '_id' && key !== 'advancePayment') {
           const value = employeeData[key];
           if (value !== undefined && value !== null && value !== '') {
             formDataToSend.append(key, String(value));
@@ -1034,6 +1354,7 @@ const Employee = () => {
       
       // Append all form data
       Object.keys(formData).forEach(key => {
+        if (key === 'advancePayment') return;
         const value = formData[key as keyof typeof formData];
         if (value !== undefined && value !== null && value !== '') {
           formDataToSend.append(key, String(value));
@@ -1422,7 +1743,7 @@ const Employee = () => {
                   { icon: MapPin, label: "Address", value: selectedEmployee.address || "N/A" },
                   { icon: Calendar, label: "DOB", value: selectedEmployee.dob || "N/A" },
                   { icon: AlertCircle, label: "Emergency Contact", value: selectedEmployee.emergencyContact || "N/A" },
-                  { icon: Wallet, label: "Advance Payment", value: formatAdvancePayment(selectedEmployee.advancePayment || 0) },
+                  { icon: Wallet, label: "Outstanding Advance", value: formatAdvancePayment(selectedEmployee.advancePayment || 0) },
                 ].map((item, index) => (
                   <div key={`personal-${index}`} className="flex items-center justify-between">
                     <div className="flex items-center gap-3 text-muted-foreground">
@@ -1528,6 +1849,431 @@ const Employee = () => {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+
+          {/* Finance & Salary Section */}
+          <div className="mt-6 bg-secondary rounded-xl p-6">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-6 border-b border-border pb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                  <Banknote className="w-5 h-5 text-primary" />
+                  Finance & Salary
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Advance khud wapas ya salary se cut — account se linked (Easypaisa/JazzCash/Bank)
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    setFinanceAction("advance");
+                    setFinanceForm((p) => ({ ...p, amount: "", description: "" }));
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm"
+                >
+                  <ArrowUpRight className="w-4 h-4" />
+                  Give Advance
+                </button>
+                <button
+                  onClick={() => {
+                    setFinanceAction("repayment");
+                    setFinanceForm((p) => ({ ...p, amount: "", description: "" }));
+                  }}
+                  disabled={(selectedEmployee.advancePayment || 0) <= 0}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm disabled:opacity-50"
+                >
+                  <ArrowDownLeft className="w-4 h-4" />
+                  Khud Wapas Pay
+                </button>
+                <button
+                  onClick={() => {
+                    const sal = financeLinked?.employee?.salary || parseEmployeeSalary(selectedEmployee.salary);
+                    const deductDefault = advanceSettings.advanceRecoveryMode === "salary_deduct";
+                    const monthly = advanceSettings.monthlyAdvanceDeduction || "";
+                    setFinanceAction("salary");
+                    setFinanceForm((p) => ({
+                      ...p,
+                      grossSalary: String(sal),
+                      advanceToDeduct: monthly,
+                      deductFromSalary: deductDefault,
+                      periodLabel: new Date().toLocaleString("en-PK", { month: "long", year: "numeric" }),
+                    }));
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg text-sm"
+                >
+                  <DollarSign className="w-4 h-4" />
+                  Pay Salary
+                </button>
+              </div>
+            </div>
+
+            {/* Advance recovery preference */}
+            <div className="mb-6 p-4 bg-card rounded-lg border border-border">
+              <h3 className="font-semibold text-foreground mb-3">Advance Recovery Setting</h3>
+              <p className="text-xs text-muted-foreground mb-4">
+                Employee advance kaise wapas aayega — khud pay kare ya har month salary se cut ho
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <label
+                  className={`flex items-start gap-3 p-4 rounded-lg border cursor-pointer transition-colors ${
+                    advanceSettings.advanceRecoveryMode === "self_pay"
+                      ? "border-green-500 bg-green-500/5"
+                      : "border-border hover:border-green-500/40"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="recoveryMode"
+                    checked={advanceSettings.advanceRecoveryMode === "self_pay"}
+                    onChange={() =>
+                      setAdvanceSettings((p) => ({ ...p, advanceRecoveryMode: "self_pay" }))
+                    }
+                    className="mt-1"
+                  />
+                  <div>
+                    <p className="font-medium text-foreground">Khud Wapas Dena (Self Pay)</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Salary se cut nahi hoga — employee jab chahe account select karke khud pay karega
+                    </p>
+                  </div>
+                </label>
+                <label
+                  className={`flex items-start gap-3 p-4 rounded-lg border cursor-pointer transition-colors ${
+                    advanceSettings.advanceRecoveryMode === "salary_deduct"
+                      ? "border-orange-500 bg-orange-500/5"
+                      : "border-border hover:border-orange-500/40"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="recoveryMode"
+                    checked={advanceSettings.advanceRecoveryMode === "salary_deduct"}
+                    onChange={() =>
+                      setAdvanceSettings((p) => ({ ...p, advanceRecoveryMode: "salary_deduct" }))
+                    }
+                    className="mt-1"
+                  />
+                  <div>
+                    <p className="font-medium text-foreground">Salary Se Katwana (Monthly)</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Har month salary se fixed amount auto cut hogi jab Pay Salary karen
+                    </p>
+                  </div>
+                </label>
+              </div>
+              {advanceSettings.advanceRecoveryMode === "salary_deduct" && (
+                <div className="max-w-xs">
+                  <label className="block text-sm text-muted-foreground mb-2">
+                    Monthly kitna katwana hai? (PKR)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={advanceSettings.monthlyAdvanceDeduction}
+                    onChange={(e) =>
+                      setAdvanceSettings((p) => ({ ...p, monthlyAdvanceDeduction: e.target.value }))
+                    }
+                    placeholder={`e.g. 5000 (max outstanding: Rs. ${(selectedEmployee.advancePayment || 0).toLocaleString()})`}
+                    className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground"
+                  />
+                </div>
+              )}
+              <button
+                onClick={handleSaveAdvanceSettings}
+                disabled={savingAdvanceSettings}
+                className="mt-4 px-5 py-2 bg-secondary border border-border rounded-lg hover:bg-muted text-sm disabled:opacity-50"
+              >
+                {savingAdvanceSettings ? "Saving..." : "Save Recovery Setting"}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              {[
+                { label: "Monthly Salary", value: formatSalary(selectedEmployee.salary) },
+                { label: "Outstanding Advance", value: formatAdvancePayment(selectedEmployee.advancePayment || 0), highlight: true },
+                {
+                  label: "Net Salary (planned deduct)",
+                  value: `Rs. ${(financeLinked?.employee?.netSalaryAfterAdvance ??
+                    Math.max(0, parseEmployeeSalary(selectedEmployee.salary) - calcSalaryDeduction())
+                  ).toLocaleString()}`,
+                },
+                {
+                  label: "Selected Account Balance",
+                  value: financeBalances
+                    ? `Rs. ${getBalanceForMethod(financeForm.method).toLocaleString()}`
+                    : "—",
+                },
+              ].map((item, i) => (
+                <div key={i} className="bg-card rounded-lg p-4 border border-border">
+                  <p className="text-xs text-muted-foreground mb-1">{item.label}</p>
+                  <p className={`text-lg font-bold ${item.highlight ? "text-orange-600" : "text-foreground"}`}>
+                    {item.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {financeAction && (
+              <div className="mb-6 p-4 bg-card rounded-lg border border-primary/30">
+                <h3 className="font-semibold text-foreground mb-4 capitalize">
+                  {financeAction === "advance" && "Give Advance to Employee"}
+                  {financeAction === "repayment" && "Employee Khud Advance Wapas De Raha Hai"}
+                  {financeAction === "salary" && "Pay Salary"}
+                </h3>
+                {financeAction === "repayment" && (
+                  <p className="text-sm text-green-600 mb-4">
+                    Employee ne jo paisa diya wo selected account (Easypaisa/JazzCash/Bank) mein deposit ho jayega — salary se kuch cut nahi hoga
+                  </p>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm text-muted-foreground mb-2">Payment Account *</label>
+                    <select
+                      value={financeForm.method}
+                      onChange={(e) => setFinanceForm((p) => ({ ...p, method: e.target.value }))}
+                      className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground"
+                    >
+                      {PAYMENT_METHODS.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label} (Rs. {getBalanceForMethod(m.value).toLocaleString()})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {financeAction !== "salary" ? (
+                    <div>
+                      <label className="block text-sm text-muted-foreground mb-2">
+                        {financeAction === "repayment" ? "Wapas ki raqam (PKR) *" : "Amount (PKR) *"}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={financeForm.amount}
+                        onChange={(e) => setFinanceForm((p) => ({ ...p, amount: e.target.value }))}
+                        className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground"
+                        placeholder={financeAction === "repayment" ? "Employee ne kitna diya" : "Enter amount"}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-sm text-muted-foreground mb-2">Gross Salary (PKR)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={financeForm.grossSalary}
+                          onChange={(e) => setFinanceForm((p) => ({ ...p, grossSalary: e.target.value }))}
+                          className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-muted-foreground mb-2">Salary Period</label>
+                        <input
+                          type="text"
+                          value={financeForm.periodLabel}
+                          onChange={(e) => setFinanceForm((p) => ({ ...p, periodLabel: e.target.value }))}
+                          className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground"
+                          placeholder="e.g. June 2026"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {financeAction === "salary" && (
+                    <div className="md:col-span-3 space-y-3">
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={financeForm.deductFromSalary}
+                          onChange={(e) =>
+                            setFinanceForm((p) => ({ ...p, deductFromSalary: e.target.checked }))
+                          }
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-foreground">
+                          Is month salary se advance cut karen
+                          {advanceSettings.advanceRecoveryMode === "salary_deduct" &&
+                            advanceSettings.monthlyAdvanceDeduction &&
+                            ` (default: Rs. ${parseFloat(advanceSettings.monthlyAdvanceDeduction).toLocaleString()}/month)`}
+                        </span>
+                      </label>
+                      {financeForm.deductFromSalary && (
+                        <div className="max-w-sm">
+                          <label className="block text-sm text-muted-foreground mb-2">
+                            Is month kitna cut karna hai? (khali = monthly setting use hogi)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={financeForm.advanceToDeduct}
+                            onChange={(e) => setFinanceForm((p) => ({ ...p, advanceToDeduct: e.target.value }))}
+                            placeholder={
+                              advanceSettings.monthlyAdvanceDeduction
+                                ? `Default: Rs. ${parseFloat(advanceSettings.monthlyAdvanceDeduction).toLocaleString()}`
+                                : `Max Rs. ${(selectedEmployee.advancePayment || 0).toLocaleString()}`
+                            }
+                            className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="md:col-span-3">
+                    <label className="block text-sm text-muted-foreground mb-2">Description (optional)</label>
+                    <input
+                      type="text"
+                      value={financeForm.description}
+                      onChange={(e) => setFinanceForm((p) => ({ ...p, description: e.target.value }))}
+                      className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground"
+                    />
+                  </div>
+
+                  {financeAction === "salary" && (
+                    <div className="md:col-span-3 p-3 bg-primary/5 border border-primary/20 rounded-lg text-sm">
+                      {(() => {
+                        const gross = parseFloat(financeForm.grossSalary) || parseEmployeeSalary(selectedEmployee.salary);
+                        const deduct = calcSalaryDeduction();
+                        const net = Math.max(0, gross - deduct);
+                        return (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <span>Gross: <strong>Rs. {gross.toLocaleString()}</strong></span>
+                            <span className="text-orange-600">
+                              Advance cut: <strong>Rs. {deduct.toLocaleString()}</strong>
+                              {!financeForm.deductFromSalary && " (salary se cut nahi)"}
+                            </span>
+                            <span className="text-green-600">Net pay from account: <strong>Rs. {net.toLocaleString()}</strong></span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3 mt-4">
+                  <button
+                    onClick={handleFinanceSubmit}
+                    disabled={financeLoading}
+                    className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {financeLoading ? "Processing..." : "Confirm"}
+                  </button>
+                  <button
+                    onClick={() => setFinanceAction(null)}
+                    className="px-6 py-2 bg-card border border-border rounded-lg hover:bg-secondary"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <h3 className="font-semibold text-foreground flex items-center gap-2">
+                  <History className="w-4 h-4" />
+                  Finance History
+                </h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFinanceMonthPreset("this_month")}
+                    className="px-3 py-1.5 text-xs rounded-lg bg-card border border-border hover:bg-secondary"
+                  >
+                    Is Month
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFinanceMonthPreset("last_month")}
+                    className="px-3 py-1.5 text-xs rounded-lg bg-card border border-border hover:bg-secondary"
+                  >
+                    Pichla Month
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFinanceMonthPreset("all")}
+                    className="px-3 py-1.5 text-xs rounded-lg bg-card border border-border hover:bg-secondary"
+                  >
+                    Sab Records
+                  </button>
+                  <input
+                    type="date"
+                    value={financeDateFrom}
+                    onChange={(e) => setFinanceDateFrom(e.target.value)}
+                    className="px-2 py-1.5 text-xs bg-input border border-border rounded-lg"
+                  />
+                  <span className="text-xs text-muted-foreground">se</span>
+                  <input
+                    type="date"
+                    value={financeDateTo}
+                    onChange={(e) => setFinanceDateTo(e.target.value)}
+                    className="px-2 py-1.5 text-xs bg-input border border-border rounded-lg"
+                  />
+                </div>
+              </div>
+              {(financeDateFrom || financeDateTo) && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  Filter: {financeDateFrom || "…"} — {financeDateTo || "…"}
+                  {financeHistory.length > 0 && ` (${financeHistory.length} records)`}
+                </p>
+              )}
+              {financeLoading && financeHistory.length === 0 ? (
+                <div className="flex items-center gap-2 text-muted-foreground py-8 justify-center">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Loading...
+                </div>
+              ) : financeHistory.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-6 text-center border border-dashed border-border rounded-lg">
+                  Is date range mein koi record nahi — filter change karen ya naya transaction add karen
+                </p>
+              ) : (
+                <div className="overflow-x-auto max-h-80 overflow-y-auto border border-border rounded-lg">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50 sticky top-0">
+                      <tr>
+                        <th className="text-left p-3">Date</th>
+                        <th className="text-left p-3">Type</th>
+                        <th className="text-left p-3">Account</th>
+                        <th className="text-left p-3">Detail</th>
+                        <th className="text-right p-3">Amount</th>
+                        <th className="text-right p-3 w-16"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {financeHistory.map((row, i) => (
+                        <tr key={row._id || i} className="border-t border-border">
+                          <td className="p-3">{new Date(row.date).toLocaleDateString("en-PK")}</td>
+                          <td className="p-3">{getFinanceTypeLabel(row.type)}</td>
+                          <td className="p-3 capitalize">{row.method || "—"}</td>
+                          <td className="p-3 text-xs text-muted-foreground max-w-[180px] truncate">
+                            {row.type === "salary_payment"
+                              ? `Gross ${row.grossSalary?.toLocaleString()} | Adjust ${row.advanceDeducted?.toLocaleString()} | Net ${row.netPaid?.toLocaleString()}`
+                              : row.description || "—"}
+                          </td>
+                          <td className="p-3 text-right font-medium">
+                            Rs. {(row.type === "salary_payment" ? row.netPaid ?? row.amount : row.amount)?.toLocaleString()}
+                          </td>
+                          <td className="p-3 text-right">
+                            {row.canDelete && row.transactionId ? (
+                              <button
+                                onClick={() => handleDeleteFinanceEntry(row.transactionId!)}
+                                className="p-1 hover:bg-destructive/10 rounded"
+                                title="Delete entry"
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </button>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1912,7 +2658,6 @@ const Employee = () => {
                     { name: 'email', label: 'Email Address', type: 'email', placeholder: 'e.g john@example.com' },
                     { name: 'cnic', label: 'CNIC No.', type: 'text', placeholder: 'e.g 17301-242111-3' },
                     { name: 'emergencyContact', label: 'Emergency Contact', type: 'text', placeholder: 'e.g 83662626' },
-                    { name: 'advancePayment', label: 'Advance Payment', type: 'number', placeholder: 'e.g 5000', min: "0" },
                   ].map((field) => (
                     <div key={field.name}>
                       <label className="block text-sm text-muted-foreground mb-2">{field.label}</label>
@@ -1924,7 +2669,6 @@ const Employee = () => {
                         placeholder={field.placeholder}
                         className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                         min={field.min}
-                        step={field.name === 'advancePayment' ? "1" : undefined}
                       />
                     </div>
                   ))}
@@ -2361,7 +3105,6 @@ const Employee = () => {
                     { name: 'email', label: 'Email Address', type: 'email', placeholder: 'e.g john@example.com' },
                     { name: 'cnic', label: 'CNIC No.', type: 'text', placeholder: 'e.g 17301-242111-3' },
                     { name: 'emergencyContact', label: 'Emergency Contact', type: 'text', placeholder: 'e.g 83662626' },
-                    { name: 'advancePayment', label: 'Advance Payment', type: 'number', placeholder: 'e.g 5000', min: "0" },
                   ].map((field) => (
                     <div key={field.name}>
                       <label className="block text-sm text-muted-foreground mb-2">{field.label}</label>
@@ -2373,7 +3116,6 @@ const Employee = () => {
                         placeholder={field.placeholder}
                         className="w-full px-4 py-3 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                         min={field.min}
-                        step={field.name === 'advancePayment' ? "1" : undefined}
                       />
                     </div>
                   ))}

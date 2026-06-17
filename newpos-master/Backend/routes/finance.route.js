@@ -39,4 +39,12 @@ router.delete(
   financeController.deleteCustomerAdvanceEntry
 );
 
+// Employee advance, repayment & salary
+router.post('/employee-advance', financeController.recordEmployeeAdvance);
+router.post('/employee-repayment', financeController.recordEmployeeRepayment);
+router.post('/employee-salary', financeController.recordEmployeeSalary);
+router.patch('/employee-advance-settings', financeController.updateEmployeeAdvanceSettings);
+router.get('/employee-linked/:employeeId', financeController.getEmployeeLinked);
+router.get('/employee-advance/:employeeId/history', financeController.getEmployeeAdvanceHistory);
+
 module.exports = router;

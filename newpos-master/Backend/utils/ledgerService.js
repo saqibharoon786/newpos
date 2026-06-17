@@ -850,26 +850,83 @@ async function getEmployeeAdvanceLedger(employeeId, query) {
   if (!employee) return null;
 
   const lines = [];
-  const adv = num(employee.advancePayment);
-  if (adv > 0) {
-    lines.push({
-      date: parseDateField(employee.hireDate) || startDate,
-      voucherNo: employee.employeeId,
-      description: 'Advance on record (opening)',
-      debit: round2(adv),
-      credit: 0,
-      balance: round2(adv),
-    });
+  let balance = 0;
+
+  for (const e of employee.financeLedger || []) {
+    const d = parseDateField(e.date);
+    if (d && (d < startDate || d > endDate)) continue;
+
+    if (e.type === 'advance') {
+      balance = round2(balance + num(e.amount));
+      lines.push({
+        date: d || e.date,
+        voucherNo: e.reference || '',
+        description: e.description || `Advance (${e.method || ''})`,
+        debit: round2(num(e.amount)),
+        credit: 0,
+        balance,
+      });
+    } else if (e.type === 'repayment') {
+      balance = round2(balance - num(e.amount));
+      lines.push({
+        date: d || e.date,
+        voucherNo: e.reference || '',
+        description: e.description || `Repayment (${e.method || ''})`,
+        debit: 0,
+        credit: round2(num(e.amount)),
+        balance,
+      });
+    } else if (e.type === 'salary_payment') {
+      const adj = num(e.advanceDeducted);
+      if (adj > 0) {
+        balance = round2(balance - adj);
+        lines.push({
+          date: d || e.date,
+          voucherNo: e.reference || '',
+          description:
+            e.description ||
+            `Salary adjust (Gross ${num(e.grossSalary)}, Net ${num(e.netPaid)})`,
+          debit: 0,
+          credit: round2(adj),
+          balance,
+        });
+      }
+      if (num(e.netPaid) > 0) {
+        lines.push({
+          date: d || e.date,
+          voucherNo: e.reference || '',
+          description: `Salary paid (${e.method || ''}) — Net Rs. ${num(e.netPaid)}`,
+          debit: 0,
+          credit: 0,
+          balance,
+          note: 'Cash outflow recorded in Finance transactions',
+        });
+      }
+    }
+  }
+
+  // Legacy opening balance if no ledger but advance on record
+  if (lines.length === 0) {
+    const adv = num(employee.advancePayment);
+    if (adv > 0) {
+      lines.push({
+        date: parseDateField(employee.hireDate) || startDate,
+        voucherNo: employee.employeeId,
+        description: 'Advance on record (legacy — use Finance to track new entries)',
+        debit: round2(adv),
+        credit: 0,
+        balance: round2(adv),
+      });
+    }
   }
 
   return {
     startDate,
     endDate,
     employee: { _id: employee._id, name: employee.name, employeeId: employee.employeeId },
-    openingBalance: round2(adv),
+    openingBalance: lines.length ? round2(lines[0].balance - lines[0].debit + lines[0].credit) : 0,
     lines,
-    closingBalance: round2(adv),
-    note: 'Employee advance history — add transactions via Employee module when available.',
+    closingBalance: lines.length ? lines[lines.length - 1].balance : round2(num(employee.advancePayment)),
   };
 }
 

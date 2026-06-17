@@ -95,10 +95,45 @@ const employeeSchema = new mongoose.Schema({
         default: '',
         trim: true
     },
+    /** Outstanding advance owed by employee (synced from financeLedger) */
     advancePayment: {
         type: Number,
         default: 0,
         min: [0, 'Advance payment cannot be negative']
+    },
+    /** Finance-linked advance, repayment & salary records */
+    financeLedger: [
+        {
+            date: { type: Date, default: Date.now },
+            type: {
+                type: String,
+                enum: ['advance', 'repayment', 'salary_payment'],
+                required: true,
+            },
+            amount: { type: Number, required: true, min: 0 },
+            method: {
+                type: String,
+                enum: ['drawer', 'easypaisa', 'jazzcash', 'bank'],
+            },
+            description: { type: String, default: '' },
+            reference: { type: String, default: '' },
+            transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
+            grossSalary: { type: Number, default: 0 },
+            advanceDeducted: { type: Number, default: 0 },
+            netPaid: { type: Number, default: 0 },
+        },
+    ],
+    /** How employee repays advance: self_pay = khud deposit, salary_deduct = salary se cut */
+    advanceRecoveryMode: {
+        type: String,
+        enum: ['self_pay', 'salary_deduct'],
+        default: 'salary_deduct',
+    },
+    /** Monthly amount to deduct from salary when advanceRecoveryMode is salary_deduct */
+    monthlyAdvanceDeduction: {
+        type: Number,
+        default: 0,
+        min: [0, 'Monthly deduction cannot be negative'],
     },
     isActive: {
         type: Boolean,
