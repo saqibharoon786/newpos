@@ -16,12 +16,17 @@ const ownerSchema = new mongoose.Schema(
     email: { type: String, default: '', trim: true, lowercase: true },
     cnic: { type: String, default: '', trim: true },
     address: { type: String, default: '', trim: true },
-    /** Profit share % — all active owners should total 100 */
+    /** Profit share % — only for owners who participate in month-end profit distribution */
     profitSharePercent: {
       type: Number,
       default: 0,
       min: 0,
       max: 100,
+    },
+    /** If false: advance-only partner (no profit % required). If true: included in profit distribution. */
+    participatesInProfitShare: {
+      type: Boolean,
+      default: false,
     },
     investmentAccountId: {
       type: mongoose.Schema.Types.ObjectId,

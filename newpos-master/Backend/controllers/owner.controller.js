@@ -1,6 +1,6 @@
 const Owner = require('../models/owner.model');
 const InvestmentAccount = require('../models/investment.model');
-const { ensureOwnerInvestmentAccount } = require('../utils/profitDistribution.service');
+const { ensureOwnerInvestmentAccount, isProfitPartner } = require('../utils/profitDistribution.service');
 const {
   listOwnerAdvanceAccounts,
   getOwnerLinkedProfile,
@@ -65,10 +65,13 @@ exports.getOwnerById = async (req, res) => {
 
 exports.createOwner = async (req, res) => {
   try {
-    const { name, phone, email, cnic, address, profitSharePercent } = req.body;
+    const { name, phone, email, cnic, address, profitSharePercent, participatesInProfitShare } = req.body;
     if (!name?.trim()) {
       return res.status(400).json({ success: false, message: 'Owner name required' });
     }
+
+    const participates = participatesInProfitShare === true || participatesInProfitShare === 'true';
+    const sharePct = participates ? num(profitSharePercent) : 0;
 
     const owner = await Owner.create({
       name: name.trim(),
@@ -76,7 +79,8 @@ exports.createOwner = async (req, res) => {
       email: email || '',
       cnic: cnic || '',
       address: address || '',
-      profitSharePercent: num(profitSharePercent),
+      profitSharePercent: sharePct,
+      participatesInProfitShare: participates,
     });
 
     await ensureOwnerInvestmentAccount(owner);
@@ -99,11 +103,23 @@ exports.updateOwner = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Owner not found' });
     }
 
-    const fields = ['name', 'phone', 'email', 'cnic', 'address', 'profitSharePercent', 'isActive'];
+    const fields = ['name', 'phone', 'email', 'cnic', 'address', 'isActive'];
     for (const f of fields) {
       if (req.body[f] !== undefined) {
-        owner[f] = f === 'profitSharePercent' ? num(req.body[f]) : req.body[f];
+        owner[f] = req.body[f];
       }
+    }
+
+    if (req.body.participatesInProfitShare !== undefined) {
+      owner.participatesInProfitShare =
+        req.body.participatesInProfitShare === true ||
+        req.body.participatesInProfitShare === 'true';
+    }
+    if (req.body.profitSharePercent !== undefined) {
+      owner.profitSharePercent = num(req.body.profitSharePercent);
+    }
+    if (!owner.participatesInProfitShare) {
+      owner.profitSharePercent = 0;
     }
 
     await owner.save();
@@ -163,7 +179,8 @@ exports.getOwnersForFinance = async (req, res) => {
 exports.getOwnerShareSummary = async (req, res) => {
   try {
     const owners = await Owner.find({ isActive: true }).lean();
-    const totalShare = owners.reduce((s, o) => s + num(o.profitSharePercent), 0);
+    const profitPartners = owners.filter(isProfitPartner);
+    const totalShare = profitPartners.reduce((s, o) => s + num(o.profitSharePercent), 0);
     res.json({
       success: true,
       data: {
@@ -171,10 +188,14 @@ exports.getOwnerShareSummary = async (req, res) => {
           _id: o._id,
           name: o.name,
           profitSharePercent: o.profitSharePercent,
+          participatesInProfitShare: isProfitPartner(o),
           totalProfitReceived: o.totalProfitReceived,
         })),
+        profitPartnerCount: profitPartners.length,
+        advanceOnlyCount: owners.length - profitPartners.length,
         totalSharePercent: round2(totalShare),
-        isValid: Math.abs(totalShare - 100) < 0.01 || owners.length === 0,
+        isValid:
+          profitPartners.length === 0 || Math.abs(totalShare - 100) < 0.01,
       },
     });
   } catch (error) {

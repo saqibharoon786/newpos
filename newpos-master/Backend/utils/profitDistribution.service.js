@@ -39,6 +39,18 @@ function getMethodLabel(method) {
   return labels[method] || method;
 }
 
+/** Owners with profit share % OR explicit flag — advance-only owners excluded from distribution */
+function isProfitPartner(owner) {
+  if (!owner || owner.isActive === false) return false;
+  if (owner.participatesInProfitShare === true) return true;
+  if (owner.participatesInProfitShare === false) return false;
+  return num(owner.profitSharePercent) > 0;
+}
+
+function getProfitPartnerOwners(owners) {
+  return owners.filter(isProfitPartner);
+}
+
 async function ensureOwnerInvestmentAccount(owner) {
   if (owner.investmentAccountId) {
     const acc = await InvestmentAccount.findById(owner.investmentAccountId);
@@ -73,9 +85,10 @@ async function previewProfitDistribution({ year, month, reserveAmount = 0 }) {
   const distributable = round2(Math.max(0, pl.netProfit - reserve));
 
   const owners = await Owner.find({ isActive: true }).sort({ name: 1 }).lean();
-  const totalShare = owners.reduce((s, o) => s + num(o.profitSharePercent), 0);
+  const profitPartners = getProfitPartnerOwners(owners);
+  const totalShare = profitPartners.reduce((s, o) => s + num(o.profitSharePercent), 0);
 
-  const lines = owners.map((o) => {
+  const lines = profitPartners.map((o) => {
     const share = num(o.profitSharePercent);
     const amount =
       totalShare > 0 ? round2((distributable * share) / totalShare) : 0;
@@ -91,6 +104,14 @@ async function previewProfitDistribution({ year, month, reserveAmount = 0 }) {
     periodYear: y,
     periodMonth: m,
   }).lean();
+
+  let shareWarning = null;
+  if (profitPartners.length === 0 && owners.length > 0) {
+    shareWarning =
+      'Koi profit partner nahi — sirf advance wale owners hain. Profit distribute karne ke liye owner par profit share enable karen.';
+  } else if (profitPartners.length > 0 && Math.abs(totalShare - 100) > 0.01) {
+    shareWarning = `Profit partners ka share total ${totalShare}% hai (100% hona chahiye)`;
+  }
 
   return {
     ok: true,
@@ -108,10 +129,9 @@ async function previewProfitDistribution({ year, month, reserveAmount = 0 }) {
       reserveAmount: reserve,
       distributableProfit: distributable,
       totalSharePercent: round2(totalShare),
-      shareWarning:
-        owners.length > 0 && Math.abs(totalShare - 100) > 0.01
-          ? `Owner shares total ${totalShare}% (100% hona chahiye)`
-          : null,
+      profitPartnerCount: profitPartners.length,
+      advanceOnlyCount: owners.length - profitPartners.length,
+      shareWarning,
       lines,
       existingStatus: existing?.status || null,
       existingId: existing?._id || null,
@@ -267,6 +287,8 @@ module.exports = {
   payProfitDistribution,
   listProfitDistributions,
   ensureOwnerInvestmentAccount,
+  isProfitPartner,
+  getProfitPartnerOwners,
   monthRange,
   monthLabel,
 };
