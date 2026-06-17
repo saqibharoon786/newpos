@@ -54,6 +54,9 @@ router.get("/", posController.getSales);
 // Get sales statistics
 router.get("/statistics", posController.getSalesStatistics);
 
+// Sync local payment records into sale paymentLedger (must be before /:id)
+router.post("/sync-payments", posController.syncSalePayments);
+
 // Get sale by ID
 router.get("/:id", posController.getSaleById);
 

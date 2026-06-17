@@ -47,4 +47,11 @@ router.patch('/employee-advance-settings', financeController.updateEmployeeAdvan
 router.get('/employee-linked/:employeeId', financeController.getEmployeeLinked);
 router.get('/employee-advance/:employeeId/history', financeController.getEmployeeAdvanceHistory);
 
+// Owner advance & repayment
+router.get('/owner-accounts', financeController.getOwnerAccounts);
+router.post('/owner-advance', financeController.recordOwnerAdvance);
+router.post('/owner-repayment', financeController.recordOwnerRepayment);
+router.get('/owner-linked/:accountId', financeController.getOwnerLinked);
+router.get('/owner-advance/:accountId/history', financeController.getOwnerAdvanceHistory);
+
 module.exports = router;

@@ -18,6 +18,12 @@ const {
   recordEmployeeSalary,
   updateEmployeeAdvanceSettings,
 } = require('../utils/employeeFinance.service');
+const {
+  listOwnerAdvanceAccounts,
+  getOwnerLinkedProfile,
+  recordOwnerAdvance,
+  recordOwnerRepayment,
+} = require('../utils/ownerFinance.service');
 
 const ADVANCE_METHODS = ['drawer', 'easypaisa', 'jazzcash', 'bank'];
 
@@ -1022,6 +1028,99 @@ exports.getEmployeeAdvanceHistory = async (req, res) => {
     res.json({
       success: true,
       employee: linked.employee,
+      history: linked.history,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getOwnerAccounts = async (req, res) => {
+  try {
+    const accounts = await listOwnerAdvanceAccounts();
+    res.json({ success: true, data: accounts });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.recordOwnerAdvance = async (req, res) => {
+  try {
+    const result = await recordOwnerAdvance(req.body);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.message,
+      });
+    }
+    const updatedBalances = await Transaction.getBalances();
+    const linked = await getOwnerLinkedProfile(result.owner._id);
+    res.json({
+      success: true,
+      message: result.message,
+      transaction: result.transaction,
+      owner: result.owner,
+      linked,
+      balances: updatedBalances,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error recording owner advance',
+      error: error.message,
+    });
+  }
+};
+
+exports.recordOwnerRepayment = async (req, res) => {
+  try {
+    const result = await recordOwnerRepayment(req.body);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.message,
+      });
+    }
+    const updatedBalances = await Transaction.getBalances();
+    const linked = await getOwnerLinkedProfile(result.owner._id);
+    res.json({
+      success: true,
+      message: result.message,
+      transaction: result.transaction,
+      owner: result.owner,
+      linked,
+      balances: updatedBalances,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error recording owner repayment',
+      error: error.message,
+    });
+  }
+};
+
+exports.getOwnerLinked = async (req, res) => {
+  try {
+    const linked = await getOwnerLinkedProfile(req.params.accountId, req.query);
+    if (!linked) {
+      return res.status(404).json({ success: false, message: 'Owner account not found' });
+    }
+    res.json({ success: true, data: linked });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getOwnerAdvanceHistory = async (req, res) => {
+  try {
+    const linked = await getOwnerLinkedProfile(req.params.accountId, req.query);
+    if (!linked) {
+      return res.status(404).json({ success: false, message: 'Owner account not found' });
+    }
+    res.json({
+      success: true,
+      owner: linked.owner,
       history: linked.history,
     });
   } catch (error) {

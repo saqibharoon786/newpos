@@ -504,6 +504,35 @@ async function getPurchaseTransactionLedger(query) {
   return { startDate, endDate, openingBalance: round2(openingBalance), rows, closingBalance: balance };
 }
 
+/** Cash payment lines for a sale — uses paymentLedger when available (date-wise) */
+function getSalePaymentLines(s) {
+  const ledger = s.paymentLedger || [];
+  if (ledger.length > 0) {
+    return ledger.map((p, idx) => ({
+      date: parseDateField(p.date) || parseYmd(s.purchaseDate),
+      amount: round2(num(p.amount)),
+      method: p.method || '',
+      notes: p.notes || '',
+      sortSuffix: `L${idx}`,
+    }));
+  }
+
+  const paid = num(s.amountPaid);
+  const advanceApplied = num(s.advancePayment);
+  const cashPaid = round2(Math.max(0, paid - advanceApplied));
+  if (cashPaid <= 0) return [];
+
+  return [
+    {
+      date: parseYmd(s.purchaseDate),
+      amount: cashPaid,
+      method: s.paymentMethod || 'cash',
+      notes: '',
+      sortSuffix: 'P',
+    },
+  ];
+}
+
 async function getSalesTransactionLedger(query) {
   const { startDate, endDate } = resolveRange(query);
   const [sales, customers] = await Promise.all([
@@ -519,8 +548,6 @@ async function getSalesTransactionLedger(query) {
     const ymd = parseYmd(s.purchaseDate);
     const amount = num(s.finalAmount) || num(s.sellingPrice);
     const paid = num(s.amountPaid);
-    const advanceApplied = num(s.advancePayment);
-    const cashPaid = round2(Math.max(0, paid - advanceApplied));
     const qty = num(s.weight);
     const rate = qty > 0 ? round2(amount / qty) : num(s.sellingPricePerKg);
 
@@ -538,19 +565,20 @@ async function getSalesTransactionLedger(query) {
       sortKey: `${ymd}S${s._id}`,
     });
 
-    if (cashPaid > 0) {
+    for (const p of getSalePaymentLines(s)) {
+      const pDate = p.date || ymd;
       entries.push({
-        date: ymd,
+        date: pDate,
         invoiceNo: s.invoiceNo || '—',
-        description: `Payment received — ${s.materialName || ''}`,
+        description: p.notes || `Payment received — ${s.materialName || ''}${p.method ? ` (${p.method})` : ''}`,
         customer: s.buyerName || '—',
         qty: round2(qty),
         rate,
-        debit: cashPaid,
+        debit: p.amount,
         credit: 0,
         amount: round2(amount),
-        paid: cashPaid,
-        sortKey: `${ymd}P${s._id}`,
+        paid: p.amount,
+        sortKey: `${pDate}${p.sortSuffix}${s._id}`,
       });
     }
   }
@@ -713,8 +741,6 @@ async function getCustomerLedger(customerId, query) {
   for (const s of sales) {
     const ymd = parseYmd(s.purchaseDate);
     const bill = num(s.finalAmount) || num(s.sellingPrice);
-    const paid = num(s.amountPaid);
-    const advanceApplied = num(s.advancePayment);
     const baseTime = s.createdAt ? new Date(s.createdAt).getTime() : new Date(s.purchaseDate).getTime();
 
     entries.push({
@@ -727,18 +753,20 @@ async function getCustomerLedger(customerId, query) {
       sortKey: `${ymd}S${s._id}`,
     });
 
-    const cashPayment = round2(Math.max(0, paid - advanceApplied));
-    if (cashPayment > 0) {
+    const paymentLines = getSalePaymentLines(s);
+    paymentLines.forEach((p, idx) => {
+      const pDate = p.date || ymd;
+      const pTime = p.date ? new Date(p.date).getTime() : baseTime + 1 + idx;
       entries.push({
-        date: ymd,
+        date: pDate,
         invoiceNo: s.invoiceNo || '—',
-        description: `Payment received — ${s.materialName || ''}`,
-        debit: cashPayment,
+        description: p.notes || `Payment received — ${s.materialName || ''}${p.method ? ` (${p.method})` : ''}`,
+        debit: p.amount,
         credit: 0,
-        timestamp: baseTime + 1,
-        sortKey: `${ymd}P${s._id}`,
+        timestamp: pTime,
+        sortKey: `${pDate}${p.sortSuffix}${s._id}`,
       });
-    }
+    });
   }
 
   for (const a of customer.advanceLedger || []) {
@@ -799,30 +827,45 @@ async function getOwnerAdvanceLedger(query) {
 
   const allLines = [];
   for (const acc of accounts) {
-    for (const t of acc.transactions || []) {
-      const ymd = parseDateField(t.date);
-      if (!inRange(ymd, startDate, endDate)) continue;
-      const amt = num(t.amount);
-      const debit = t.type === 'debit' ? amt : 0;
-      const credit = t.type === 'credit' ? amt : 0;
+    const ownerLabel = acc.ownerName || acc.accountName;
+    const sourceEntries =
+      acc.financeLedger && acc.financeLedger.length > 0
+        ? acc.financeLedger.map((e) => ({
+            date: parseDateField(e.date),
+            debit: e.type === 'advance' ? round2(num(e.amount)) : 0,
+            credit: e.type === 'repayment' ? round2(num(e.amount)) : 0,
+            description: e.description || `${e.type} (${e.method || ''})`,
+            reference: e.reference || '',
+            method: e.method || '',
+          }))
+        : (acc.transactions || []).map((t) => {
+            const amt = num(t.amount);
+            return {
+              date: parseDateField(t.date),
+              debit: t.type === 'debit' ? round2(amt) : 0,
+              credit: t.type === 'credit' ? round2(amt) : 0,
+              description: t.description || acc.subHead,
+              reference: t.reference || '',
+              method: '',
+            };
+          });
+
+    for (const t of sourceEntries) {
+      if (!inRange(t.date, startDate, endDate)) continue;
       allLines.push({
-        date: ymd,
+        date: t.date,
         voucherNo: t.reference || acc.accountName,
-        description: t.description || acc.subHead,
-        debit: round2(debit),
-        credit: round2(credit),
+        description: t.description || `${ownerLabel}${t.method ? ` — ${t.method}` : ''}`,
+        debit: t.debit,
+        credit: t.credit,
         accountName: acc.accountName,
-        sortKey: `${ymd}${acc._id}${t._id}`,
+        ownerName: ownerLabel,
+        sortKey: `${t.date}${acc._id}${t.reference}`,
       });
     }
   }
 
   allLines.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.sortKey).localeCompare(String(b.sortKey)));
-
-  let openingBalance = 0;
-  for (const acc of accounts) {
-    openingBalance += num(acc.balance);
-  }
 
   let balance = 0;
   const lines = allLines.map((row) => {
@@ -830,16 +873,19 @@ async function getOwnerAdvanceLedger(query) {
     return { ...row, balance };
   });
 
+  const openingBalance = round2(accounts.reduce((s, a) => s + num(a.balance), 0));
+
   return {
     startDate,
     endDate,
-    openingBalance: round2(accounts.reduce((s, a) => s + num(a.balance), 0)),
+    openingBalance,
     lines,
-    closingBalance: lines.length ? lines[lines.length - 1].balance : 0,
+    closingBalance: lines.length ? lines[lines.length - 1].balance : openingBalance,
     accounts: accounts.map((a) => ({
       _id: a._id,
       accountName: a.accountName,
-      balance: round2(a.balance),
+      ownerName: a.ownerName || '',
+      balance: round2(num(a.balance)),
     })),
   };
 }

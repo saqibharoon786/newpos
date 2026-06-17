@@ -6,6 +6,10 @@ const {
   syncEmployeeAdvanceBalance,
   findEmployeeByAnyId,
 } = require('./employeeFinance.service');
+const {
+  syncOwnerAdvanceBalance,
+  findOwnerAccount,
+} = require('./ownerFinance.service');
 
 function num(v) {
   const n = parseFloat(v);
@@ -61,7 +65,7 @@ async function deletePartyAdvanceTransaction(transactionId) {
     return {
       ok: false,
       status: 400,
-      message: 'Sirf vendor/customer/employee advance ya salary entries delete ho sakti hain',
+      message: 'Sirf vendor/customer/employee/owner advance ya salary entries delete ho sakti hain',
     };
   }
 
@@ -155,6 +159,31 @@ async function deletePartyAdvanceTransaction(transactionId) {
     );
     syncEmployeeAdvanceBalance(employee);
     await employee.save();
+  } else if (transaction.partyType === 'owner') {
+    const account = await findOwnerAccount(transaction.partyId);
+    if (!account) {
+      return { ok: false, status: 404, message: 'Owner advance account not found' };
+    }
+
+    const entry = (account.financeLedger || []).find(
+      (e) => e.transactionId && String(e.transactionId) === tid
+    );
+    if (!entry) {
+      return {
+        ok: false,
+        status: 404,
+        message: 'Owner finance ledger entry not found',
+      };
+    }
+
+    account.financeLedger = (account.financeLedger || []).filter(
+      (e) => !(e.transactionId && String(e.transactionId) === tid)
+    );
+    account.transactions = (account.transactions || []).filter(
+      (e) => !(e.transactionId && String(e.transactionId) === tid)
+    );
+    syncOwnerAdvanceBalance(account);
+    await account.save();
   } else {
     return { ok: false, status: 400, message: 'Unknown party type' };
   }

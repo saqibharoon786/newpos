@@ -54,6 +54,15 @@ interface Sale {
   
   createdAt: string;
   updatedAt: string;
+
+  paymentLedger?: Array<{
+    _id?: string;
+    date: string;
+    amount: number;
+    method: string;
+    notes?: string;
+    clientPaymentId?: string;
+  }>;
 }
 
 interface PaymentHistory {
@@ -65,6 +74,29 @@ interface PaymentHistory {
   notes?: string;
   invoiceNo?: string;
   materialName?: string;
+}
+
+function paymentsFromSales(sales: Sale[]): PaymentHistory[] {
+  const out: PaymentHistory[] = [];
+  for (const sale of sales) {
+    for (const p of sale.paymentLedger || []) {
+      const dateStr =
+        typeof p.date === "string"
+          ? p.date.slice(0, 10)
+          : new Date(p.date).toISOString().slice(0, 10);
+      out.push({
+        _id: p.clientPaymentId || p._id || `${sale._id}_${dateStr}_${p.amount}`,
+        saleId: sale._id,
+        amount: p.amount,
+        paymentDate: dateStr,
+        paymentMethod: p.method || "cash",
+        notes: p.notes,
+        invoiceNo: sale.invoiceNo,
+        materialName: sale.materialName,
+      });
+    }
+  }
+  return out;
 }
 
 const PaymentStatusBadge = ({ status }: { status: 'none' | 'partial' | 'paid' }) => {
@@ -366,7 +398,7 @@ const PaymentModal = ({
         _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         saleId: sale._id,
         amount: amount,
-        paymentDate: paymentDate, // This is already in YYYY-MM-DD format
+        paymentDate: paymentDate,
         paymentMethod: paymentMethod,
         notes: notes || `Payment of Rs. ${amount.toLocaleString()}`,
         invoiceNo: sale.invoiceNo,
@@ -378,6 +410,9 @@ const PaymentModal = ({
         paymentStatus: newPaymentStatus,
         remainingAmount: newRemainingAmount,
         paymentMethod: paymentMethod.toLowerCase(),
+        paymentDate: paymentDate,
+        paymentNotes: paymentRecord.notes,
+        clientPaymentId: paymentRecord._id,
       };
 
       const response = await api.put(
@@ -595,6 +630,9 @@ const MarkAsPaidModal = ({
         paymentStatus: 'paid',
         remainingAmount: 0,
         paymentMethod: method,
+        paymentDate: paymentRecord.paymentDate,
+        paymentNotes: paymentRecord.notes,
+        clientPaymentId: paymentRecord._id,
       };
 
       const response = await api.put(
@@ -1004,7 +1042,7 @@ const PayTotalModal = ({
   customerName: string;
   sales: Sale[];
   totalRemaining: number;
-  onSuccess: (records: PaymentHistory[]) => void;
+  onSuccess: () => void;
   formatCurrency: (n: number) => string;
 }) => {
   const [paymentAmount, setPaymentAmount] = useState<string>("");
@@ -1068,6 +1106,9 @@ const PayTotalModal = ({
           paymentStatus: newPaymentStatus,
           remainingAmount: newRemainingAmount,
           paymentMethod: paymentMethod.toLowerCase(),
+          paymentDate: paymentDate,
+          paymentNotes: paymentRecord.notes,
+          clientPaymentId: paymentRecord._id,
         });
 
         records.push(paymentRecord);
@@ -1078,7 +1119,7 @@ const PayTotalModal = ({
         title: "Success",
         description: `Payment of Rs. ${formatCurrency(amount)} recorded.`,
       });
-      onSuccess(records);
+      onSuccess();
       onClose();
     } catch (err: any) {
       toast({
@@ -1197,14 +1238,32 @@ export function POSView() {
   const [payTotalModalOpen, setPayTotalModalOpen] = useState(false);
   const [payTotalData, setPayTotalData] = useState<{ customerName: string; sales: Sale[]; totalRemaining: number } | null>(null);
   
-  const [allPayments, setAllPayments] = useState<PaymentHistory[]>(() => {
-    const savedPayments = localStorage.getItem('sale_payments');
-    return savedPayments ? JSON.parse(savedPayments) : [];
-  });
+  const [allPayments, setAllPayments] = useState<PaymentHistory[]>([]);
+  const [paymentsSynced, setPaymentsSynced] = useState(false);
 
-  useEffect(() => {
-    localStorage.setItem('sale_payments', JSON.stringify(allPayments));
-  }, [allPayments]);
+  const loadPaymentsFromSales = async (salesData: Sale[]) => {
+    let data = salesData;
+    if (!paymentsSynced) {
+      const savedPayments = localStorage.getItem("sale_payments");
+      if (savedPayments) {
+        try {
+          const local = JSON.parse(savedPayments);
+          if (Array.isArray(local) && local.length > 0) {
+            await api.post(`${SALES_API_URL}/sync-payments`, { payments: local });
+            const res2 = await api.get(SALES_API_URL);
+            if (res2.data?.success) {
+              data = res2.data.data || salesData;
+              setSales(data);
+            }
+          }
+        } catch {
+          /* legacy sync optional */
+        }
+      }
+      setPaymentsSynced(true);
+    }
+    setAllPayments(paymentsFromSales(data));
+  };
 
   // Fetch sales on component mount
   useEffect(() => {
@@ -1258,6 +1317,7 @@ export function POSView() {
         }
         
         setSales(salesData);
+        await loadPaymentsFromSales(salesData);
       } else {
         throw new Error(salesResponse.data.message || 'Failed to fetch sales');
       }
@@ -1366,8 +1426,7 @@ export function POSView() {
     }
   };
 
-  const handlePaymentSuccess = async (newPayment: PaymentHistory) => {
-    setAllPayments(prev => [...prev, newPayment]);
+  const handlePaymentSuccess = async (_newPayment: PaymentHistory) => {
     await fetchSales();
     setPaymentModalOpen(false);
     setMarkAsPaidModalOpen(false);
@@ -2348,9 +2407,8 @@ const handleExportCustomerSummary = (format: "excel" | "word" | "pdf") => {
         customerName={payTotalData?.customerName ?? ""}
         sales={payTotalData?.sales ?? []}
         totalRemaining={payTotalData?.totalRemaining ?? 0}
-        onSuccess={(records) => {
-          setAllPayments((prev) => [...prev, ...records]);
-          fetchSales();
+        onSuccess={async () => {
+          await fetchSales();
           setPayTotalModalOpen(false);
           setPayTotalData(null);
         }}

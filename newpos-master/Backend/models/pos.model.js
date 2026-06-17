@@ -97,6 +97,22 @@ const saleSchema = new mongoose.Schema(
       required: false,
       default: "" 
     },
+
+    /** Individual payment records (date-wise) — synced with Finance deposits */
+    paymentLedger: [
+      {
+        date: { type: Date, default: Date.now },
+        amount: { type: Number, required: true, min: 0 },
+        method: {
+          type: String,
+          enum: ['drawer', 'easypaisa', 'jazzcash', 'bank', 'cash', 'other'],
+          default: 'drawer',
+        },
+        notes: { type: String, default: '' },
+        clientPaymentId: { type: String, default: '' },
+        transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
+      },
+    ],
   },
   { timestamps: true }
 );

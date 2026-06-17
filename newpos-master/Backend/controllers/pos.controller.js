@@ -41,20 +41,67 @@ async function getFifoActualCostPerKg({ materialName, quality, materialColor }) 
   return total > 0 ? Math.round((cost / total) * 100) / 100 : 0;
 }
 
-async function recordPosFinanceDeposit({ amount, paymentMethod, invoiceNo, customerName }) {
-  if (!amount || amount <= 0) return;
-  const raw = String(paymentMethod || "cash").toLowerCase();
-  const method = raw === "cash" ? "drawer" : raw;
-  if (!["drawer", "easypaisa", "jazzcash", "bank"].includes(method)) return;
-  await Transaction.create({
-    type: "deposit",
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function normalizePosPaymentMethod(method) {
+  const raw = String(method || 'cash').toLowerCase();
+  if (raw === 'cash') return 'drawer';
+  if (['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(raw)) return raw;
+  return 'drawer';
+}
+
+async function recordPosFinanceDeposit({
+  amount,
+  paymentMethod,
+  invoiceNo,
+  customerName,
+  customerId,
+}) {
+  if (!amount || amount <= 0) return null;
+  const method = normalizePosPaymentMethod(paymentMethod);
+  if (!['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(method)) return null;
+  return Transaction.create({
+    type: 'deposit',
     method,
     amount,
     net: amount,
     description: `Payment received - POS ${invoiceNo} - ${customerName}`,
     reference: invoiceNo,
-    status: "completed",
+    status: 'completed',
+    partyType: customerId ? 'customer' : undefined,
+    partyId: customerId || undefined,
+    partyName: customerName || undefined,
+    category: 'pos_payment',
   });
+}
+
+function buildPaymentLedgerEntry({
+  amount,
+  paymentDate,
+  paymentMethod,
+  notes,
+  clientPaymentId,
+  transactionId,
+}) {
+  const d = paymentDate ? new Date(paymentDate) : new Date();
+  const raw = String(paymentMethod || 'cash').toLowerCase();
+  const methodEnum = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(
+    normalizePosPaymentMethod(paymentMethod)
+  )
+    ? normalizePosPaymentMethod(paymentMethod)
+    : raw === 'other'
+      ? 'other'
+      : 'cash';
+  return {
+    date: Number.isNaN(d.getTime()) ? new Date() : d,
+    amount: round2(amount),
+    method: methodEnum,
+    notes: notes || '',
+    clientPaymentId: clientPaymentId || '',
+    transactionId: transactionId || undefined,
+  };
 }
 
 /** How much customer finance advance to apply on a new POS bill (mirrors POP vendor advance). */
@@ -585,12 +632,22 @@ const addSale = async (req, res) => {
       }
     }
     if (cashPaid > 0) {
-      await recordPosFinanceDeposit({
+      const tx = await recordPosFinanceDeposit({
         amount: cashPaid,
         paymentMethod: payMethod,
         invoiceNo: finalInvoiceNo,
         customerName,
+        customerId: req.body.customerId,
       });
+      salePayload.paymentLedger = [
+        buildPaymentLedgerEntry({
+          amount: cashPaid,
+          paymentDate: salePayload.purchaseDate || new Date(),
+          paymentMethod: payMethod,
+          notes: 'Payment on sale',
+          transactionId: tx?._id,
+        }),
+      ];
     }
 
     let parsedLineItems = req.body.lineItems;
@@ -937,25 +994,55 @@ const updateSale = async (req, res) => {
         ? parseFloat(updateData.amountPaid) || 0
         : oldPaid;
 
-    const sale = await Sale.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true }
-    );
+    const delta = newPaid > oldPaid ? round2(newPaid - oldPaid) : 0;
+    let paymentLedgerEntry = null;
 
-    if (newPaid > oldPaid) {
-      const delta = Math.round((newPaid - oldPaid) * 100) / 100;
+    if (delta > 0) {
       const payMethod = String(
         updateData.paymentMethod || existingSale.paymentMethod || 'cash'
       ).toLowerCase();
-      if (payMethod !== 'advance' && delta > 0) {
-        await recordPosFinanceDeposit({
+      let tx = null;
+      if (payMethod !== 'advance') {
+        tx = await recordPosFinanceDeposit({
           amount: delta,
           paymentMethod: payMethod,
           invoiceNo: existingSale.invoiceNo || id,
           customerName: existingSale.buyerName || 'Customer',
+          customerId: existingSale.customerId,
         });
       }
+      paymentLedgerEntry = buildPaymentLedgerEntry({
+        amount: delta,
+        paymentDate: req.body.paymentDate || req.body.payment_date,
+        paymentMethod: payMethod,
+        notes: req.body.paymentNotes || req.body.notes || `Payment Rs. ${delta.toLocaleString('en-PK')}`,
+        clientPaymentId: req.body.clientPaymentId || req.body.paymentId || '',
+        transactionId: tx?._id,
+      });
+    }
+
+    const updateOps = { ...updateData };
+    delete updateOps.paymentDate;
+    delete updateOps.payment_date;
+    delete updateOps.paymentNotes;
+    delete updateOps.clientPaymentId;
+    delete updateOps.paymentId;
+
+    let sale;
+    if (paymentLedgerEntry) {
+      const dupFilter = paymentLedgerEntry.clientPaymentId
+        ? { _id: id, 'paymentLedger.clientPaymentId': { $ne: paymentLedgerEntry.clientPaymentId } }
+        : { _id: id };
+      sale = await Sale.findOneAndUpdate(
+        dupFilter,
+        { $set: updateOps, $push: { paymentLedger: paymentLedgerEntry } },
+        { new: true }
+      );
+      if (!sale) {
+        sale = await Sale.findByIdAndUpdate(id, updateOps, { new: true });
+      }
+    } else {
+      sale = await Sale.findByIdAndUpdate(id, updateOps, { new: true });
     }
 
     // Add full URL to receiptImage for response
@@ -1157,6 +1244,112 @@ const approveSale = async (req, res) => {
   }
 };
 
+/** Migrate browser localStorage payment records into sale.paymentLedger */
+async function rebuildPaymentLedgerFromFinance() {
+  const sales = await Sale.find({
+    amountPaid: { $gt: 0 },
+    $or: [{ paymentLedger: { $exists: false } }, { paymentLedger: { $size: 0 } }],
+  });
+
+  let rebuilt = 0;
+  for (const sale of sales) {
+    const invoiceNo = sale.invoiceNo;
+    if (!invoiceNo) continue;
+
+    const txs = await Transaction.find({
+      category: 'pos_payment',
+      type: 'deposit',
+      reference: invoiceNo,
+    })
+      .sort({ createdAt: 1 })
+      .lean();
+
+    if (!txs.length) continue;
+
+    sale.paymentLedger = sale.paymentLedger || [];
+    for (const tx of txs) {
+      const clientId = String(tx._id);
+      if (sale.paymentLedger.some((e) => e.clientPaymentId === clientId)) continue;
+      sale.paymentLedger.push(
+        buildPaymentLedgerEntry({
+          amount: tx.amount,
+          paymentDate: tx.createdAt,
+          paymentMethod: tx.method,
+          notes: tx.description || '',
+          clientPaymentId: clientId,
+          transactionId: tx._id,
+        })
+      );
+    }
+    if (sale.paymentLedger.length > 0) {
+      await sale.save();
+      rebuilt++;
+    }
+  }
+  return rebuilt;
+}
+
+const syncSalePayments = async (req, res) => {
+  try {
+    const payments = Array.isArray(req.body.payments) ? req.body.payments : [];
+    let synced = 0;
+    let skipped = 0;
+
+    for (const p of payments) {
+      const saleId = p.saleId;
+      if (!saleId || !mongoose.Types.ObjectId.isValid(saleId)) {
+        skipped++;
+        continue;
+      }
+      const sale = await Sale.findById(saleId);
+      if (!sale) {
+        skipped++;
+        continue;
+      }
+
+      const clientId = p._id || p.clientPaymentId || '';
+      if (
+        clientId &&
+        (sale.paymentLedger || []).some((e) => e.clientPaymentId === clientId)
+      ) {
+        skipped++;
+        continue;
+      }
+
+      const amt = parseFloat(p.amount);
+      if (!amt || amt <= 0) {
+        skipped++;
+        continue;
+      }
+
+      sale.paymentLedger = sale.paymentLedger || [];
+      sale.paymentLedger.push(
+        buildPaymentLedgerEntry({
+          amount: amt,
+          paymentDate: p.paymentDate,
+          paymentMethod: p.paymentMethod,
+          notes: p.notes || '',
+          clientPaymentId: clientId,
+        })
+      );
+      await sale.save();
+      synced++;
+    }
+
+    const rebuilt = await rebuildPaymentLedgerFromFinance();
+
+    res.json({
+      success: true,
+      message: `${synced} payment record(s) ledger mein sync ho gaye`,
+      synced,
+      skipped,
+      rebuilt,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   addSale,
   getNextSaleInvoiceNo,
@@ -1168,4 +1361,5 @@ module.exports = {
   getTotalSoldWeightByMaterial,
   getSalesStatistics,
   approveSale,
+  syncSalePayments,
 };

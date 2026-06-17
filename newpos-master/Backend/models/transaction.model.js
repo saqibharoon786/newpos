@@ -35,10 +35,10 @@ const TransactionSchema = new mongoose.Schema({
   },
   description: String,
   reference: String,
-  /** vendor | customer | employee — advance / linked payments */
+  /** vendor | customer | employee | owner — advance / linked payments */
   partyType: {
     type: String,
-    enum: ['vendor', 'customer', 'employee'],
+    enum: ['vendor', 'customer', 'employee', 'owner'],
     required: false,
   },
   partyId: {
@@ -48,7 +48,7 @@ const TransactionSchema = new mongoose.Schema({
   partyName: { type: String, trim: true },
   category: {
     type: String,
-    enum: ['general', 'advance', 'salary'],
+    enum: ['general', 'advance', 'salary', 'pos_payment'],
     default: 'general',
   },
 }, {

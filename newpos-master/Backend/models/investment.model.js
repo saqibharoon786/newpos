@@ -12,6 +12,25 @@ const investmentAccountSchema = new mongoose.Schema(
     },
     ownerName: { type: String, default: '' },
     balance: { type: Number, default: 0 },
+    /** Finance-linked owner advance ledger */
+    financeLedger: [
+      {
+        date: { type: Date, default: Date.now },
+        type: {
+          type: String,
+          enum: ['advance', 'repayment'],
+          required: true,
+        },
+        amount: { type: Number, required: true, min: 0 },
+        method: {
+          type: String,
+          enum: ['drawer', 'easypaisa', 'jazzcash', 'bank'],
+        },
+        description: { type: String, default: '' },
+        reference: { type: String, default: '' },
+        transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
+      },
+    ],
     transactions: [
       {
         date: { type: Date, default: Date.now },
@@ -19,6 +38,7 @@ const investmentAccountSchema = new mongoose.Schema(
         amount: Number,
         description: String,
         reference: String,
+        transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' },
       },
     ],
     isActive: { type: Boolean, default: true },
