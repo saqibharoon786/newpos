@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Printer, Circle, Scale, Palette, Building2, Award, IndianRupee, Calendar, Truck, Settings, User, CreditCard, ArrowLeft, Loader2, AlertCircle } from "lucide-react";
+import { Printer, Circle, Scale, Palette, Building2, Award, IndianRupee, Calendar, Truck, Settings, User, CreditCard, FileText, ArrowLeft, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import api, { API_BASE_URL } from "@/lib/api";
 import { fetchCompanySettings, getLogoUrl } from "@/lib/companySettings";

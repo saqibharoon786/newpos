@@ -28,6 +28,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import api from "@/lib/api";
 
@@ -42,10 +43,17 @@ interface Owner {
   cnic?: string;
   address?: string;
   profitSharePercent: number;
+  participatesInProfitShare?: boolean;
   investmentAccountId?: string;
   totalProfitReceived?: number;
   advanceBalance?: number;
   isActive?: boolean;
+}
+
+function isProfitPartner(o: Owner): boolean {
+  if (o.participatesInProfitShare === true) return true;
+  if (o.participatesInProfitShare === false) return false;
+  return (o.profitSharePercent ?? 0) > 0;
 }
 
 interface FinanceHistoryRow {
@@ -68,6 +76,8 @@ interface ProfitPreview {
   distributableProfit: number;
   reserveAmount: number;
   totalSharePercent: number;
+  profitPartnerCount?: number;
+  advanceOnlyCount?: number;
   shareWarning?: string | null;
   existingStatus?: string | null;
   existingId?: string | null;
@@ -101,7 +111,12 @@ const METHOD_LABELS: Record<string, string> = {
 export default function OwnersView() {
   const [owners, setOwners] = useState<Owner[]>([]);
   const [loading, setLoading] = useState(true);
-  const [shareSummary, setShareSummary] = useState<{ totalSharePercent: number; isValid: boolean } | null>(null);
+  const [shareSummary, setShareSummary] = useState<{
+    totalSharePercent: number;
+    isValid: boolean;
+    profitPartnerCount?: number;
+    advanceOnlyCount?: number;
+  } | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editOwner, setEditOwner] = useState<Owner | null>(null);
@@ -111,6 +126,7 @@ export default function OwnersView() {
     email: "",
     cnic: "",
     address: "",
+    participatesInProfitShare: false,
     profitSharePercent: "",
   });
 
@@ -178,19 +194,29 @@ export default function OwnersView() {
 
   const openAdd = () => {
     setEditOwner(null);
-    setForm({ name: "", phone: "", email: "", cnic: "", address: "", profitSharePercent: "" });
+    setForm({
+      name: "",
+      phone: "",
+      email: "",
+      cnic: "",
+      address: "",
+      participatesInProfitShare: false,
+      profitSharePercent: "",
+    });
     setDialogOpen(true);
   };
 
   const openEdit = (o: Owner) => {
     setEditOwner(o);
+    const participates = isProfitPartner(o);
     setForm({
       name: o.name,
       phone: o.phone || "",
       email: o.email || "",
       cnic: o.cnic || "",
       address: o.address || "",
-      profitSharePercent: String(o.profitSharePercent ?? ""),
+      participatesInProfitShare: participates,
+      profitSharePercent: participates ? String(o.profitSharePercent ?? "") : "",
     });
     setDialogOpen(true);
   };
@@ -200,10 +226,24 @@ export default function OwnersView() {
       toast.error("Owner name zaroori hai");
       return;
     }
+    if (form.participatesInProfitShare) {
+      const pct = parseFloat(form.profitSharePercent);
+      if (!pct || pct <= 0) {
+        toast.error("Profit share % enter karen (e.g. 50)");
+        return;
+      }
+    }
     try {
       const payload = {
-        ...form,
-        profitSharePercent: parseFloat(form.profitSharePercent) || 0,
+        name: form.name,
+        phone: form.phone,
+        email: form.email,
+        cnic: form.cnic,
+        address: form.address,
+        participatesInProfitShare: form.participatesInProfitShare,
+        profitSharePercent: form.participatesInProfitShare
+          ? parseFloat(form.profitSharePercent) || 0
+          : 0,
       };
       if (editOwner) {
         await api.put(`${OWNERS_API}/${editOwner._id}`, payload);
@@ -293,8 +333,12 @@ export default function OwnersView() {
       toast.error("Is month ka profit pehle distribute ho chuka");
       return;
     }
-    if (owners.length > 0 && shareSummary && !shareSummary.isValid) {
-      toast.error(`Owner shares total ${shareSummary.totalSharePercent}% — 100% set karen`);
+    if ((profitPreview.profitPartnerCount ?? profitPreview.lines.length) === 0) {
+      toast.error("Profit distribute karne ke liye kam az kam ek owner par profit share enable karen");
+      return;
+    }
+    if (shareSummary && (shareSummary.profitPartnerCount ?? 0) > 0 && !shareSummary.isValid) {
+      toast.error(`Profit partners ka share total ${shareSummary.totalSharePercent}% — 100% set karen`);
       return;
     }
     if (!window.confirm(`${profitPreview.periodLabel} ka profit distribute karna hai?`)) return;
@@ -340,7 +384,7 @@ export default function OwnersView() {
             Owners
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Pehle owner add karen — phr Finance se advance/payment — month end par profit distribute
+            Owner add karen — advance bina profit share ke bhi ho sakta hai — profit share sirf month-end distribution ke liye
           </p>
         </div>
         <div className="flex gap-2">
@@ -355,7 +399,7 @@ export default function OwnersView() {
         </div>
       </div>
 
-      {shareSummary && owners.length > 0 && (
+      {shareSummary && owners.length > 0 && (shareSummary.profitPartnerCount ?? 0) > 0 && (
         <div
           className={`rounded-lg border p-3 text-sm ${
             shareSummary.isValid
@@ -363,8 +407,14 @@ export default function OwnersView() {
               : "border-amber-200 bg-amber-50/50 dark:bg-amber-950/20"
           }`}
         >
-          Total profit share: <strong>{shareSummary.totalSharePercent}%</strong>
-          {!shareSummary.isValid && " — sab owners ka share mil kar 100% hona chahiye"}
+          Profit partners share total: <strong>{shareSummary.totalSharePercent}%</strong>
+          {!shareSummary.isValid && " — profit partners ka share mil kar 100% hona chahiye"}
+          {(shareSummary.advanceOnlyCount ?? 0) > 0 && (
+            <span className="text-muted-foreground">
+              {" "}
+              · {shareSummary.advanceOnlyCount} owner(s) sirf advance (profit share nahi)
+            </span>
+          )}
         </div>
       )}
 
@@ -390,6 +440,7 @@ export default function OwnersView() {
                     <tr>
                       <th className="text-left p-3 font-medium">Code</th>
                       <th className="text-left p-3 font-medium">Name</th>
+                      <th className="text-left p-3 font-medium">Type</th>
                       <th className="text-right p-3 font-medium">Share %</th>
                       <th className="text-right p-3 font-medium">Advance</th>
                       <th className="text-right p-3 font-medium">Profit Received</th>
@@ -407,7 +458,16 @@ export default function OwnersView() {
                       >
                         <td className="p-3 text-muted-foreground">{o.ownerCode || "—"}</td>
                         <td className="p-3 font-medium">{o.name}</td>
-                        <td className="p-3 text-right">{o.profitSharePercent ?? 0}%</td>
+                        <td className="p-3 text-xs">
+                          {isProfitPartner(o) ? (
+                            <span className="text-green-700 bg-green-500/10 px-2 py-0.5 rounded-full">Profit + Advance</span>
+                          ) : (
+                            <span className="text-purple-700 bg-purple-500/10 px-2 py-0.5 rounded-full">Advance only</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-right">
+                          {isProfitPartner(o) ? `${o.profitSharePercent ?? 0}%` : "—"}
+                        </td>
                         <td className="p-3 text-right text-purple-600">{fmt(o.advanceBalance ?? 0)}</td>
                         <td className="p-3 text-right text-green-600">{fmt(o.totalProfitReceived ?? 0)}</td>
                         <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
@@ -435,6 +495,11 @@ export default function OwnersView() {
             </CardTitle>
             <CardDescription>
               {selectedOwner ? selectedOwner.name : "List se owner select karen"}
+              {selectedOwner && (
+                <span className="block text-xs mt-1 text-muted-foreground">
+                  Advance ke liye profit share % zaroori nahi
+                </span>
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-4 space-y-4">
@@ -670,17 +735,41 @@ export default function OwnersView() {
               <Label>Name *</Label>
               <Input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
             </div>
-            <div className="space-y-2">
-              <Label>Profit Share %</Label>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                value={form.profitSharePercent}
-                onChange={(e) => setForm((p) => ({ ...p, profitSharePercent: e.target.value }))}
-                placeholder="e.g. 50"
+            <div className="flex items-start gap-3 rounded-lg border border-border p-3 bg-secondary/20">
+              <Checkbox
+                id="participatesInProfitShare"
+                checked={form.participatesInProfitShare}
+                onCheckedChange={(checked) =>
+                  setForm((p) => ({
+                    ...p,
+                    participatesInProfitShare: checked === true,
+                    profitSharePercent: checked === true ? p.profitSharePercent : "",
+                  }))
+                }
               />
+              <div className="space-y-1">
+                <Label htmlFor="participatesInProfitShare" className="cursor-pointer font-medium">
+                  Profit mein share lena hai
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Off = sirf advance (loan) — month-end profit distribution mein shamil nahi.
+                  On = profit % set karen aur distribute hoga.
+                </p>
+              </div>
             </div>
+            {form.participatesInProfitShare && (
+              <div className="space-y-2">
+                <Label>Profit Share % *</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={form.profitSharePercent}
+                  onChange={(e) => setForm((p) => ({ ...p, profitSharePercent: e.target.value }))}
+                  placeholder="e.g. 50"
+                />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Phone</Label>
