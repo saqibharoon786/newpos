@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { exportAsCsv, exportAsExcelTable, exportAsPdf } from '@/lib/exportUtils';
+import { exportBusinessProfitLossReport } from '@/lib/reportProfitExport';
 import { FileSpreadsheet, Loader2, RefreshCw, TrendingUp, Package, Factory, ShoppingCart, Receipt } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import ProfitCalculationSection from './ProfitCalculationSection';
@@ -190,117 +190,10 @@ export default function ReportsView() {
 
   const exportAll = (format: 'csv' | 'excel' | 'pdf' = 'csv') => {
     if (!report) return;
-    const label = report.label || 'report';
-    const s = report.summary;
-
-    const summaryRows = [
-      { Section: 'Mall (POP)', Metric: 'Entries', Value: s.purchases.count },
-      { Section: 'Mall (POP)', Metric: 'Total Weight (kg)', Value: s.purchases.totalWeightKg },
-      { Section: 'Mall (POP)', Metric: 'Total Cost (Rs)', Value: s.purchases.totalCostRs },
-      { Section: 'Process', Metric: 'Batches', Value: s.production.count },
-      { Section: 'Process', Metric: 'Input (kg)', Value: s.production.inputKg },
-      { Section: 'Process', Metric: 'Output (kg)', Value: s.production.outputKg },
-      { Section: 'Process', Metric: 'Waste (kg)', Value: s.production.wasteKg },
-      { Section: 'Sales', Metric: 'Count', Value: s.sales.count },
-      { Section: 'Sales', Metric: 'Revenue (Rs)', Value: s.sales.revenueRs },
-      { Section: 'Sales', Metric: 'Profit (Rs)', Value: s.sales.profitRs },
-      { Section: 'Kharcha', Metric: 'Total (Rs)', Value: s.expenses.totalRs },
-      { Section: 'Selling Expenses', Metric: 'Delivery (Rs)', Value: s.sellingExpenses?.totalRs ?? 0 },
-      { Section: 'Summary', Metric: 'Net Profit (Rs)', Value: s.netProfitRs },
-    ];
-    const summaryHeaders = ['Section', 'Metric', 'Value'];
-
-    if (format === 'excel') {
-      exportAsExcelTable(`business-report-${label}.xls`, 'Business Report Summary', summaryHeaders, summaryRows);
-      if (expenseCategoryRows.length) {
-        exportAsExcelTable(`expense-categories-${label}.xls`, 'Expense Categories', ['Category', 'Items', 'Total Rs'], expenseCategoryRows.map((r) => ({
-          Category: r.category,
-          Items: r.count,
-          'Total Rs': r.totalRs,
-        })));
-      }
-      if (expenseRows.length) {
-        exportAsExcelTable(`expense-details-${label}.xls`, 'Expense Details', ['Date', 'Category', 'Subject', 'Purpose', 'Usage', 'Amount', 'Responsible'], expenseRows.map((r) => ({
-          Date: r.date,
-          Category: r.category,
-          Subject: r.subject,
-          Purpose: r.purpose,
-          Usage: r.usage,
-          Amount: r.priceRs,
-          Responsible: r.personResponsible,
-        })));
-      }
-    } else if (format === 'pdf') {
-      const summaryBody = summaryRows
-        .map((r) => `<tr><td>${r.Section}</td><td>${r.Metric}</td><td>${r.Value}</td></tr>`)
-        .join('');
-      const categoryBody = expenseCategoryRows
-        .map((r) => `<tr><td>${r.category}</td><td>${r.count}</td><td>${r.totalRs}</td></tr>`)
-        .join('');
-      exportAsPdf(
-        'Business Report',
-        `<h2>Summary</h2><table border="1" cellpadding="4"><thead><tr>${summaryHeaders.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${summaryBody}</tbody></table>${categoryBody ? `<h2>Expense categories</h2><table border="1" cellpadding="4"><thead><tr><th>Category</th><th>Items</th><th>Total Rs</th></tr></thead><tbody>${categoryBody}</tbody></table>` : ''}`
-      );
-    } else {
-      exportAsCsv(`business-report-${label}.csv`, summaryHeaders, summaryRows);
-    }
-    if (format === 'csv' && report.purchases?.length) {
-      exportAsCsv(`mall-purchases-${label}.csv`, ['Date', 'Receipt', 'Vendor', 'Material', 'Weight kg', 'Price/kg', 'Total Rs'], report.purchases.map((p: any) => ({
-        Date: p.date,
-        Receipt: p.receiptNo,
-        Vendor: p.vendor,
-        Material: p.materialName,
-        'Weight kg': p.weightKg,
-        'Price/kg': p.pricePerKg,
-        'Total Rs': p.priceRs,
-      })));
-    }
-    if (format === 'csv' && expenseCategoryRows.length) {
-      exportAsCsv(`expense-categories-${label}.csv`, ['Category', 'Items', 'Total Rs'], expenseCategoryRows.map((r) => ({
-        Category: r.category,
-        Items: r.count,
-        'Total Rs': r.totalRs,
-      })));
-    }
-    if (format === 'csv' && expenseRows.length) {
-      exportAsCsv(`expense-details-${label}.csv`, ['Date', 'Category', 'Subject', 'Purpose', 'Usage', 'Amount', 'Responsible'], expenseRows.map((r) => ({
-        Date: r.date,
-        Category: r.category,
-        Subject: r.subject,
-        Purpose: r.purpose,
-        Usage: r.usage,
-        Amount: r.priceRs,
-        Responsible: r.personResponsible,
-      })));
-    }
-    if (format === 'csv' && report.production?.length) {
-      exportAsCsv(`process-${label}.csv`, ['Date', 'Batch', 'Material', 'Input kg', 'Output kg', 'Waste kg', 'Yield %', 'Cost Rs'], report.production.map((p: any) => ({
-        Date: p.date,
-        Batch: p.batchNo,
-        Material: p.materialName,
-        'Input kg': p.inputKg,
-        'Output kg': p.outputKg,
-        'Waste kg': p.wasteKg,
-        'Yield %': p.yieldPercent,
-        'Cost Rs': p.totalProductionCostRs,
-      })));
-    }
-    if (format === 'csv' && report.sales?.length) {
-      exportAsCsv(`sales-${label}.csv`, ['Date', 'Invoice', 'Customer', 'Material', 'Weight kg', 'Revenue Rs', 'Delivery Rs', 'Cost Rs', 'Profit Rs'], report.sales.map((s: any) => ({
-        Date: s.date,
-        Invoice: s.invoiceNo,
-        Customer: s.buyerName,
-        Material: s.materialName,
-        'Weight kg': s.weightKg,
-        'Revenue Rs': s.revenueRs,
-        'Delivery Rs': s.deliveryChargesRs ?? 0,
-        'Cost Rs': s.costRs,
-        'Profit Rs': s.profitRs,
-      })));
-    }
+    exportBusinessProfitLossReport(format, report);
     toast({
       title: 'Export complete',
-      description: format === 'csv' ? 'CSV files download ho gayi hain' : `${format.toUpperCase()} file download ho gayi hai`,
+      description: `Profit & Loss report (${format.toUpperCase()}) download ho gayi hai`,
     });
   };
 
