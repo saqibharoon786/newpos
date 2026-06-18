@@ -4,6 +4,8 @@ const Expense = require('../models/expense.model');
 const { ProductionData } = require('../models/process.model');
 const Customer = require('../models/customer.model');
 const { calculateNetProfit } = require('../utils/profitCalculator');
+const ledgerService = require('../utils/ledgerService');
+const { PRODUCT_CODES } = require('../constants/productCodes');
 
 function parseYmd(dateStr) {
   if (!dateStr) return null;
@@ -203,6 +205,34 @@ function mapExpenseRow(e) {
     priceRs: parseMoney(e.price),
     personResponsible: e.personResponsible,
   };
+}
+
+function round2(v) {
+  return Math.round((parseFloat(v) || 0) * 100) / 100;
+}
+
+function resolveReportRange(query) {
+  const { startDate, endDate } = query || {};
+  if (startDate && endDate) {
+    const s = parseYmd(startDate) || startDate;
+    const e = parseYmd(endDate) || endDate;
+    const label = s === e ? s : `${s} — ${e}`;
+    return { startDate: s, endDate: e, label };
+  }
+  const range = periodToRange(query);
+  return { startDate: range.startDate, endDate: range.endDate, label: range.label };
+}
+
+function parseSalePrices(query) {
+  const raw = query?.salePrices;
+  if (!raw) return {};
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed;
+  } catch (_) {
+    return {};
+  }
 }
 
 function groupExpensesByCategory(expenses) {
@@ -455,6 +485,78 @@ exports.getBusinessPipelineReport = async (req, res) => {
     });
   } catch (error) {
     console.error('Business pipeline report error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/** Profit calculation on production basis — FP Summary ledger + manual sale prices */
+exports.getProfitCalculationReport = async (req, res) => {
+  try {
+    const range = resolveReportRange(req.query);
+    const salePrices = parseSalePrices(req.query);
+
+    const fpData = await ledgerService.getFpSummary({
+      startDate: range.startDate,
+      endDate: range.endDate,
+    });
+
+    const allExpenses = await Expense.find().lean();
+    const expenses = allExpenses
+      .filter((e) => isInYmdRange(e.date, range.startDate, range.endDate))
+      .map(mapExpenseRow);
+    const totalExpensesRs = round2(expenses.reduce((s, e) => s + e.priceRs, 0));
+
+    const rows = PRODUCT_CODES.map((p) => {
+      const fpRow = fpData.rows.find((r) => String(r.code) === p.code) || {};
+      const productionKg = round2(fpRow.production || 0);
+      const avgCostPerKg = round2(fpRow.avgRate || 0);
+      const saleRaw = salePrices[p.code];
+      const salePricePerKg =
+        saleRaw != null && saleRaw !== '' ? round2(parseMoney(saleRaw)) : null;
+      const grossProfitPerKg =
+        salePricePerKg != null ? round2(salePricePerKg - avgCostPerKg) : null;
+      const totalGrossProfit =
+        grossProfitPerKg != null ? round2(productionKg * grossProfitPerKg) : null;
+
+      return {
+        code: p.code,
+        itemName: p.materialName,
+        productionKg,
+        avgCostPerKg,
+        salePricePerKg,
+        grossProfitPerKg,
+        totalGrossProfit,
+      };
+    });
+
+    const totalGrossProfitRs = round2(
+      rows.reduce((s, r) => s + (r.totalGrossProfit || 0), 0)
+    );
+    const netProfitRs = round2(totalGrossProfitRs - totalExpensesRs);
+
+    res.json({
+      success: true,
+      data: {
+        label: range.label,
+        startDate: range.startDate,
+        endDate: range.endDate,
+        rows,
+        summary: {
+          totalGrossProfitRs,
+          expensesRs: totalExpensesRs,
+          netProfitRs,
+          expenseCount: expenses.length,
+        },
+        expenses,
+        formulas: {
+          grossProfitPerKg: 'Sale price per kg − Avg cost per kg',
+          totalGrossProfit: 'Production in Kg × Gross profit per kg',
+          netProfit: 'Total Gross Profit − All expenses',
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Profit calculation report error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
