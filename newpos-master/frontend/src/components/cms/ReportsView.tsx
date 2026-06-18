@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { exportAsCsv, exportAsExcelTable, exportAsPdf } from '@/lib/exportUtils';
 import { FileSpreadsheet, Loader2, RefreshCw, TrendingUp, Package, Factory, ShoppingCart, Receipt } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import ProfitCalculationSection from './ProfitCalculationSection';
 
 type Period = 'daily' | 'monthly' | 'yearly' | 'custom';
 
@@ -118,6 +119,8 @@ export default function ReportsView() {
   const [report, setReport] = useState<any>(null);
   const [profitLoss, setProfitLoss] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [profitCalcReloadToken, setProfitCalcReloadToken] = useState(0);
+  const [profitCalcRangeQuery, setProfitCalcRangeQuery] = useState('');
 
   const [customers, setCustomers] = useState<any[]>([]);
   const [customerId, setCustomerId] = useState('');
@@ -160,12 +163,15 @@ export default function ReportsView() {
     setLoading(true);
     try {
       const q = buildQuery();
+      const profitQ = profitRangeQuery();
       const [r, pl] = await Promise.all([
         api.get(`/api/reports/business-pipeline?${q}`),
-        api.get(`/api/reports/profit-loss?${profitRangeQuery()}`),
+        api.get(`/api/reports/profit-loss?${profitQ}`),
       ]);
       setReport(r.data.data);
       setProfitLoss(pl.data.data);
+      setProfitCalcRangeQuery(profitQ);
+      setProfitCalcReloadToken((t) => t + 1);
     } catch (e: any) {
       setReport(null);
       toast({
@@ -477,6 +483,11 @@ export default function ReportsView() {
           </p>
         )}
       </section>
+
+      <ProfitCalculationSection
+        rangeQuery={profitCalcRangeQuery}
+        reloadToken={profitCalcReloadToken}
+      />
 
       {loading && !report && (
         <div className="flex items-center gap-2 text-muted-foreground">
