@@ -270,7 +270,7 @@ export default function VendorsView() {
     try {
       const res = await api.delete(`/api/vendors/${vendor._id}`);
       if (res.data.success) {
-        toast.success("Vendor deleted");
+        toast.success(res.data.message || "Vendor deleted");
         fetchVendors();
       }
     } catch (error: unknown) {

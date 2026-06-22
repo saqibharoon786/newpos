@@ -2,12 +2,14 @@ const express = require('express');
 const vendorController = require('../controllers/vendor.controller');
 const router = express.Router();
 
+const { requireOwner, blockAccountantDelete } = require('../middleware/cmsAuth');
+
 router.get('/', vendorController.getVendors);
 router.get('/ledger-balances', vendorController.getVendorLedgerBalances);
 router.post('/', vendorController.createVendor);
 router.get('/:id/ledger', vendorController.getVendorLedger);
 router.get('/:id', vendorController.getVendorById);
 router.put('/:id', vendorController.updateVendor);
-router.delete('/:id', vendorController.deleteVendor);
+router.delete('/:id', blockAccountantDelete, requireOwner, vendorController.deleteVendor);
 
 module.exports = router;

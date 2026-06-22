@@ -643,7 +643,8 @@ async function getVendorLedger(vendorId, query) {
     const ymd = parseYmd(p.purchaseDate);
     const bill = num(p.price);
     const payment = computePurchasePayment(p);
-    const paidOnBill = round2(payment.totalPaid);
+    // Cash paid only — vendor advance is already debited when given (vendor.ledger advance entry)
+    const cashPaidOnBill = round2(payment.amountPaid);
     const baseTime = p.createdAt ? new Date(p.createdAt).getTime() : new Date(p.purchaseDate).getTime();
 
     entries.push({
@@ -656,12 +657,12 @@ async function getVendorLedger(vendorId, query) {
       sortKey: `${ymd}S${p._id}`,
     });
 
-    if (paidOnBill > 0) {
+    if (cashPaidOnBill > 0) {
       entries.push({
         date: ymd,
         invoiceNo: p.invoiceNo || p.receiptNo || '—',
         description: `Payment to vendor — ${p.materialName || ''}`,
-        debit: paidOnBill,
+        debit: cashPaidOnBill,
         credit: 0,
         timestamp: baseTime + 1,
         sortKey: `${ymd}P${p._id}`,

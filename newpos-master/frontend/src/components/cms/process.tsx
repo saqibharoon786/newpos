@@ -2557,10 +2557,13 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
     if (!window.confirm(`Delete production ${prod.batchNo}? This cannot be undone.`)) return;
     try {
       await api.delete(`${PROCESSING_API_URL}/production/${prod._id}`);
-      toast({ title: "Success", description: "Production record deleted." });
+      toast({
+        title: "Success",
+        description: res.data?.message || "Production record deleted.",
+      });
       onRefresh();
     } catch (err: any) {
-      toast({ title: "Error", description: err.response?.data?.message || "Failed to delete", variant: "destructive" });
+      toast({ title: "Error", description: err.response?.data?.message || err.response?.data?.error || "Failed to delete", variant: "destructive" });
     }
   };
   

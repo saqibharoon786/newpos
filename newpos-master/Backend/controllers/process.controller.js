@@ -11,6 +11,8 @@ const {
   getAvailableKgForLine,
   resolveMaterialLineIndex,
 } = require("../utils/popMaterialConsumption");
+const { cascadeDeleteProduction } = require("../utils/productionCascadeDelete");
+const { logActivity } = require("../utils/activityLogger");
 const {
   getBagSizeForCode,
   getMaxBagsFromAvailableKg,
@@ -857,41 +859,43 @@ const updateProduction = async (req, res) => {
   }
 };
 
-// Delete production record
+// Delete production record (cascade linked POS sales + restore POP weight)
 const deleteProduction = async (req, res) => {
   try {
     const { id } = req.params;
+    const result = await cascadeDeleteProduction(id);
 
-    // Find the record first to get the weightUsedFromPOP and purchaseId
-    const production = await ProductionData.findById(id);
-
-    if (!production) {
-      return res.status(404).json({
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
         success: false,
-        message: "Production record not found",
+        message: result.message,
       });
     }
 
-    // Restore consumed weight to Purchase record if applicable
-    if (production.weightUsedFromPOP > 0 && production.purchaseId && production.productCode) {
-      await restorePopWeight(production.purchaseId, {
-        productCode: production.productCode,
-        weight: production.weightUsedFromPOP,
-        materialLineIndex: production.materialLineIndex,
+    try {
+      await logActivity({
+        userId: req.user?._id,
+        userName: req.user?.username || req.user?.email || 'system',
+        action: 'Delete',
+        module: 'Production',
+        recordId: result.summary.productionId,
+        beforeValues: result.production,
+        afterValues: { cascade: result.summary },
+        req,
       });
+    } catch (logErr) {
+      /* backup succeeds even if activity log fails */
     }
-
-    await ProductionData.findByIdAndDelete(id);
 
     res.status(200).json({
       success: true,
-      message: "Production record deleted successfully",
+      message: result.message,
+      summary: result.summary,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Server Error",
-      error: error.message,
+      message: error.message || 'Failed to delete production',
     });
   }
 };
