@@ -2903,7 +2903,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
           }
         }
 
-        priceManualRef.current = true;
+        priceManualRef.current = false;
 
         setFormData({
           materialName: editData.materialName || "",
@@ -3264,6 +3264,9 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   };
 
   const updateMaterialRow = (index: number, field: keyof PurchaseMaterialRow, value: string) => {
+    if (field === "weight" || field === "pricePerKg" || field === "name" || field === "productCode") {
+      priceManualRef.current = false;
+    }
     setMaterialRows((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], [field]: value };
@@ -3285,10 +3288,12 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   };
 
   const addMaterialRow = () => {
+    priceManualRef.current = false;
     setMaterialRows(prev => [...prev, { name: "", weight: "", pricePerKg: "", productCode: "" }]);
   };
 
   const removeMaterialRow = (index: number) => {
+    priceManualRef.current = false;
     setMaterialRows(prev => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
   };
 
