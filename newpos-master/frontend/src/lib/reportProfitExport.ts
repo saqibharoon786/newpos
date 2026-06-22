@@ -14,6 +14,17 @@ type ReportExpenseCategory = {
   count?: number;
 };
 
+type ReportExpenseItem = {
+  _id?: string;
+  date?: string;
+  category?: string;
+  subject?: string;
+  purpose?: string;
+  usage?: string;
+  priceRs?: number;
+  personResponsible?: string;
+};
+
 type BusinessReportExport = {
   label?: string;
   startDate?: string;
@@ -25,8 +36,44 @@ type BusinessReportExport = {
     sellingExpenses?: { totalRs?: number };
     netProfitRs?: number;
   };
+  expenses?: ReportExpenseItem[];
   expenseCategories?: ReportExpenseCategory[];
 };
+
+function formatExpenseDetailLabel(e: ReportExpenseItem): string {
+  const title = (e.subject || e.purpose || 'Expense').trim();
+  const datePart = e.date ? `${e.date} — ` : '';
+  const categoryPart =
+    e.category && e.category !== 'General' ? ` (${e.category})` : '';
+  const purposePart =
+    e.purpose && e.subject && e.purpose !== e.subject ? ` · ${e.purpose}` : '';
+  return `${datePart}${title}${categoryPart}${purposePart}`;
+}
+
+function buildDetailExpenseLines(
+  expenses: ReportExpenseItem[],
+  delivery: number
+): PlExportLine[] {
+  const sorted = [...expenses].sort((a, b) =>
+    String(a.date || '').localeCompare(String(b.date || ''))
+  );
+
+  const lines: PlExportLine[] = sorted.map((e) => ({
+    label: formatExpenseDetailLabel(e),
+    amount: e.priceRs ?? 0,
+    indent: true,
+  }));
+
+  if (delivery > 0) {
+    lines.push({
+      label: 'Delivery Charges-Sales',
+      amount: delivery,
+      indent: true,
+    });
+  }
+
+  return lines;
+}
 
 function fmtAmount(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return '';
@@ -51,32 +98,22 @@ export function buildProfitLossExport(report: BusinessReportExport) {
   const allExpenses = kharcha + delivery;
   const netProfit = s.netProfitRs ?? grossProfit - allExpenses;
 
+  const detailExpenseLines = buildDetailExpenseLines(report.expenses ?? [], delivery);
+
   const summaryLines: PlExportLine[] = [
     { label: 'Revenue/Sales', amount: revenue },
     { label: 'Less Cost of Sale', amount: costOfSale },
     { label: 'Gross Profit', amount: grossProfit, bold: true },
-    { label: 'Less All Expenses', amount: allExpenses },
+    { label: 'Total Expenses', amount: allExpenses, bold: true },
     { label: 'Net Profit', amount: netProfit, bold: true },
   ];
-
-  const expenseLines: PlExportLine[] = (report.expenseCategories ?? []).map((c) => ({
-    label: c.category,
-    amount: c.totalRs,
-    indent: true,
-  }));
-
-  expenseLines.push({
-    label: 'Delivery Charges-Sales',
-    amount: delivery,
-    indent: true,
-  });
 
   const detailLines: PlExportLine[] = [
     { label: 'Revenue/Sales', amount: revenue },
     { label: 'Less Cost of Sale', amount: costOfSale },
     { label: 'Gross Profit', amount: grossProfit, bold: true },
-    { label: 'Less Expenses', amount: null, isHeader: true },
-    ...expenseLines,
+    { label: 'Less Expenses (Kharcha + Delivery)', amount: null, isHeader: true },
+    ...detailExpenseLines,
     { label: 'Net Profit', amount: netProfit, bold: true },
   ];
 
