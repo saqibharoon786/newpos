@@ -2628,6 +2628,8 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   const purchaseTimeRef = useRef<HTMLDivElement>(null);
   const deliveryCalendarRef = useRef<HTMLDivElement>(null);
   const deliveryTimeRef = useRef<HTMLDivElement>(null);
+  /** When true, Total Price was typed manually — do not overwrite from material rows */
+  const priceManualRef = useRef(false);
 
   const [formData, setFormData] = useState({
     materialName: "",
@@ -2756,7 +2758,9 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
       ...prev,
       materialName: names,
       weight: totalWeight > 0 ? String(totalWeight) : "",
-      price: totalPrice > 0 ? String(totalPrice) : "",
+      ...(priceManualRef.current
+        ? {}
+        : { price: totalPrice > 0 ? String(totalPrice) : "" }),
     }));
   }, [materialRows]);
 
@@ -2898,6 +2902,8 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
             deliveryTimeStr = `${match[1].padStart(2, '0')}:${match[2]} ${(match[3] || 'AM').toUpperCase()}`;
           }
         }
+
+        priceManualRef.current = true;
 
         setFormData({
           materialName: editData.materialName || "",
@@ -3191,6 +3197,9 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    if (name === "price") {
+      priceManualRef.current = true;
+    }
     setFormData(prev => ({ ...prev, [name]: value }));
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: "" }));
@@ -3206,6 +3215,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   };
 
   const applyVendorToForm = (vendor: VendorOption) => {
+    priceManualRef.current = false;
     setFormData((prev) => ({ ...prev, vendor: vendor.name }));
     if (errors.vendor) {
       setErrors((prev) => ({ ...prev, vendor: "" }));
@@ -3231,6 +3241,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   const handleVendorSelect = async (vendorId: string) => {
     setSelectedVendorId(vendorId);
     if (!vendorId) {
+      priceManualRef.current = false;
       setFormData((prev) => ({ ...prev, vendor: "", materialName: "", weight: "", price: "" }));
       setMaterialRows([
         { name: "", weight: "", pricePerKg: "", productCode: "" },
@@ -3583,6 +3594,8 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     const now = new Date();
     const todayStr = getTodayDate();
     const currentTimeStr = getCurrentTime();
+
+    priceManualRef.current = false;
 
     setFormData({
       materialName: "",

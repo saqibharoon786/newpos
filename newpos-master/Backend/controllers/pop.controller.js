@@ -503,7 +503,7 @@ const updatePurchase = async (req, res) => {
     await logActivity({
       userId: req.user?._id || req.body.createdBy,
       userName: req.user?.username || req.body.createdBy || 'system',
-      action: 'Update',
+      action: 'Edit',
       module: 'POP',
       recordId: purchase._id,
       beforeValues: existing.toObject(),

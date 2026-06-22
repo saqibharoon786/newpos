@@ -1,6 +1,8 @@
 const Vendor = require('../models/vendor.model');
 const { getMaterialNameForCode } = require('../constants/productCodes');
 const ledgerService = require('../utils/ledgerService');
+const { logActivity } = require('../utils/activityLogger');
+const { cascadeDeleteVendor } = require('../utils/productionCascadeDelete');
 
 const LEDGER_ALL_TIME = { startDate: '1970-01-01', endDate: '2099-12-31' };
 
@@ -123,13 +125,36 @@ exports.updateVendor = async (req, res) => {
 
 exports.deleteVendor = async (req, res) => {
   try {
-    const vendor = await Vendor.findByIdAndDelete(req.params.id);
-    if (!vendor) {
-      return res.status(404).json({ success: false, message: 'Vendor not found' });
+    const result = await cascadeDeleteVendor(req.params.id);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.message,
+      });
     }
-    res.json({ success: true, message: 'Vendor deleted' });
+
+    try {
+      await logActivity({
+        userId: req.user?._id,
+        userName: req.user?.username || req.user?.email || 'system',
+        action: 'Delete',
+        module: 'Vendor',
+        recordId: result.summary.vendorId,
+        beforeValues: result.vendor,
+        afterValues: { cascade: result.summary },
+        req,
+      });
+    } catch (_) {
+      /* ignore log errors */
+    }
+
+    res.json({
+      success: true,
+      message: result.message,
+      summary: result.summary,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: error.message || 'Failed to delete vendor' });
   }
 };
 

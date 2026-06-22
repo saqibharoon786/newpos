@@ -13,6 +13,7 @@ const {
   deleteProduction,
   exportProductionData,
 } = require("../controllers/process.controller.js");
+const { requireOwner, blockAccountantDelete } = require("../middleware/cmsAuth");
 
 const router = express.Router();
 
@@ -32,7 +33,7 @@ router.get("/production", getProductionData);
 router.get("/production/for-pos", getProductionForPOS);
 router.get("/production/:id", getProductionById);
 router.put("/production/:id", updateProduction);
-router.delete("/production/:id", deleteProduction);
+router.delete("/production/:id", blockAccountantDelete, requireOwner, deleteProduction);
 router.get("/production/export", exportProductionData);
 
 // Legacy /batches routes expected by old frontend process.tsx

@@ -254,4 +254,7 @@ module.exports = {
   cascadeDeletePurchase,
   rebuildVendorLedger,
   removeVendorLedgerForPurchase,
+  deleteSaleRecord,
+  reverseSaleFinance,
+  restoreSaleProductionStock,
 };
