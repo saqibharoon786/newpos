@@ -500,6 +500,8 @@ exports.getProfitCalculationReport = async (req, res) => {
         endDate: range.endDate,
         rows: result.rows,
         summary: {
+          totalProductionKg: result.totalProductionKg,
+          totalProductionCostRs: result.totalProductionCostRs,
           totalGrossProfitRs: result.totalGrossProfitRs,
           expensesRs: result.totalExpensesRs,
           netProfitRs: result.netProfitRs,

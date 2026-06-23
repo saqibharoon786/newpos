@@ -9,6 +9,79 @@ const Asset = require('../models/assets.model');
 const { ProductionData } = require('../models/process.model');
 const { calculateProductionBasisProfit, parseSalePrices } = require('../utils/productionBasisProfit');
 
+function formatRs(value) {
+  return `Rs. ${Number(value || 0).toLocaleString()}`;
+}
+
+function buildProductionBasisPayload(productionProfit) {
+  return {
+    summary: {
+      totalProductionKg: productionProfit.totalProductionKg,
+      totalProductionCostRs: productionProfit.totalProductionCostRs,
+      totalGrossProfitRs: productionProfit.totalGrossProfitRs,
+      totalExpensesRs: productionProfit.totalExpensesRs,
+      netProfitRs: productionProfit.netProfitRs,
+      expenseCount: productionProfit.expenseCount,
+    },
+    rows: productionProfit.rows,
+    formulas: {
+      productionCost: 'Production Kg × Avg cost per Kg',
+      grossProfitPerKg: 'Sale price per kg − Avg cost per kg',
+      totalGrossProfit: 'Production in Kg × Gross profit per kg',
+      netProfit: 'Total Gross Profit − All expenses',
+    },
+  };
+}
+
+function buildProductionBasisStatCards(productionProfit) {
+  const kg = productionProfit.totalProductionKg || 0;
+  const productionCost = productionProfit.totalProductionCostRs || 0;
+  const gross = productionProfit.totalGrossProfitRs || 0;
+  const expenses = productionProfit.totalExpensesRs || 0;
+  const net = productionProfit.netProfitRs || 0;
+
+  return {
+    totalProductionKg: {
+      title: 'Total Production',
+      value: kg,
+      formatted: `${kg.toLocaleString()} kg`,
+      icon: 'factory',
+      color: 'blue',
+    },
+    totalProductionCost: {
+      title: 'Production Cost',
+      value: productionCost,
+      formatted: formatRs(productionCost),
+      icon: 'package',
+      color: 'orange',
+      calculation: 'Production Kg × Avg cost per Kg (FP Summary)',
+    },
+    grossProfit: {
+      title: 'Total Gross Profit',
+      value: gross,
+      formatted: formatRs(gross),
+      icon: 'trending-up',
+      color: 'green',
+      calculation: 'Production Kg × (Sale price − Avg cost)',
+    },
+    expensesAmount: {
+      title: 'Expenses (Roznamcha)',
+      value: expenses,
+      formatted: formatRs(expenses),
+      icon: 'file-text',
+      color: 'red',
+    },
+    totalProfit: {
+      title: 'Net Profit',
+      value: net,
+      formatted: formatRs(net),
+      icon: net >= 0 ? 'trending-up' : 'trending-down',
+      color: net >= 0 ? 'green' : 'red',
+      calculation: 'Total Gross Profit − Expenses (Production Basis)',
+    },
+  };
+}
+
 class DashboardController {
   // Get date range for period (daily, weekly, monthly, yearly). Optional year, month for custom month.
   _getPeriodRange(period, opts = {}) {
@@ -151,15 +224,19 @@ class DashboardController {
         endDate: endDate || undefined,
         salePrices,
       });
+      const productionBasisStats = buildProductionBasisStatCards(productionProfit);
       const grossProfit = productionProfit.totalGrossProfitRs;
       const netProfit = productionProfit.netProfitRs;
+      const productionBasisExpenses = productionProfit.totalExpensesRs;
 
       console.log('\n=== FINAL CALCULATIONS ===');
       console.log('Total Sales Revenue:', salesRevenue);
       console.log('Total Purchase Cost:', purchaseCost);
       console.log('Production Cost:', productionCost);
       console.log('Waste Cost:', wasteCost);
-      console.log('Total Expenses:', expensesAmount);
+      console.log('Total Production (Kg):', productionProfit.totalProductionKg);
+      console.log('Production Cost (FP Basis):', productionProfit.totalProductionCostRs);
+      console.log('Total Expenses (Production Basis):', productionBasisExpenses);
       console.log('Gross Profit (Production Basis):', grossProfit);
       console.log('Net Profit (Production Basis):', netProfit);
       console.log('Total Assets Value:', totalAssetValue);
@@ -236,29 +313,11 @@ class DashboardController {
           icon: "trending-down",
           color: "red"
         },
-        expensesAmount: {
-          title: "Expenses",
-          value: expensesAmount,
-          formatted: `Rs. ${expensesAmount.toLocaleString()}`,
-          icon: "file-text",
-          color: "red"
-        },
-        grossProfit: {
-          title: "Gross Profit",
-          value: grossProfit,
-          formatted: `Rs. ${grossProfit.toLocaleString()}`,
-          icon: "trending-up",
-          color: "green",
-          calculation: "Production Kg × (Sale price − Avg cost)"
-        },
-        totalProfit: {
-          title: "Net Profit",
-          value: netProfit,
-          formatted: `Rs. ${netProfit.toLocaleString()}`,
-          icon: netProfit >= 0 ? "trending-up" : "trending-down",
-          color: netProfit >= 0 ? "green" : "red",
-          calculation: "Total Gross Profit − Expenses (Production Basis)"
-        },
+        expensesAmount: productionBasisStats.expensesAmount,
+        grossProfit: productionBasisStats.grossProfit,
+        totalProfit: productionBasisStats.totalProfit,
+        totalProductionKg: productionBasisStats.totalProductionKg,
+        totalProductionCost: productionBasisStats.totalProductionCost,
         assetsValue: {
           title: "Assets Value",
           value: totalAssetValue,
@@ -287,9 +346,10 @@ class DashboardController {
         dateRange: startDate && endDate ? { startDate, endDate } : null,
         calculation: {
           formula: "Net Profit = Total Gross Profit (Production Basis) − Expenses",
-          example: `${grossProfit} − ${expensesAmount} = ${netProfit}`,
+          example: `${grossProfit} − ${productionBasisExpenses} = ${netProfit}`,
           basis: "production",
         },
+        productionBasis: buildProductionBasisPayload(productionProfit),
         message: 'Dashboard stats retrieved successfully'
       });
       
@@ -366,8 +426,10 @@ class DashboardController {
         endDate: endDate || undefined,
         salePrices,
       });
+      const productionBasisStats = buildProductionBasisStatCards(productionProfit);
       const grossProfit = productionProfit.totalGrossProfitRs;
       const netProfit = productionProfit.netProfitRs;
+      const productionBasisExpenses = productionProfit.totalExpensesRs;
 
       const dashboardStats = {
         totalProducts: {
@@ -419,27 +481,11 @@ class DashboardController {
           icon: "credit-card",
           color: "blue"
         },
-        expensesAmount: {
-          title: "Expenses",
-          value: expensesAmount,
-          formatted: `Rs. ${expensesAmount.toLocaleString()}`,
-          icon: "file-text",
-          color: "red"
-        },
-        grossProfit: {
-          title: "Gross Profit",
-          value: grossProfit,
-          formatted: `Rs. ${grossProfit.toLocaleString()}`,
-          icon: "trending-up",
-          color: "green"
-        },
-        totalProfit: {
-          title: "Net Profit",
-          value: netProfit,
-          formatted: `Rs. ${netProfit.toLocaleString()}`,
-          icon: netProfit >= 0 ? "trending-up" : "trending-down",
-          color: netProfit >= 0 ? "green" : "red"
-        },
+        expensesAmount: productionBasisStats.expensesAmount,
+        grossProfit: productionBasisStats.grossProfit,
+        totalProfit: productionBasisStats.totalProfit,
+        totalProductionKg: productionBasisStats.totalProductionKg,
+        totalProductionCost: productionBasisStats.totalProductionCost,
         assetsValue: {
           title: "Assets Value",
           value: totalAssetValue,
@@ -454,9 +500,10 @@ class DashboardController {
         data: dashboardStats,
         calculation: {
           formula: "Net Profit = Total Gross Profit (Production Basis) − Expenses",
-          example: `${grossProfit} − ${expensesAmount} = ${netProfit}`,
+          example: `${grossProfit} − ${productionBasisExpenses} = ${netProfit}`,
           basis: "production",
         },
+        productionBasis: buildProductionBasisPayload(productionProfit),
         message: 'Dashboard stats retrieved successfully (fallback method)'
       });
       
