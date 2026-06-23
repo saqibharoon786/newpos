@@ -59,6 +59,76 @@ function normCodeStrict(code?: string): string {
   return getProductByCode(c) ? c : "";
 }
 
+type PopAvailableLine = {
+  lineIndex: number;
+  productCode: string;
+  materialName: string;
+  availableKg: number;
+  pricePerKg?: number;
+};
+
+function buildPopAvailableLines(
+  pop: {
+    materials?: Array<{
+      name?: string;
+      weight?: number | string;
+      pricePerKg?: number | string;
+      totalAmount?: number | string;
+      productCode?: string;
+      productionConsumedWeight?: number | string;
+    }>;
+    weight?: number | string;
+    materialName?: string;
+    productionConsumedWeight?: number | string;
+    codeConsumption?: Record<string, number>;
+  },
+  fallbackName?: string
+): PopAvailableLine[] {
+  const mats = pop.materials || [];
+  if (mats.length > 0) {
+    return mats
+      .map((m, idx) => {
+        const w = parseFloat(String(m.weight)) || 0;
+        const c = parseFloat(String(m.productionConsumedWeight)) || 0;
+        const availableKg = Math.max(0, Math.round((w - c) * 10) / 10);
+        const code = normCodeStrict(m.productCode);
+        if (!code || availableKg <= 0) return null;
+        const pricePerKg = parseFloat(String(m.pricePerKg)) || 0;
+        const totalAmount = parseFloat(String(m.totalAmount)) || 0;
+        return {
+          lineIndex: idx,
+          productCode: code,
+          materialName: String(m.name || "").trim() || fallbackName || "Unknown",
+          availableKg,
+          pricePerKg:
+            pricePerKg > 0
+              ? pricePerKg
+              : w > 0 && totalAmount > 0
+                ? Math.round((totalAmount / w) * 100) / 100
+                : undefined,
+        };
+      })
+      .filter((line): line is PopAvailableLine => line != null);
+  }
+
+  const originalWeight = parseFloat(String(pop.weight)) || 0;
+  const consumed = parseFloat(String(pop.productionConsumedWeight)) || 0;
+  const availableKg = Math.max(0, Math.round((originalWeight - consumed) * 10) / 10);
+  if (availableKg <= 0) return [];
+
+  const cc = pop.codeConsumption || {};
+  const codeFromCc = Object.keys(cc).find((k) => normCodeStrict(k));
+  const code = normCodeStrict(codeFromCc) || PRODUCT_CODES[0]?.code || "100";
+  return [
+    {
+      lineIndex: 0,
+      productCode: code,
+      materialName: String(pop.materialName || fallbackName || "Unknown"),
+      availableKg,
+    },
+  ];
+}
+
 // Relative paths — api client uses Vite proxy + CMS auth headers
 const PROCESSING_API_URL = "/api/processing";
 const PURCHASES_API_URL = "/api/purchases";
@@ -583,6 +653,7 @@ const ProcessingQueue = ({
   
   const filteredMaterials = materials
     .filter(material => {
+      if ((material.availableWeight ?? 0) <= 0) return false;
       if (filterStatus !== 'all' && material.status !== filterStatus) return false;
       if (filterQuality !== 'all' && material.quality !== filterQuality) return false;
       if (filterColor !== 'all' && (material.color || '#FFFFFF') !== filterColor) return false;
@@ -1471,6 +1542,7 @@ const StartProcessFormModal = ({
   const [wasteCost, setWasteCost] = useState("");
   const [laborCostPerKg, setLaborCostPerKg] = useState("");
   const [popPricing, setPopPricing] = useState<{ price: number; weight: number } | null>(null);
+  const [popAvailableLines, setPopAvailableLines] = useState<PopAvailableLine[]>([]);
   const [selectedReceiptId, setSelectedReceiptId] = useState<string | null>(purchaseId ?? null);
   const [selectedLineIndex, setSelectedLineIndex] = useState<number | undefined>(
     initialMaterial?.materialLineIndex
@@ -1479,37 +1551,67 @@ const StartProcessFormModal = ({
   const popWeightManualRef = useRef(false);
 
   const receiptOptions = useMemo(() => {
+    const onlyAvailable = <T extends { availableWeight?: number }>(opts: T[]) =>
+      opts.filter((o) => (o.availableWeight ?? 0) > 0);
+
     const opts = initialMaterial?.materialOptions;
     if (opts && opts.length > 0) {
-      return [...opts].sort(
+      return onlyAvailable([...opts]).sort(
         (a, b) =>
           new Date(a.purchaseDate || 0).getTime() - new Date(b.purchaseDate || 0).getTime()
       );
     }
     if (purchaseId) {
-      return [
-        {
-          purchaseId,
-          receiptNo: initialMaterial?.receiptNo,
-          materialName: initialMaterial?.materialName || "",
-          productCode: initialMaterial?.productCode,
-          materialLineIndex: initialMaterial?.materialLineIndex,
-          availableWeight: initialMaterial?.popAvailableWeight,
-          pricePerKg:
-            initialMaterial?.purchaseWeight && initialMaterial.purchaseWeight > 0
-              ? (initialMaterial.purchasePrice || 0) / initialMaterial.purchaseWeight
-              : undefined,
-          purchaseDate: undefined as string | undefined,
-        },
-      ];
+      const single = {
+        purchaseId,
+        receiptNo: initialMaterial?.receiptNo,
+        materialName: initialMaterial?.materialName || "",
+        productCode: initialMaterial?.productCode,
+        materialLineIndex: initialMaterial?.materialLineIndex,
+        availableWeight: initialMaterial?.popAvailableWeight,
+        pricePerKg:
+          initialMaterial?.purchaseWeight && initialMaterial.purchaseWeight > 0
+            ? (initialMaterial.purchasePrice || 0) / initialMaterial.purchaseWeight
+            : undefined,
+        purchaseDate: undefined as string | undefined,
+      };
+      return onlyAvailable([single]);
     }
     return [];
   }, [initialMaterial, purchaseId]);
 
   const activeReceipt = receiptOptions.find((o) => o.purchaseId === selectedReceiptId) ?? receiptOptions[0];
 
-  const popAvailableWeight = activeReceipt?.availableWeight ?? initialMaterial?.popAvailableWeight ?? 0;
+  const activePopLine = useMemo(() => {
+    if (popAvailableLines.length === 0) return null;
+    const code = normCodeStrict(productCode);
+    const byIndex = popAvailableLines.find(
+      (l) => l.lineIndex === selectedLineIndex && l.productCode === code
+    );
+    if (byIndex) return byIndex;
+    const byCode = popAvailableLines.find((l) => l.productCode === code);
+    if (byCode) return byCode;
+    return popAvailableLines[0];
+  }, [popAvailableLines, selectedLineIndex, productCode]);
+
+  const popAvailableWeight =
+    activePopLine?.availableKg ??
+    activeReceipt?.availableWeight ??
+    initialMaterial?.popAvailableWeight ??
+    0;
   const isFromQueue = !!(selectedReceiptId && popAvailableWeight > 0);
+
+  const productCodeOptions = useMemo(() => {
+    if (popAvailableLines.length > 0) {
+      const codes = new Set(popAvailableLines.map((l) => l.productCode));
+      return PRODUCT_CODES.filter((p) => codes.has(p.code));
+    }
+    if (isFromQueue && initialMaterial?.productCode) {
+      const c = normCodeStrict(initialMaterial.productCode);
+      return c ? PRODUCT_CODES.filter((p) => p.code === c) : PRODUCT_CODES;
+    }
+    return PRODUCT_CODES;
+  }, [popAvailableLines, isFromQueue, initialMaterial?.productCode]);
   const purchasePrice = popPricing?.price ?? initialMaterial?.purchasePrice ?? 0;
   const purchaseWeight = popPricing?.weight ?? initialMaterial?.purchaseWeight ?? 0;
 
@@ -1522,6 +1624,7 @@ const StartProcessFormModal = ({
   useEffect(() => {
     if (!open || !selectedReceiptId) {
       setPopPricing(null);
+      setPopAvailableLines([]);
       return;
     }
     let cancelled = false;
@@ -1530,6 +1633,8 @@ const StartProcessFormModal = ({
       .then((res) => {
         if (cancelled || !res.data?.success) return;
         const pop = res.data.data;
+        const lines = buildPopAvailableLines(pop, initialMaterial?.materialName);
+        setPopAvailableLines(lines);
         const pricing = getPopLinePricingFromPurchase(
           pop,
           productCode,
@@ -1540,11 +1645,28 @@ const StartProcessFormModal = ({
           weight: pricing.purchaseWeight,
         });
       })
-      .catch(() => setPopPricing(null));
+      .catch(() => {
+        setPopPricing(null);
+        setPopAvailableLines([]);
+      });
     return () => {
       cancelled = true;
     };
-  }, [open, selectedReceiptId, productCode, selectedLineIndex]);
+  }, [open, selectedReceiptId, productCode, selectedLineIndex, initialMaterial?.materialName]);
+
+  useEffect(() => {
+    if (!open || popAvailableLines.length === 0) return;
+    const currentCode = normCodeStrict(productCode);
+    const valid =
+      popAvailableLines.find(
+        (l) => l.lineIndex === selectedLineIndex && l.productCode === currentCode
+      ) || popAvailableLines.find((l) => l.productCode === currentCode);
+    if (valid) return;
+    const first = popAvailableLines[0];
+    setProductCode(first.productCode);
+    setSelectedLineIndex(first.lineIndex);
+    setMaterialName(first.materialName);
+  }, [open, popAvailableLines, productCode, selectedLineIndex]);
 
   useEffect(() => {
     if (!open || !isFromQueue) return;
@@ -2028,21 +2150,75 @@ const StartProcessFormModal = ({
                     />
                   </div>
                 </div>
+                {popAvailableLines.length > 1 && (
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1.5">
+                      Available material (POP line)
+                    </label>
+                    <select
+                      value={`${selectedLineIndex ?? 0}|${productCode}`}
+                      onChange={(e) => {
+                        const [idxRaw, code] = e.target.value.split("|");
+                        const line = popAvailableLines.find(
+                          (l) =>
+                            String(l.lineIndex) === idxRaw && l.productCode === code
+                        );
+                        if (!line) return;
+                        setSelectedLineIndex(line.lineIndex);
+                        setProductCode(line.productCode);
+                        setMaterialName(line.materialName);
+                        setTotalBags("");
+                        setWeightUsedFromPOP("");
+                        popWeightManualRef.current = false;
+                      }}
+                      className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      {popAvailableLines.map((line) => (
+                        <option
+                          key={`${line.lineIndex}-${line.productCode}`}
+                          value={`${line.lineIndex}|${line.productCode}`}
+                        >
+                          Code {line.productCode} — {line.materialName} ({line.availableKg} kg)
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Sirf available lines — jo process ho chuki hain yahan nahi aati.
+                    </p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1.5">Product Code *</label>
                   <select
                     value={productCode}
-                    onChange={(e) => setProductCode(e.target.value)}
+                    onChange={(e) => {
+                      const code = e.target.value;
+                      setProductCode(code);
+                      const line = popAvailableLines.find((l) => l.productCode === code);
+                      if (line) {
+                        setSelectedLineIndex(line.lineIndex);
+                        setMaterialName(line.materialName);
+                        setTotalBags("");
+                        setWeightUsedFromPOP("");
+                        popWeightManualRef.current = false;
+                      }
+                    }}
                     disabled={
+                      productCodeOptions.length <= 1 ||
                       !!(initialMaterial?.productCode && initialMaterial.productCode !== '—')
                     }
                     className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-70"
                   >
-                    {PRODUCT_CODES.map((p) => (
+                    {productCodeOptions.map((p) => (
                       <option key={p.code} value={p.code}>{p.label} — {p.bagSize} kg/bag</option>
                     ))}
                   </select>
-                  {initialMaterial?.productCode && initialMaterial.productCode !== '—' && (
+                  {productCodeOptions.length <= 1 && isFromQueue && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Sirf available product code — processed material yahan nahi dikhega.
+                    </p>
+                  )}
+                  {initialMaterial?.productCode && initialMaterial.productCode !== '—' && productCodeOptions.length > 1 && (
                     <p className="text-xs text-muted-foreground mt-1">
                       Sirf Code {initialMaterial.productCode} ka POP use hoga — doosre code se nahi.
                     </p>
@@ -3503,7 +3679,11 @@ export function ProcessingModule() {
 
       const queueResponse = await api.get(`${PROCESSING_API_URL}/queue`);
       if (queueResponse.data.success) {
-        setMaterials(queueResponse.data.data || []);
+        setMaterials(
+          (queueResponse.data.data || []).filter(
+            (m: ProcessingMaterial) => (m.availableWeight ?? 0) > 0
+          )
+        );
       }
       
       // Fetch active batches for dashboard
@@ -3713,7 +3893,11 @@ export function ProcessingModule() {
                   ? (() => {
                       const code = normCodeStrict(materialForStartProcess.productCode);
                       return groupMaterials
-                        .filter((m) => !code || m.productCode === code)
+                        .filter(
+                          (m) =>
+                            (m.availableWeight ?? 0) > 0 &&
+                            (!code || m.productCode === code)
+                        )
                         .map((m) => {
                           const ow = m.originalWeight || 0;
                           const pp = m.purchasePrice || 0;
