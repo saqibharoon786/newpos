@@ -112,10 +112,16 @@ async function calculateProductionBasisProfit({ startDate, endDate, salePrices =
   const totalGrossProfitRs = round2(
     rows.reduce((s, r) => s + (r.totalGrossProfit || 0), 0)
   );
+  const totalProductionKg = round2(rows.reduce((s, r) => s + (r.productionKg || 0), 0));
+  const totalProductionCostRs = round2(
+    rows.reduce((s, r) => s + (r.productionKg || 0) * (r.avgCostPerKg || 0), 0)
+  );
   const netProfitRs = round2(totalGrossProfitRs - totalExpensesRs);
 
   return {
     rows,
+    totalProductionKg,
+    totalProductionCostRs,
     totalGrossProfitRs,
     totalExpensesRs,
     netProfitRs,
