@@ -12,6 +12,7 @@ const { logActivity } = require("../utils/activityLogger");
 const notificationController = require("./notification.controller");
 const { getPurchaseDisplayWeights, mergeMaterialsWithConsumption } = require("../utils/popMaterialConsumption");
 const { cascadeDeletePurchase } = require("../utils/purchaseCascadeDelete");
+const { assertBillNoUnique } = require("../utils/billNumber");
 const Vendor = require("../models/vendor.model");
 
 function round2(n) {
@@ -161,6 +162,15 @@ const addPurchase = async (req, res) => {
 
     const invoiceNo = await generatePurchaseInvoiceNo(new Date(purchaseDate));
     const billNo = String(req.body.billNo || receiptNo || "").trim();
+
+    try {
+      await assertBillNoUnique(billNo);
+    } catch (e) {
+      if (e.code === 'DUPLICATE_BILL_NO') {
+        return res.status(409).json({ success: false, message: e.message });
+      }
+      throw e;
+    }
 
     console.log("Payment calculations:");
     console.log("Total Price:", priceNum);
@@ -473,6 +483,19 @@ const updatePurchase = async (req, res) => {
       }
     }
 
+    const nextBillNo = String(
+      req.body.billNo ?? req.body.receiptNo ?? existing.billNo ?? existing.receiptNo ?? ""
+    ).trim();
+
+    try {
+      await assertBillNoUnique(nextBillNo, { excludePurchaseId: existing._id });
+    } catch (e) {
+      if (e.code === 'DUPLICATE_BILL_NO') {
+        return res.status(409).json({ success: false, message: e.message });
+      }
+      throw e;
+    }
+
     const updatedFields = {
       materialName: req.body.materialName ?? existing.materialName,
       vendor: req.body.vendor ?? existing.vendor,
@@ -488,12 +511,8 @@ const updatePurchase = async (req, res) => {
       driverName: req.body.driverName ?? existing.driverName,
       vehicleColor: req.body.vehicleColor ?? existing.vehicleColor,
       deliveryDate: req.body.deliveryDate ?? existing.deliveryDate,
-      billNo: String(
-        req.body.billNo ?? req.body.receiptNo ?? existing.billNo ?? existing.receiptNo ?? ""
-      ).trim(),
-      receiptNo: String(
-        req.body.billNo ?? req.body.receiptNo ?? existing.billNo ?? existing.receiptNo ?? ""
-      ).trim(),
+      billNo: nextBillNo,
+      receiptNo: nextBillNo,
       paymentMethod: req.body.paymentMethod ?? existing.paymentMethod,
       materials: materialsToSave,
       advancePayment: advancePaymentNum,

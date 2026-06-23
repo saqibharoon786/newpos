@@ -5,6 +5,7 @@ const Customer = require("../models/customer.model");
 const Transaction = require("../models/transaction.model");
 const { ProductionData } = require("../models/process.model.js");
 const { generateSaleInvoiceNo } = require("../utils/invoiceGenerator");
+const { assertBillNoUnique } = require("../utils/billNumber");
 const Expense = require("../models/expense.model");
 const path = require("path");
 const fs = require("fs");
@@ -281,6 +282,16 @@ const addSale = async (req, res) => {
 
     const finalInvoiceNo = await generateSaleInvoiceNo();
     const billNo = String(bodyBillNo || req.body.billNo || "").trim();
+
+    try {
+      await assertBillNoUnique(billNo);
+    } catch (e) {
+      if (e.code === 'DUPLICATE_BILL_NO') {
+        return res.status(409).json({ success: false, message: e.message });
+      }
+      throw e;
+    }
+
     const dup = await Sale.findOne({ invoiceNo: finalInvoiceNo });
     if (dup) {
       return res.status(409).json({
@@ -810,6 +821,14 @@ const updateSale = async (req, res) => {
     delete updateData.invoiceNo;
     if (updateData.billNo !== undefined) {
       updateData.billNo = String(updateData.billNo || "").trim();
+      try {
+        await assertBillNoUnique(updateData.billNo, { excludeSaleId: id });
+      } catch (e) {
+        if (e.code === 'DUPLICATE_BILL_NO') {
+          return res.status(409).json({ success: false, message: e.message });
+        }
+        throw e;
+      }
     }
 
     // Align with add-sale API: frontend sends sellingWeight; Sale model uses weight
