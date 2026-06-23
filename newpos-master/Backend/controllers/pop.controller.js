@@ -10,7 +10,7 @@ const { generatePurchaseInvoiceNo } = require("../utils/invoiceGenerator");
 const vendorController = require("./vendor.controller");
 const { logActivity } = require("../utils/activityLogger");
 const notificationController = require("./notification.controller");
-const { getPurchaseDisplayWeights } = require("../utils/popMaterialConsumption");
+const { getPurchaseDisplayWeights, mergeMaterialsWithConsumption } = require("../utils/popMaterialConsumption");
 const { cascadeDeletePurchase } = require("../utils/purchaseCascadeDelete");
 const Vendor = require("../models/vendor.model");
 
@@ -443,7 +443,25 @@ const updatePurchase = async (req, res) => {
       if (!materialsCheck.ok) {
         return res.status(400).json({ success: false, message: materialsCheck.message });
       }
-      materialsToSave = materialsCheck.materials;
+      materialsToSave = mergeMaterialsWithConsumption(
+        existing.materials,
+        materialsCheck.materials,
+        {
+          productionConsumedWeight: existing.productionConsumedWeight,
+          codeConsumption: existing.codeConsumption,
+        }
+      );
+
+      for (const m of materialsToSave) {
+        const w = parseFloat(m.weight) || 0;
+        const c = parseFloat(m.productionConsumedWeight) || 0;
+        if (c > w + 0.01) {
+          return res.status(400).json({
+            success: false,
+            message: `${m.name} (Code ${m.productCode}): weight ${w} kg se kam nahi ho sakti — ${c} kg pehle process ho chuka hai`,
+          });
+        }
+      }
     }
 
     let vendorDoc = null;

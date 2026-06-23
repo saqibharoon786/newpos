@@ -49,7 +49,7 @@ async function seed() {
   }
   const settings = await CompanySettings.findOne();
   if (!settings) {
-    await CompanySettings.create({ companyName: 'Mara Ha International Plastic' });
+    await CompanySettings.create({ companyName: 'International Plastic' });
     console.log('Company settings created');
   }
   const invHead = await InvestmentAccount.findOne({ subHead: 'Loan/Advance to Owner' });

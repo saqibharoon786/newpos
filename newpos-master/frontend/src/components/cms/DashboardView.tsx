@@ -5,6 +5,7 @@ import { RoznamchaWidget } from "./RoznamchaWidget";
 import { RecentActivity } from "./RecentActivity";
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
+import { appendSalePricesToParams } from "@/lib/profitCalculationStorage";
 import { NotificationsPanel } from "./NotificationsPanel";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
@@ -49,6 +50,7 @@ export function DashboardView() {
           params.set("year", String(selectedYear));
         }
       }
+      appendSalePricesToParams(params);
       const qs = params.toString();
       const response = await api.get(`/api/dashboard/stats${qs ? `?${qs}` : ""}`);
       if (response.data.success) {
@@ -248,7 +250,7 @@ export function DashboardView() {
         <StatsCard
           icon={dashboardStats.totalProfit.isPositive ? TrendingUp : TrendingDown}
           iconColor={dashboardStats.totalProfit.isPositive ? "text-cms-success" : "text-cms-orange"}
-          label="Net Profit (Finance P&L)"
+          label="Net Profit (Production Basis)"
           value={dashboardStats.totalProfit.formatted}
           valueColor={dashboardStats.totalProfit.isPositive ? "text-cms-success" : "text-red-600"}
         />

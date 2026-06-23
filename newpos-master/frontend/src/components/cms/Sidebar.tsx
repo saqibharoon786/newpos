@@ -36,7 +36,7 @@ const ownerMenuItems = [
 ];
 
 export function Sidebar({ activeTab, onTabChange, isOpen = true, onClose }: SidebarProps) {
-  const [companyName, setCompanyName] = useState("Mara Ha International Plastic");
+  const [companyName, setCompanyName] = useState("International Plastic");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
