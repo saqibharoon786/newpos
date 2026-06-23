@@ -137,7 +137,7 @@ export const toYmd = (input?: string | Date | null): string => {
 export const exportAsPdf = (
   title: string,
   htmlBody: string,
-  companyName = 'Mara Ha International Plastic',
+  companyName = 'International Plastic',
   logoUrl?: string | null
 ) => {
   const win = window.open('', '_blank');

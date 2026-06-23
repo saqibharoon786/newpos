@@ -4,8 +4,7 @@ const Expense = require('../models/expense.model');
 const { ProductionData } = require('../models/process.model');
 const Customer = require('../models/customer.model');
 const { calculateNetProfit } = require('../utils/profitCalculator');
-const ledgerService = require('../utils/ledgerService');
-const { PRODUCT_CODES } = require('../constants/productCodes');
+const { calculateProductionBasisProfit, parseSalePrices } = require('../utils/productionBasisProfit');
 
 function parseYmd(dateStr) {
   if (!dateStr) return null;
@@ -223,16 +222,8 @@ function resolveReportRange(query) {
   return { startDate: range.startDate, endDate: range.endDate, label: range.label };
 }
 
-function parseSalePrices(query) {
-  const raw = query?.salePrices;
-  if (!raw) return {};
-  try {
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    if (!parsed || typeof parsed !== 'object') return {};
-    return parsed;
-  } catch (_) {
-    return {};
-  }
+function parseSalePricesFromQuery(query) {
+  return parseSalePrices(query);
 }
 
 function groupExpensesByCategory(expenses) {
@@ -493,46 +484,13 @@ exports.getBusinessPipelineReport = async (req, res) => {
 exports.getProfitCalculationReport = async (req, res) => {
   try {
     const range = resolveReportRange(req.query);
-    const salePrices = parseSalePrices(req.query);
+    const salePrices = parseSalePricesFromQuery(req.query);
 
-    const fpData = await ledgerService.getFpSummary({
+    const result = await calculateProductionBasisProfit({
       startDate: range.startDate,
       endDate: range.endDate,
+      salePrices,
     });
-
-    const allExpenses = await Expense.find().lean();
-    const expenses = allExpenses
-      .filter((e) => isInYmdRange(e.date, range.startDate, range.endDate))
-      .map(mapExpenseRow);
-    const totalExpensesRs = round2(expenses.reduce((s, e) => s + e.priceRs, 0));
-
-    const rows = PRODUCT_CODES.map((p) => {
-      const fpRow = fpData.rows.find((r) => String(r.code) === p.code) || {};
-      const productionKg = round2(fpRow.production || 0);
-      const avgCostPerKg = round2(fpRow.avgRate || 0);
-      const saleRaw = salePrices[p.code];
-      const salePricePerKg =
-        saleRaw != null && saleRaw !== '' ? round2(parseMoney(saleRaw)) : null;
-      const grossProfitPerKg =
-        salePricePerKg != null ? round2(salePricePerKg - avgCostPerKg) : null;
-      const totalGrossProfit =
-        grossProfitPerKg != null ? round2(productionKg * grossProfitPerKg) : null;
-
-      return {
-        code: p.code,
-        itemName: p.materialName,
-        productionKg,
-        avgCostPerKg,
-        salePricePerKg,
-        grossProfitPerKg,
-        totalGrossProfit,
-      };
-    });
-
-    const totalGrossProfitRs = round2(
-      rows.reduce((s, r) => s + (r.totalGrossProfit || 0), 0)
-    );
-    const netProfitRs = round2(totalGrossProfitRs - totalExpensesRs);
 
     res.json({
       success: true,
@@ -540,14 +498,14 @@ exports.getProfitCalculationReport = async (req, res) => {
         label: range.label,
         startDate: range.startDate,
         endDate: range.endDate,
-        rows,
+        rows: result.rows,
         summary: {
-          totalGrossProfitRs,
-          expensesRs: totalExpensesRs,
-          netProfitRs,
-          expenseCount: expenses.length,
+          totalGrossProfitRs: result.totalGrossProfitRs,
+          expensesRs: result.totalExpensesRs,
+          netProfitRs: result.netProfitRs,
+          expenseCount: result.expenseCount,
         },
-        expenses,
+        expenses: result.expenses,
         formulas: {
           grossProfitPerKg: 'Sale price per kg − Avg cost per kg',
           totalGrossProfit: 'Production in Kg × Gross profit per kg',

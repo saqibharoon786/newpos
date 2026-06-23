@@ -281,7 +281,7 @@ if (process.env.NODE_ENV === "development") {
 // Welcome
 app.get("/", (req, res) => {
   res.json({
-    message: "Mara Ha International Plastic - CMS API",
+    message: "International Plastic - CMS API",
     version: "1.0.0",
     note: "Rate limiting disabled",
   });

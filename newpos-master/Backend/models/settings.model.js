@@ -4,7 +4,7 @@ const companySettingsSchema = new mongoose.Schema(
   {
     companyName: {
       type: String,
-      default: 'Mara Ha International Plastic',
+      default: 'International Plastic',
       required: true,
     },
     logo: { type: String, default: null },

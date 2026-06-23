@@ -5,9 +5,12 @@ async function getOrCreateSettings() {
   let settings = await CompanySettings.findOne();
   if (!settings) {
     settings = await CompanySettings.create({
-      companyName: 'Mara Ha International Plastic',
+      companyName: 'International Plastic',
       currencySymbol: 'Rs.',
     });
+  } else if (settings.companyName === 'Mara Ha International Plastic') {
+    settings.companyName = 'International Plastic';
+    await settings.save();
   }
   return settings;
 }

@@ -6,8 +6,11 @@ import { Calculator, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { exportAsCsv, exportAsExcelTable, exportAsPdf } from '@/lib/exportUtils';
 import { toast } from '@/hooks/use-toast';
 import { PRODUCT_CODES } from '@/lib/productCodes';
-
-const SALE_PRICE_STORAGE_KEY = 'profit-calculation-sale-prices';
+import {
+  SALE_PRICE_STORAGE_KEY,
+  loadStoredSalePrices,
+  appendSalePricesToParams,
+} from '@/lib/profitCalculationStorage';
 
 type BaseRow = {
   code: string;
@@ -37,17 +40,6 @@ function fmtRs(n: number | null | undefined) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-function loadStoredSalePrices(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(SALE_PRICE_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return typeof parsed === 'object' && parsed ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
 function round2(v: number) {
   return Math.round(v * 100) / 100;
 }
@@ -66,7 +58,9 @@ export default function ProfitCalculationSection({
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get(`/api/reports/profit-calculation?${rangeQuery}`);
+      const params = new URLSearchParams(rangeQuery);
+      appendSalePricesToParams(params);
+      const r = await api.get(`/api/reports/profit-calculation?${params.toString()}`);
       setData(r.data.data);
     } catch (e: unknown) {
       setData(null);

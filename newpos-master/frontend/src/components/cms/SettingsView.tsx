@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 
 export default function SettingsView() {
   const [form, setForm] = useState({
-    companyName: 'Mara Ha International Plastic',
+    companyName: 'International Plastic',
     currencySymbol: 'Rs.',
     address: '',
     phone: '',

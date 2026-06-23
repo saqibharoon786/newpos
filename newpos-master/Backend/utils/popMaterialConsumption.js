@@ -23,6 +23,80 @@ function getLineConsumedOnMaterial(material) {
   return parseFloat(material?.productionConsumedWeight) || 0;
 }
 
+/**
+ * POP edit par nayi materials[] save karte waqt pehle process ho chuki lines ka
+ * productionConsumedWeight preserve karo — warna saari lines dubara queue mein aa jati hain.
+ */
+function mergeMaterialsWithConsumption(existingMaterials, incomingMaterials, purchaseMeta = {}) {
+  const existing = (existingMaterials || []).map((m) => ({
+    productCode: normCode(m.productCode),
+    name: String(m.name || m.materialName || "").trim(),
+    weight: getLineWeight(m),
+    consumed: getLineConsumedOnMaterial(m),
+  }));
+  const used = new Set();
+  const legacyCc = purchaseMeta.codeConsumption || {};
+  const legacyConsumed = parseFloat(purchaseMeta.productionConsumedWeight) || 0;
+  const hadLegacyLines = existing.length === 0 && legacyConsumed > 0;
+
+  return (incomingMaterials || []).map((incoming, idx) => {
+    const code = normCode(incoming.productCode);
+    const name = String(incoming.name || incoming.materialName || "").trim();
+    const newWeight = parseFloat(incoming.weight) || 0;
+    const pricePerKg = parseFloat(incoming.pricePerKg) || 0;
+    const totalAmount =
+      parseFloat(incoming.totalAmount) || (newWeight > 0 ? newWeight * pricePerKg : 0);
+
+    let matchIdx = -1;
+
+    matchIdx = existing.findIndex(
+      (e, i) =>
+        !used.has(i) &&
+        e.productCode === code &&
+        e.name.toLowerCase() === name.toLowerCase()
+    );
+
+    if (matchIdx < 0) {
+      matchIdx = existing.findIndex(
+        (e, i) =>
+          !used.has(i) &&
+          e.productCode === code &&
+          Math.abs(e.weight - newWeight) < 0.01
+      );
+    }
+
+    if (matchIdx < 0) {
+      const sameCode = existing
+        .map((e, i) => ({ e, i }))
+        .filter(({ e, i }) => !used.has(i) && e.productCode === code);
+      if (sameCode.length === 1) {
+        matchIdx = sameCode[0].i;
+      }
+    }
+
+    if (matchIdx < 0 && idx < existing.length && !used.has(idx) && existing[idx].productCode === code) {
+      matchIdx = idx;
+    }
+
+    let preservedConsumed = 0;
+    if (matchIdx >= 0) {
+      used.add(matchIdx);
+      preservedConsumed = existing[matchIdx].consumed;
+    } else if (hadLegacyLines && code && legacyCc[code] != null) {
+      preservedConsumed = parseFloat(legacyCc[code]) || 0;
+    }
+
+    return {
+      name,
+      weight: newWeight,
+      pricePerKg,
+      totalAmount,
+      productCode: code,
+      productionConsumedWeight: Math.min(Math.max(0, preservedConsumed), newWeight),
+    };
+  });
+}
+
 /** Sirf is material line ka consumed (index + code) — shared codeConsumption map se nahi */
 function getLineAvailableKg(material, productCode) {
   const matWeight = getLineWeight(material);
@@ -344,4 +418,5 @@ module.exports = {
   buildProcessingQueueItems,
   findLineIndexByCodeOnly,
   resolveMaterialLineIndex,
+  mergeMaterialsWithConsumption,
 };

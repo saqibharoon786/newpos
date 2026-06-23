@@ -7,7 +7,7 @@ const Employee = require("../models/employee.model");
 const Expense = require("../models/expense.model");
 const Asset = require('../models/assets.model');
 const { ProductionData } = require('../models/process.model');
-const { calculateNetProfit } = require('../utils/profitCalculator');
+const { calculateProductionBasisProfit, parseSalePrices } = require('../utils/productionBasisProfit');
 
 class DashboardController {
   // Get date range for period (daily, weekly, monthly, yearly). Optional year, month for custom month.
@@ -123,6 +123,13 @@ class DashboardController {
         ])
       ]);
 
+      const salesRevenue = totalSalesRevenue[0]?.total || 0;
+      const purchaseCost = totalPurchaseCost[0]?.total || 0;
+      const expensesAmount = totalExpensesAmount[0]?.total || 0;
+      const productionCost = productionCostAgg[0]?.total || 0;
+      const wasteCost = wasteCostAgg[0]?.total || 0;
+      const totalMaterialCost = purchaseCost + productionCost + wasteCost;
+
       console.log('\n=== DATA COUNTS ===');
       console.log('Total Products:', totalProductsCount);
       console.log('Total Sales:', totalSalesCount);
@@ -137,18 +144,15 @@ class DashboardController {
         totalAssetValue += amount;
       });
 
-      // Profit figures — same formula as Finance P&L (/api/reports/profit-loss)
-      const profitData = await calculateNetProfit(
-        startDate && endDate ? { startDate, endDate } : {}
-      );
-      const salesRevenue = profitData.totalRevenue;
-      const purchaseCost = profitData.rawMaterialCost;
-      const productionCost = profitData.productionCost;
-      const wasteCost = profitData.wasteCost;
-      const expensesAmount = profitData.totalExpenses;
-      const totalMaterialCost = profitData.totalMaterialCost;
-      const grossProfit = profitData.grossProfit;
-      const netProfit = profitData.netProfit;
+      // Profit — same formula as Reports → Profit Calculation on Production Basis
+      const salePrices = parseSalePrices(req.query);
+      const productionProfit = await calculateProductionBasisProfit({
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        salePrices,
+      });
+      const grossProfit = productionProfit.totalGrossProfitRs;
+      const netProfit = productionProfit.netProfitRs;
 
       console.log('\n=== FINAL CALCULATIONS ===');
       console.log('Total Sales Revenue:', salesRevenue);
@@ -156,8 +160,8 @@ class DashboardController {
       console.log('Production Cost:', productionCost);
       console.log('Waste Cost:', wasteCost);
       console.log('Total Expenses:', expensesAmount);
-      console.log('Gross Profit (Sales - Material/Production/Waste):', grossProfit);
-      console.log('Net Profit (Gross - Expenses):', netProfit);
+      console.log('Gross Profit (Production Basis):', grossProfit);
+      console.log('Net Profit (Production Basis):', netProfit);
       console.log('Total Assets Value:', totalAssetValue);
 
       // FIXED RESPONSE - WITH PROPER PROFIT CALCULATION
@@ -245,7 +249,7 @@ class DashboardController {
           formatted: `Rs. ${grossProfit.toLocaleString()}`,
           icon: "trending-up",
           color: "green",
-          calculation: "Sales - Material/Production/Wastage"
+          calculation: "Production Kg × (Sale price − Avg cost)"
         },
         totalProfit: {
           title: "Net Profit",
@@ -253,7 +257,7 @@ class DashboardController {
           formatted: `Rs. ${netProfit.toLocaleString()}`,
           icon: netProfit >= 0 ? "trending-up" : "trending-down",
           color: netProfit >= 0 ? "green" : "red",
-          calculation: "Gross Profit - Expenses"
+          calculation: "Total Gross Profit − Expenses (Production Basis)"
         },
         assetsValue: {
           title: "Assets Value",
@@ -282,8 +286,9 @@ class DashboardController {
         periodLabel: periodLabel,
         dateRange: startDate && endDate ? { startDate, endDate } : null,
         calculation: {
-          formula: "Net Profit = (Sales Revenue - Purchase Cost) - Expenses",
-          example: `(${salesRevenue} - ${purchaseCost}) - ${expensesAmount} = ${netProfit}`
+          formula: "Net Profit = Total Gross Profit (Production Basis) − Expenses",
+          example: `${grossProfit} − ${expensesAmount} = ${netProfit}`,
+          basis: "production",
         },
         message: 'Dashboard stats retrieved successfully'
       });
@@ -350,9 +355,19 @@ class DashboardController {
         }
       });
 
-      // CALCULATE PROFIT PROPERLY
-      const grossProfit = salesRevenue - purchaseCost;
-      const netProfit = grossProfit - expensesAmount;
+      const period = (req.query.period || 'all').toLowerCase();
+      const { startDate, endDate } = this._getPeriodRange(period, {
+        year: req.query.year,
+        month: req.query.month,
+      });
+      const salePrices = parseSalePrices(req.query);
+      const productionProfit = await calculateProductionBasisProfit({
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        salePrices,
+      });
+      const grossProfit = productionProfit.totalGrossProfitRs;
+      const netProfit = productionProfit.netProfitRs;
 
       const dashboardStats = {
         totalProducts: {
@@ -438,8 +453,9 @@ class DashboardController {
         success: true,
         data: dashboardStats,
         calculation: {
-          formula: "Net Profit = (Sales Revenue - Purchase Cost) - Expenses",
-          example: `(${salesRevenue} - ${purchaseCost}) - ${expensesAmount} = ${netProfit}`
+          formula: "Net Profit = Total Gross Profit (Production Basis) − Expenses",
+          example: `${grossProfit} − ${expensesAmount} = ${netProfit}`,
+          basis: "production",
         },
         message: 'Dashboard stats retrieved successfully (fallback method)'
       });

@@ -10,7 +10,7 @@ export interface CompanySettings {
 }
 
 const DEFAULT_SETTINGS: CompanySettings = {
-  companyName: 'Mara Ha International Plastic',
+  companyName: 'International Plastic',
   currencySymbol: 'Rs.',
   logo: null,
 };
