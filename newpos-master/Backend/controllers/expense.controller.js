@@ -1,6 +1,7 @@
 const Expense = require("../models/expense.model");
 const Transaction = require("../models/transaction.model");
 const mongoose = require("mongoose");
+const { reverseExpenseFinanceTransaction } = require("../utils/expenseFinanceDelete");
 
 // Normalize date to YYYY-MM-DD so date range filters (Daily/Weekly/Monthly) work
 function toNormalizedDate(dateStr) {
@@ -292,20 +293,21 @@ exports.createExpense = async (req, res) => {
 
     // Create expense object (date normalized to YYYY-MM-DD so Daily/Weekly/Monthly filters work)
     const priceNum = parseFloat(String(price).replace(/[^\d.]/g, '')) || 0;
-    const method = paymentMethod || 'drawer';
+    const method = paymentMethod === 'cash' ? 'drawer' : (paymentMethod || 'drawer');
 
     let walletNote = null;
+    let financeTransaction = null;
     if (priceNum > 0 && ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(method)) {
       try {
         const balances = await Transaction.getBalances();
         if ((balances[method] || 0) >= priceNum) {
-          await Transaction.create({
+          financeTransaction = await Transaction.create({
             type: 'withdraw',
             method,
             amount: priceNum,
             net: priceNum,
             description: `Expense: ${resolvedSubject}`,
-            reference: `EXP-${Date.now()}`,
+            reference: `EXP-PENDING-${Date.now()}`,
             status: 'completed',
           });
         } else {
@@ -328,9 +330,15 @@ exports.createExpense = async (req, res) => {
       time,
       paymentMethod: method,
       category: category || purpose || "General",
+      transactionId: financeTransaction?._id,
     };
 
     const expense = await Expense.create(expenseData);
+
+    if (financeTransaction) {
+      financeTransaction.reference = `EXP-${expense._id}`;
+      await financeTransaction.save();
+    }
 
     res.status(201).json({
       success: true,
@@ -426,7 +434,7 @@ exports.deleteExpense = async (req, res) => {
       });
     }
 
-    const expense = await Expense.findByIdAndDelete(id);
+    const expense = await Expense.findById(id);
 
     if (!expense) {
       return res.status(404).json({
@@ -435,9 +443,19 @@ exports.deleteExpense = async (req, res) => {
       });
     }
 
+    const financeResult = await reverseExpenseFinanceTransaction(expense);
+    await Expense.findByIdAndDelete(id);
+
+    const balances = await Transaction.getBalances();
+
     res.json({
       success: true,
-      message: "Expense deleted successfully",
+      message: financeResult.reversed
+        ? financeResult.message
+        : "Expense deleted successfully",
+      financeReversed: financeResult.reversed,
+      amountReversed: financeResult.amountReversed,
+      balances,
     });
   } catch (error) {
     console.error("Error deleting expense:", error);

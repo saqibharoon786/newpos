@@ -50,6 +50,12 @@ const expenseSchema = new mongoose.Schema(
       required: [true, "Time is required"],
       trim: true,
     },
+    /** Linked Finance withdraw when paid from drawer / bank / etc. */
+    transactionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Transaction',
+      required: false,
+    },
   },
   {
     timestamps: true,
