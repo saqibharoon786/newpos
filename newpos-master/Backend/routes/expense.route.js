@@ -4,12 +4,12 @@ const expenseController = require("../controllers/expense.controller");
 
 // Validation middleware
 const validateExpense = (req, res, next) => {
-  const { subject, description, price, date, time } = req.body;
+  const { description, price, date, time } = req.body;
 
-  if (!subject || !description || !price || !date || !time) {
+  if (!description || !price || !date || !time) {
     return res.status(400).json({
       success: false,
-      message: "Subject, description, price, date, and time are required",
+      message: "Description, price, date, and time are required",
     });
   }
 

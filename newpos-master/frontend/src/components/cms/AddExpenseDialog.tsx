@@ -31,7 +31,6 @@ export function AddExpenseDialog({
 }: AddExpenseDialogProps) {
   const [categories, setCategories] = useState<{ name: string }[]>([]);
   const [formData, setFormData] = useState({
-    subject: "",
     description: "",
     purpose: "Office",
     price: "",
@@ -77,7 +76,6 @@ export function AddExpenseDialog({
 
       if (editData) {
         setFormData({
-          subject: editData.subject || "",
           description: editData.description || "",
           purpose: editData.purpose || "Car",
           price: editData.price || "",
@@ -127,7 +125,6 @@ export function AddExpenseDialog({
         const todayStr = `${dd}/${mm}/${yyyy}`;
 
         setFormData({
-          subject: "",
           description: "",
           purpose: "Office",
           price: "",
@@ -212,7 +209,6 @@ export function AddExpenseDialog({
   };
 
   const handleSubmit = async () => {
-    if (!formData.subject.trim()) return setError("Subject likhna zaroori hai");
     if (!formData.description.trim()) return setError("Description likhna zaroori hai");
     if (!formData.price.trim()) return setError("Price dalna zaroori hai");
     if (!formData.date.trim()) return setError("Date select karen");
@@ -251,18 +247,6 @@ export function AddExpenseDialog({
           )}
 
           <div className="space-y-4">
-            {/* Subject, Description, Purpose, Price, Person Responsible, Usage */}
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1.5">Subject *</label>
-              <input
-                name="subject"
-                placeholder="e.g Fuel"
-                value={formData.subject}
-                onChange={handleInputChange}
-                className="w-full bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Description *</label>
               <textarea

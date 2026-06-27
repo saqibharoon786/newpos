@@ -4,8 +4,8 @@ const expenseSchema = new mongoose.Schema(
   {
     subject: {
       type: String,
-      required: [true, "Subject is required"],
       trim: true,
+      default: "",
     },
     description: {
       type: String,
