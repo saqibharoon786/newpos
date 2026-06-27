@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Search, Plus, Printer, Pencil, Trash2, Eye, ChevronLeft, ChevronRight, ShoppingCart, Loader2, Save, Upload, Calendar, Clock, X, Package, ChevronDown, CheckCircle, DollarSign, History, Wallet, Smartphone, Building, Download, FileText } from "lucide-react";
 import { PurchaseDetailsView } from "./PurchaseDetailsView";
 import { toast } from "@/hooks/use-toast";
@@ -97,6 +97,20 @@ const financeApi = {
     }
   }
 };
+
+const CALENDAR_POPOVER_WIDTH = 320;
+
+function getCalendarPopoverPosition(anchor: HTMLElement | null) {
+  if (!anchor) return null;
+  const rect = anchor.getBoundingClientRect();
+  let left = rect.left;
+  const top = rect.bottom + 4;
+  if (left + CALENDAR_POPOVER_WIDTH > window.innerWidth - 8) {
+    left = Math.max(8, window.innerWidth - CALENDAR_POPOVER_WIDTH - 8);
+  }
+  if (left < 8) left = 8;
+  return { top, left };
+}
 
 interface PurchaseMaterial {
   name: string;
@@ -1146,6 +1160,8 @@ const PaymentModal = ({
   });
   const [checkingBalance, setCheckingBalance] = useState<boolean>(false);
   const calendarRef = useRef<HTMLDivElement>(null);
+  const paymentDateAnchorRef = useRef<HTMLDivElement>(null);
+  const [calendarPopoverPos, setCalendarPopoverPos] = useState<{ top: number; left: number } | null>(null);
   const years = Array.from({ length: 21 }, (_, i) => new Date().getFullYear() - 10 + i);
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -1215,6 +1231,27 @@ const PaymentModal = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useLayoutEffect(() => {
+    if (calendarOpen) {
+      setCalendarPopoverPos(getCalendarPopoverPosition(paymentDateAnchorRef.current));
+    } else {
+      setCalendarPopoverPos(null);
+    }
+  }, [calendarOpen]);
+
+  useEffect(() => {
+    if (!calendarOpen) return;
+    const reposition = () => {
+      setCalendarPopoverPos(getCalendarPopoverPosition(paymentDateAnchorRef.current));
+    };
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [calendarOpen]);
+
   const fetchBalances = async () => {
     setCheckingBalance(true);
     try {
@@ -1283,15 +1320,13 @@ const PaymentModal = ({
   };
 
   const renderCalendar = () => (
-    calendarOpen && (
+    calendarOpen && calendarPopoverPos && (
       <div 
         ref={calendarRef}
-        className="absolute z-[999] mt-1 w-80 bg-background border border-border rounded-lg shadow-2xl"
-        style={{ 
-          top: '100%',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          marginTop: '4px',
+        className="fixed z-[9999] w-80 bg-background border border-border rounded-lg shadow-2xl"
+        style={{
+          top: calendarPopoverPos.top,
+          left: calendarPopoverPos.left,
         }}
       >
         <div className="p-4 border-b border-border">
@@ -1601,7 +1636,7 @@ const PaymentModal = ({
 
             <div>
               <label className="block text-xs text-muted-foreground mb-1.5">Payment Date *</label>
-              <div className="relative">
+              <div className="relative" ref={paymentDateAnchorRef}>
                 <div 
                   className="relative cursor-pointer"
                   onClick={() => setCalendarOpen(!calendarOpen)}
@@ -2628,6 +2663,9 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   const purchaseTimeRef = useRef<HTMLDivElement>(null);
   const deliveryCalendarRef = useRef<HTMLDivElement>(null);
   const deliveryTimeRef = useRef<HTMLDivElement>(null);
+  const purchaseDateAnchorRef = useRef<HTMLDivElement>(null);
+  const deliveryDateAnchorRef = useRef<HTMLDivElement>(null);
+  const [calendarPopoverPos, setCalendarPopoverPos] = useState<{ top: number; left: number } | null>(null);
   /** When true, Total Price was typed manually — do not overwrite from material rows */
   const priceManualRef = useRef(false);
 
@@ -2797,6 +2835,33 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useLayoutEffect(() => {
+    if (showPurchaseCalendar) {
+      setCalendarPopoverPos(getCalendarPopoverPosition(purchaseDateAnchorRef.current));
+    } else if (showDeliveryCalendar) {
+      setCalendarPopoverPos(getCalendarPopoverPosition(deliveryDateAnchorRef.current));
+    } else {
+      setCalendarPopoverPos(null);
+    }
+  }, [showPurchaseCalendar, showDeliveryCalendar]);
+
+  useEffect(() => {
+    if (!showPurchaseCalendar && !showDeliveryCalendar) return;
+    const reposition = () => {
+      if (showPurchaseCalendar) {
+        setCalendarPopoverPos(getCalendarPopoverPosition(purchaseDateAnchorRef.current));
+      } else if (showDeliveryCalendar) {
+        setCalendarPopoverPos(getCalendarPopoverPosition(deliveryDateAnchorRef.current));
+      }
+    };
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [showPurchaseCalendar, showDeliveryCalendar]);
 
   const getTodayDate = (): string => {
     const today = new Date();
@@ -3689,15 +3754,13 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     const setShowYearDropdown = type === 'purchase' ? setShowPurchaseYearDropdown : setShowDeliveryYearDropdown;
     const handleYearSelect = type === 'purchase' ? handlePurchaseYearSelect : handleDeliveryYearSelect;
 
-    return showCalendar && (
+    return showCalendar && calendarPopoverPos && (
       <div 
         ref={calendarRef}
-        className="absolute z-[999] mt-1 w-80 bg-background border border-border rounded-lg shadow-2xl"
-        style={{ 
-          top: '100%',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          marginTop: '4px',
+        className="fixed z-[9999] w-80 bg-background border border-border rounded-lg shadow-2xl"
+        style={{
+          top: calendarPopoverPos.top,
+          left: calendarPopoverPos.left,
         }}
       >
         <div className="p-4 border-b border-border">
@@ -4176,7 +4239,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Purchase Date & Time *</label>
                 <div className="flex gap-2">
-                  <div className="relative flex-1">
+                  <div className="relative flex-1" ref={purchaseDateAnchorRef}>
                     <div 
                       className="relative cursor-pointer select-none touch-manipulation"
                       onClick={(e) => {
@@ -4427,7 +4490,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Delivery Date & Time</label>
                 <div className="flex gap-2">
-                  <div className="relative flex-1">
+                  <div className="relative flex-1" ref={deliveryDateAnchorRef}>
                     <div 
                       className="relative cursor-pointer select-none touch-manipulation"
                       onClick={(e) => {

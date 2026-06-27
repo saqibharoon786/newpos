@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { toast } from "sonner";
 import api from '@/lib/api';
 import { exportAsCsv, exportAsExcelTable, exportAsPdf, exportAsWordTable } from '@/lib/exportUtils';
+import { ProfitLossReportTables } from '@/components/cms/ProfitLossTables';
 
 const FINANCE_API = '/api/finance';
 const PL_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -362,7 +363,7 @@ export default function FinanceModule() {
 
   const fetchProfitLoss = useCallback(async () => {
     try {
-      const params: Record<string, string> = {};
+      const params: Record<string, string> = { period: 'custom' };
       if (startDate && endDate) {
         params.startDate = startDate;
         params.endDate = endDate;
@@ -370,7 +371,7 @@ export default function FinanceModule() {
       } else {
         setPlPeriodLabel('All time');
       }
-      const r = await api.get('/api/reports/profit-loss', { params });
+      const r = await api.get('/api/reports/business-pipeline', { params });
       if (r.data?.data) setPlReport(r.data.data);
     } catch {
       /* ignore */
@@ -1635,16 +1636,17 @@ export default function FinanceModule() {
 
       {plReport && (
         <div className="px-3 sm:px-4 md:px-6 py-4 border-b border-border bg-muted/30">
-          <p className="text-xs text-muted-foreground mb-2 max-w-screen-2xl mx-auto">
-            Profit &amp; Loss ({plPeriodLabel})
-          </p>
-          <div className="max-w-screen-2xl mx-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
-            <div><span className="text-muted-foreground">Revenue</span><p className="font-semibold">Rs. {plReport.totalRevenue?.toLocaleString()}</p></div>
-            <div><span className="text-muted-foreground">Material Cost</span><p className="font-semibold">Rs. {plReport.totalMaterialCost?.toLocaleString()}</p></div>
-            <div><span className="text-muted-foreground">Gross Profit</span><p className="font-semibold text-green-600">Rs. {plReport.grossProfit?.toLocaleString()}</p></div>
-            <div><span className="text-muted-foreground">Kharcha</span><p className="font-semibold">Rs. {plReport.totalExpenses?.toLocaleString()}</p></div>
-            <div><span className="text-muted-foreground">Selling Expenses (Delivery)</span><p className="font-semibold text-orange-600">Rs. {(plReport.sellingExpenses ?? plReport.deliveryCharges ?? 0)?.toLocaleString()}</p></div>
-            <div><span className="text-muted-foreground">Net Profit</span><p className="font-bold text-primary">Rs. {plReport.netProfit?.toLocaleString()}</p></div>
+          <div className="max-w-screen-2xl mx-auto">
+            <ProfitLossReportTables
+              report={plReport}
+              periodLabel={
+                plReport.endDate
+                  ? plReport.startDate && plReport.startDate !== plReport.endDate
+                    ? `For the period ${plReport.startDate} — ${plReport.endDate}`
+                    : `For the period ending on ${plReport.endDate}`
+                  : plPeriodLabel
+              }
+            />
           </div>
         </div>
       )}

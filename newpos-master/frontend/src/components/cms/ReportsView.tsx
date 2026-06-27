@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { exportBusinessProfitLossReport, buildProfitLossExport } from '@/lib/reportProfitExport';
+import { exportBusinessProfitLossReport } from '@/lib/reportProfitExport';
+import { ProfitLossReportTables } from '@/components/cms/ProfitLossTables';
 import { FileSpreadsheet, Loader2, RefreshCw, TrendingUp, Package, Factory, ShoppingCart, Receipt } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import ProfitCalculationSection from './ProfitCalculationSection';
@@ -284,60 +285,6 @@ export default function ReportsView() {
 
   const s = report?.summary;
 
-  const profitLossExport = report
-    ? buildProfitLossExport({
-        label: report.label,
-        startDate: report.startDate,
-        endDate: report.endDate,
-        summary: report.summary,
-        expenses: report.expenses,
-        expenseCategories: report.expenseCategories,
-      })
-    : null;
-
-  function PlTable({
-    title,
-    lines,
-    note,
-  }: {
-    title: string;
-    lines: { label: string; amount: number | null; indent?: boolean; bold?: boolean; isHeader?: boolean }[];
-    note?: string;
-  }) {
-    return (
-      <section className="rounded-lg border border-border bg-cms-card p-5 space-y-3">
-        <h3 className="text-lg font-semibold text-foreground">{title}</h3>
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-cms-table-header">
-              <tr>
-                <th className="text-left px-3 py-2">Description</th>
-                <th className="text-right px-3 py-2">Amount (Rs)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((line, i) => (
-                <tr key={i} className="border-t border-border">
-                  <td
-                    className={`px-3 py-2 ${line.indent ? 'pl-6 text-muted-foreground' : ''} ${
-                      line.bold ? 'font-semibold text-foreground' : ''
-                    }`}
-                  >
-                    {line.label}
-                  </td>
-                  <td className={`px-3 py-2 text-right ${line.bold ? 'font-semibold' : ''}`}>
-                    {line.amount != null ? line.amount.toLocaleString() : '—'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {note && <p className="text-xs text-muted-foreground">{note}</p>}
-      </section>
-    );
-  }
-
   return (
     <div className="flex-1 min-w-0 p-4 md:p-6 space-y-6 overflow-auto">
       <div className="bg-cms-table-header rounded-lg px-4 py-3 border-l-4 border-primary">
@@ -490,19 +437,17 @@ export default function ReportsView() {
             />
           </div>
 
-          {profitLossExport && (
-            <>
-              <PlTable
-                title="Profit & Loss — Summary (Overall)"
-                lines={profitLossExport.summaryLines}
-                note={profitLossExport.costOfSaleNote}
-              />
-              <PlTable
-                title="Profit & Loss — Detail (Har Kharcha)"
-                lines={profitLossExport.detailLines}
-                note={profitLossExport.expensesNote}
-              />
-            </>
+          {report && (
+            <ProfitLossReportTables
+              report={report}
+              periodLabel={
+                report.endDate
+                  ? report.startDate && report.startDate !== report.endDate
+                    ? `For the period ${report.startDate} — ${report.endDate}`
+                    : `For the period ending on ${report.endDate}`
+                  : report.label
+              }
+            />
           )}
 
           <DataTable
