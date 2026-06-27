@@ -22,6 +22,21 @@ import {
 } from "@/lib/productCodes";
 
 type PaymentType = "cash" | "credit" | "advance";
+type CashReceiveMethod = "cash" | "bank" | "easypaisa" | "jazzcash";
+
+const CASH_RECEIVE_OPTIONS: { value: CashReceiveMethod; label: string }[] = [
+  { value: "cash", label: "Cash Drawer" },
+  { value: "bank", label: "Bank Account" },
+  { value: "easypaisa", label: "Easypaisa" },
+  { value: "jazzcash", label: "JazzCash" },
+];
+
+function parseCashReceiveMethod(method?: string): CashReceiveMethod {
+  const pm = String(method || "cash").toLowerCase();
+  if (pm === "drawer") return "cash";
+  if (pm === "bank" || pm === "easypaisa" || pm === "jazzcash") return pm;
+  return "cash";
+}
 
 interface Purchase {
   _id: string;
@@ -186,6 +201,7 @@ export function AddSaleDialog({
     actualCostPerKg?: number;
   } | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>("cash");
+  const [cashReceiveMethod, setCashReceiveMethod] = useState<CashReceiveMethod>("cash");
   const [weightError, setWeightError] = useState<string>("");
   const [paymentStatusError, setPaymentStatusError] = useState<string>("");
   const [apiError, setApiError] = useState<string>("");
@@ -443,9 +459,13 @@ export function AddSaleDialog({
     });
 
     const pm = ((editData as Sale & { paymentMethod?: string }).paymentMethod || "cash").toLowerCase();
-    setPaymentType(
-      pm === "credit" || pm === "advance" || pm === "cash" ? (pm as PaymentType) : "cash"
-    );
+    if (pm === "credit" || pm === "advance") {
+      setPaymentType(pm as PaymentType);
+      setCashReceiveMethod("cash");
+    } else {
+      setPaymentType("cash");
+      setCashReceiveMethod(parseCashReceiveMethod(pm));
+    }
     
     setSelectedColor(editData.materialColor || "#FFFFFF");
     const editWeight = parseFloat(editData.weight) || 0;
@@ -500,12 +520,19 @@ export function AddSaleDialog({
       type === "advance" && financeAdv > 0 ? Math.min(financeAdv, bill) : 0;
     setFormData((prev) => ({
       ...prev,
-      paymentMethod: type,
+      paymentMethod: type === "cash" ? cashReceiveMethod : type,
       amountPaid: type === "credit" ? "0" : prev.amountPaid,
       advancePayment: type === "advance" ? (applied > 0 ? String(applied) : "") : prev.advancePayment,
     }));
     setPaymentStatusError("");
   };
+
+  useEffect(() => {
+    if (paymentType !== "cash") return;
+    setFormData((prev) =>
+      prev.paymentMethod === cashReceiveMethod ? prev : { ...prev, paymentMethod: cashReceiveMethod }
+    );
+  }, [cashReceiveMethod, paymentType]);
 
   const addCurrentLineToCart = () => {
     if (!formData.materialName || !formData.weight || !formData.sellingPrice) {
@@ -1122,7 +1149,7 @@ export function AddSaleDialog({
       formDataToSend.append("sellingPrice", finalAmount);
       formDataToSend.append('sellingWeight', fd.weight);
       formDataToSend.append('saleDate', dateTime);
-      formDataToSend.append('paymentMethod', fd.paymentMethod || paymentType);
+      formDataToSend.append('paymentMethod', paymentType === "cash" ? cashReceiveMethod : (fd.paymentMethod || paymentType));
       formDataToSend.append('amountPaid', fd.amountPaid);
       const customerIdForSale = fd.customerId || selectedCustomerId;
       if (customerIdForSale) {
@@ -1240,6 +1267,7 @@ export function AddSaleDialog({
     setSelectedMaterialInfo(null);
     setCartLines([]);
     setPaymentType("cash");
+    setCashReceiveMethod("cash");
     setReceiptFile(null);
     setReceiptPreview(null);
     setWeightError("");
@@ -1979,6 +2007,26 @@ export function AddSaleDialog({
               ))}
             </div>
           </div>
+
+          {paymentType === "cash" && (
+            <div className="mb-4">
+              <label className="block text-xs text-muted-foreground mb-1.5">Receive payment in *</label>
+              <select
+                value={cashReceiveMethod}
+                onChange={(e) => setCashReceiveMethod(e.target.value as CashReceiveMethod)}
+                className="w-full max-w-md bg-cms-input-bg border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                {CASH_RECEIVE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Cash sale ka paisa kis account mein receive hua — Bank select karen agar direct bank mein aaya ho.
+              </p>
+            </div>
+          )}
 
           <div className={`grid gap-4 mb-4 ${paymentType === "advance" ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
             <div>
