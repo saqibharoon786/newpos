@@ -236,6 +236,7 @@ export default function FinanceModule() {
     amount: '',
     description: '',
     reference: '',
+    date: todayYmd(),
   });
   const [customerAdvance, setCustomerAdvance] = useState({
     customerId: '',
@@ -243,6 +244,7 @@ export default function FinanceModule() {
     amount: '',
     description: '',
     reference: '',
+    date: todayYmd(),
   });
   const [employeeFinance, setEmployeeFinance] = useState({
     employeeId: '',
@@ -250,6 +252,7 @@ export default function FinanceModule() {
     amount: '',
     description: '',
     reference: '',
+    date: todayYmd(),
     action: 'advance' as 'advance' | 'repayment' | 'salary',
     grossSalary: '',
     periodLabel: '',
@@ -266,6 +269,7 @@ export default function FinanceModule() {
     amount: '',
     description: '',
     reference: '',
+    date: todayYmd(),
     action: 'advance' as 'advance' | 'repayment',
   });
   const [ownerAdvanceHistory, setOwnerAdvanceHistory] = useState<AdvanceHistoryRow[]>([]);
@@ -719,6 +723,7 @@ export default function FinanceModule() {
         amount: amt,
         description: ownerFinance.description,
         reference: ownerFinance.reference,
+        date: ownerFinance.date,
       };
       const endpoint =
         ownerFinance.action === 'advance'
@@ -790,6 +795,7 @@ export default function FinanceModule() {
         method: employeeFinance.method,
         description: employeeFinance.description,
         reference: employeeFinance.reference,
+        date: employeeFinance.date,
       };
       let res;
       if (employeeFinance.action === 'advance') {
@@ -910,6 +916,7 @@ export default function FinanceModule() {
         amount: amt,
         description: vendorAdvance.description,
         reference: vendorAdvance.reference,
+        date: vendorAdvance.date,
       });
       if (res.data?.success) {
         toast.success(res.data.message || 'Vendor advance saved');
@@ -955,6 +962,7 @@ export default function FinanceModule() {
         amount: amt,
         description: customerAdvance.description,
         reference: customerAdvance.reference,
+        date: customerAdvance.date,
       });
       if (res.data?.success) {
         toast.success(res.data.message || 'Customer advance saved');
@@ -1897,6 +1905,15 @@ export default function FinanceModule() {
                     </div>
                   )}
                   <div className="space-y-2">
+                    <Label>Advance date *</Label>
+                    <Input
+                      type="date"
+                      value={vendorAdvance.date}
+                      onChange={(e) => setVendorAdvance((p) => ({ ...p, date: e.target.value }))}
+                      className="bg-secondary border-border"
+                    />
+                  </div>
+                  <div className="space-y-2">
                     <Label>Payment method *</Label>
                     <Select
                       value={vendorAdvance.method}
@@ -2074,6 +2091,15 @@ export default function FinanceModule() {
                       </div>
                     </div>
                   )}
+                  <div className="space-y-2">
+                    <Label>Advance date *</Label>
+                    <Input
+                      type="date"
+                      value={customerAdvance.date}
+                      onChange={(e) => setCustomerAdvance((p) => ({ ...p, date: e.target.value }))}
+                      className="bg-secondary border-border"
+                    />
+                  </div>
                   <div className="space-y-2">
                     <Label>Payment method *</Label>
                     <Select
@@ -2273,6 +2299,15 @@ export default function FinanceModule() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="space-y-2">
+                    <Label>Advance date *</Label>
+                    <Input
+                      type="date"
+                      value={employeeFinance.date}
+                      onChange={(e) => setEmployeeFinance((p) => ({ ...p, date: e.target.value }))}
+                      className="bg-secondary border-border"
+                    />
+                  </div>
                   {employeeFinance.action !== 'salary' ? (
                     <div className="space-y-2">
                       <Label>Amount (PKR) *</Label>
@@ -2457,6 +2492,15 @@ export default function FinanceModule() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Advance date *</Label>
+                    <Input
+                      type="date"
+                      value={ownerFinance.date}
+                      onChange={(e) => setOwnerFinance((p) => ({ ...p, date: e.target.value }))}
+                      className="bg-secondary border-border"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Amount (PKR) *</Label>

@@ -1,6 +1,7 @@
 const Transaction = require('../models/transaction.model');
 const InvestmentAccount = require('../models/investment.model');
 const Owner = require('../models/owner.model');
+const { parseAdvanceDate } = require('./advanceDate');
 
 const ADVANCE_METHODS = ['drawer', 'easypaisa', 'jazzcash', 'bank'];
 const OWNER_ACCOUNT_TYPES = ['advance_to_owner', 'loan_to_owner'];
@@ -189,8 +190,9 @@ async function getOwnerLinkedProfile(accountId, query = {}) {
 }
 
 /** Owner takes advance — withdraw from company account */
-async function recordOwnerAdvance({ accountId, ownerId, ownerName, method, amount, description, reference }) {
+async function recordOwnerAdvance({ accountId, ownerId, ownerName, method, amount, description, reference, date }) {
   const amt = num(amount);
+  const entryDate = parseAdvanceDate(date);
   if (!isValidAdvanceMethod(method)) {
     return {
       ok: false,
@@ -233,6 +235,7 @@ async function recordOwnerAdvance({ accountId, ownerId, ownerName, method, amoun
     description: desc,
     reference: ref,
     status: 'completed',
+    date: entryDate,
     partyType: 'owner',
     partyId: account._id,
     partyName: label,
@@ -240,7 +243,7 @@ async function recordOwnerAdvance({ accountId, ownerId, ownerName, method, amoun
   });
 
   const ledgerEntry = {
-    date: new Date(),
+    date: entryDate,
     type: 'advance',
     amount: amt,
     method,
@@ -269,8 +272,9 @@ async function recordOwnerAdvance({ accountId, ownerId, ownerName, method, amoun
 }
 
 /** Owner repays advance — deposit to company account */
-async function recordOwnerRepayment({ accountId, ownerId, method, amount, description, reference }) {
+async function recordOwnerRepayment({ accountId, ownerId, method, amount, description, reference, date }) {
   const amt = num(amount);
+  const entryDate = parseAdvanceDate(date);
   if (!isValidAdvanceMethod(method)) {
     return {
       ok: false,
@@ -308,6 +312,7 @@ async function recordOwnerRepayment({ accountId, ownerId, method, amount, descri
     description: desc,
     reference: ref,
     status: 'completed',
+    date: entryDate,
     partyType: 'owner',
     partyId: account._id,
     partyName: label,
@@ -315,7 +320,7 @@ async function recordOwnerRepayment({ accountId, ownerId, method, amount, descri
   });
 
   const ledgerEntry = {
-    date: new Date(),
+    date: entryDate,
     type: 'repayment',
     amount: amt,
     method,

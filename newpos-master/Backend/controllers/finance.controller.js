@@ -12,12 +12,17 @@ const {
   deleteCustomerAdvanceEntry,
 } = require('../utils/financeAdvanceDelete');
 const {
+  isPosPaymentTransaction,
+  reversePosPaymentTransaction,
+} = require('../utils/posPaymentDelete');
+const {
   getEmployeeLinkedProfile,
   recordEmployeeAdvance,
   recordEmployeeRepayment,
   recordEmployeeSalary,
   updateEmployeeAdvanceSettings,
 } = require('../utils/employeeFinance.service');
+const { parseAdvanceDate } = require('../utils/advanceDate');
 const {
   listOwnerAdvanceAccounts,
   getOwnerLinkedProfile,
@@ -400,6 +405,24 @@ exports.deleteTransaction = async (req, res) => {
       });
     }
 
+    if (isPosPaymentTransaction(transaction)) {
+      const result = await reversePosPaymentTransaction(id);
+      if (!result.ok) {
+        return res.status(result.status || 400).json({
+          success: false,
+          message: result.message,
+        });
+      }
+      const balances = await Transaction.getBalances();
+      return res.json({
+        success: true,
+        message: result.message,
+        balances,
+        invoiceNo: result.invoiceNo,
+        amountReversed: result.amountReversed,
+      });
+    }
+
     await Transaction.findByIdAndDelete(id);
     const balances = await Transaction.getBalances();
 
@@ -527,8 +550,9 @@ function isValidAdvanceMethod(method) {
 /** Vendor advance: paisa account se nikal kar vendor ko advance */
 exports.recordVendorAdvance = async (req, res) => {
   try {
-    const { vendorId, method, amount, description, reference } = req.body;
+    const { vendorId, method, amount, description, reference, date } = req.body;
     const amt = parseFloat(amount);
+    const advanceDate = parseAdvanceDate(date);
 
     if (!vendorId) {
       return res.status(400).json({ success: false, message: 'Vendor select karen' });
@@ -570,6 +594,7 @@ exports.recordVendorAdvance = async (req, res) => {
       description: desc,
       reference: ref,
       status: 'completed',
+      date: advanceDate,
       partyType: 'vendor',
       partyId: vendor._id,
       partyName: vendor.name,
@@ -584,6 +609,7 @@ exports.recordVendorAdvance = async (req, res) => {
       paymentMethod: method,
       reference: ref,
       transactionId: transaction._id,
+      date: advanceDate,
     });
 
     const vendorAfter = await Vendor.findById(vendorId).lean();
@@ -617,8 +643,9 @@ exports.recordVendorAdvance = async (req, res) => {
 /** Customer advance: customer se paisa receive — account mein deposit */
 exports.recordCustomerAdvance = async (req, res) => {
   try {
-    const { customerId, method, amount, description, reference } = req.body;
+    const { customerId, method, amount, description, reference, date } = req.body;
     const amt = parseFloat(amount);
+    const advanceDate = parseAdvanceDate(date);
 
     if (!customerId) {
       return res.status(400).json({ success: false, message: 'Customer select karen' });
@@ -654,6 +681,7 @@ exports.recordCustomerAdvance = async (req, res) => {
       description: desc,
       reference: ref,
       status: 'completed',
+      date: advanceDate,
       partyType: 'customer',
       partyId: customer._id,
       partyName: customer.customerName,
@@ -663,7 +691,7 @@ exports.recordCustomerAdvance = async (req, res) => {
     customer.financeAdvanceBalance = (customer.financeAdvanceBalance || 0) + amt;
     customer.advanceLedger = customer.advanceLedger || [];
     customer.advanceLedger.push({
-      date: new Date(),
+      date: advanceDate,
       amount: amt,
       method,
       description: desc,
