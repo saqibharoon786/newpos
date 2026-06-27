@@ -19,6 +19,16 @@ function toNormalizedDate(dateStr) {
   return dateStr;
 }
 
+function resolveExpenseSubject({ subject, purpose, description, category }) {
+  const fromSubject = String(subject || "").trim();
+  if (fromSubject) return fromSubject;
+  const fromPurpose = String(purpose || category || "").trim();
+  if (fromPurpose) return fromPurpose;
+  const fromDesc = String(description || "").trim();
+  if (fromDesc) return fromDesc.slice(0, 120);
+  return "Expense";
+}
+
 /**
  * Aggregation expression: normalize stored `date` (YYYY-MM-DD or DD/MM/YYYY) to YYYY-MM-DD
  * so range filters include all legacy rows (string $gte/$lte on mixed formats misses DD/MM/YYYY).
@@ -266,12 +276,19 @@ exports.createExpense = async (req, res) => {
     } = req.body;
 
     // Validation
-    if (!subject || !description || !price || !date || !time) {
+    if (!description || !price || !date || !time) {
       return res.status(400).json({
         success: false,
         message: "Please provide all required fields",
       });
     }
+
+    const resolvedSubject = resolveExpenseSubject({
+      subject,
+      purpose,
+      description,
+      category,
+    });
 
     // Create expense object (date normalized to YYYY-MM-DD so Daily/Weekly/Monthly filters work)
     const priceNum = parseFloat(String(price).replace(/[^\d.]/g, '')) || 0;
@@ -287,7 +304,7 @@ exports.createExpense = async (req, res) => {
             method,
             amount: priceNum,
             net: priceNum,
-            description: `Expense: ${subject}`,
+            description: `Expense: ${resolvedSubject}`,
             reference: `EXP-${Date.now()}`,
             status: 'completed',
           });
@@ -301,7 +318,7 @@ exports.createExpense = async (req, res) => {
     }
 
     const expenseData = {
-      subject,
+      subject: resolvedSubject,
       description,
       purpose: purpose || "Office",
       price,
@@ -347,6 +364,12 @@ exports.updateExpense = async (req, res) => {
     if (updateData.date) {
       updateData.date = toNormalizedDate(updateData.date);
     }
+    updateData.subject = resolveExpenseSubject({
+      subject: updateData.subject,
+      purpose: updateData.purpose,
+      description: updateData.description,
+      category: updateData.category,
+    });
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({

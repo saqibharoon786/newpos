@@ -1602,7 +1602,7 @@ export function RoznamchaView() {
         const tempId = `temp-${Date.now()}`;
         const optimisticExpense: ExpenseItem = {
           _id: tempId,
-          subject: expenseData.subject,
+          subject: expenseData.purpose || expenseData.description || "Expense",
           description: expenseData.description,
           purpose: expenseData.purpose,
           usage: expenseData.usage,
