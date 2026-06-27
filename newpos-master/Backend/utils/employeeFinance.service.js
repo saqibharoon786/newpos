@@ -1,5 +1,6 @@
 const Transaction = require('../models/transaction.model');
 const Employee = require('../models/employee.model');
+const { parseAdvanceDate } = require('./advanceDate');
 
 const ADVANCE_METHODS = ['drawer', 'easypaisa', 'jazzcash', 'bank'];
 
@@ -179,8 +180,9 @@ async function updateEmployeeAdvanceSettings({ employeeId, advanceRecoveryMode, 
 }
 
 /** Give advance to employee — withdraw from selected account */
-async function recordEmployeeAdvance({ employeeId, method, amount, description, reference }) {
+async function recordEmployeeAdvance({ employeeId, method, amount, description, reference, date }) {
   const amt = num(amount);
+  const entryDate = parseAdvanceDate(date);
   if (!employeeId) {
     return { ok: false, status: 400, message: 'Employee select karen' };
   }
@@ -221,6 +223,7 @@ async function recordEmployeeAdvance({ employeeId, method, amount, description, 
     description: desc,
     reference: ref,
     status: 'completed',
+    date: entryDate,
     partyType: 'employee',
     partyId: employee._id,
     partyName: employee.name,
@@ -229,7 +232,7 @@ async function recordEmployeeAdvance({ employeeId, method, amount, description, 
 
   employee.financeLedger = employee.financeLedger || [];
   employee.financeLedger.push({
-    date: new Date(),
+    date: entryDate,
     type: 'advance',
     amount: amt,
     method,
@@ -254,8 +257,9 @@ async function recordEmployeeAdvance({ employeeId, method, amount, description, 
 }
 
 /** Employee repays advance — deposit to selected account */
-async function recordEmployeeRepayment({ employeeId, method, amount, description, reference }) {
+async function recordEmployeeRepayment({ employeeId, method, amount, description, reference, date }) {
   const amt = num(amount);
+  const entryDate = parseAdvanceDate(date);
   if (!employeeId) {
     return { ok: false, status: 400, message: 'Employee select karen' };
   }
@@ -297,6 +301,7 @@ async function recordEmployeeRepayment({ employeeId, method, amount, description
     description: desc,
     reference: ref,
     status: 'completed',
+    date: entryDate,
     partyType: 'employee',
     partyId: employee._id,
     partyName: employee.name,
@@ -305,7 +310,7 @@ async function recordEmployeeRepayment({ employeeId, method, amount, description
 
   employee.financeLedger = employee.financeLedger || [];
   employee.financeLedger.push({
-    date: new Date(),
+    date: entryDate,
     type: 'repayment',
     amount: amt,
     method,
@@ -338,6 +343,7 @@ async function recordEmployeeSalary({
   description,
   reference,
   periodLabel,
+  date,
 }) {
   if (!employeeId) {
     return { ok: false, status: 400, message: 'Employee select karen' };
@@ -385,6 +391,7 @@ async function recordEmployeeSalary({
 
   const period = periodLabel?.trim() || new Date().toLocaleString('en-PK', { month: 'long', year: 'numeric' });
   const ref = reference || `SAL-${Date.now()}`;
+  const entryDate = parseAdvanceDate(date);
   const desc =
     description?.trim() ||
     `Salary ${period}: ${employee.name}` +
@@ -402,6 +409,7 @@ async function recordEmployeeSalary({
       description: desc,
       reference: ref,
       status: 'completed',
+      date: entryDate,
       partyType: 'employee',
       partyId: employee._id,
       partyName: employee.name,
@@ -411,7 +419,7 @@ async function recordEmployeeSalary({
 
   employee.financeLedger = employee.financeLedger || [];
   employee.financeLedger.push({
-    date: new Date(),
+    date: entryDate,
     type: 'salary_payment',
     amount: gross,
     method,

@@ -246,6 +246,44 @@ async function fifoReturnProduction({ materialName, quality, materialColor }, we
   return { ok: true };
 }
 
+/** Reverse stock when a POS sale is deleted (POP soldWeight or production FIFO). */
+async function restoreSaleStock(sale) {
+  const weight = parseSaleWeight(sale.weight);
+  if (weight <= 0) return { ok: true };
+
+  if (sale.purchaseId) {
+    const purchase = await Purchase.findById(sale.purchaseId);
+    if (!purchase) return { ok: true };
+
+    const originalWeight = parseFloat(purchase.weight) || 0;
+    const currentSoldWeight = parseFloat(purchase.soldWeight) || 0;
+    const newSoldWeight = Math.max(0, currentSoldWeight - weight);
+    purchase.soldWeight = newSoldWeight;
+    purchase.remainingWeight = Math.max(0, originalWeight - newSoldWeight);
+
+    if (newSoldWeight <= 0) purchase.status = 'available';
+    else if (purchase.remainingWeight <= 0) purchase.status = 'sold_out';
+    else purchase.status = 'partially_sold';
+
+    await purchase.save();
+    return { ok: true };
+  }
+
+  const materialName = sale.materialName;
+  if (!materialName || !String(materialName).trim()) {
+    return { ok: true };
+  }
+
+  return fifoReturnProduction(
+    {
+      materialName: sale.materialName,
+      quality: sale.quality,
+      materialColor: sale.materialColor,
+    },
+    weight
+  );
+}
+
 // ➕ Add Sale (with optional receipt image)
 // Supports sale from POP purchase (purchaseId) OR from Production List (productionId)
 const addSale = async (req, res) => {
@@ -1107,6 +1145,14 @@ const deleteSale = async (req, res) => {
       });
     }
 
+    const stockResult = await restoreSaleStock(sale);
+    if (!stockResult.ok) {
+      return res.status(400).json({
+        success: false,
+        message: stockResult.message || "Stock reverse nahi ho saka — sale delete cancel",
+      });
+    }
+
     // Delete receipt image if exists
     if (sale.receiptImage && sale.receiptImage.trim() !== '') {
       const imagePath = path.join(process.env.UPLOAD_PATH || "./uploads", sale.receiptImage);
@@ -1118,7 +1164,7 @@ const deleteSale = async (req, res) => {
     await Sale.findByIdAndDelete(id);
     res.status(200).json({
       success: true,
-      message: "Sale deleted successfully",
+      message: "Sale delete ho gayi aur stock wapas add ho gaya",
     });
   } catch (error) {
     console.error('Error in deleteSale:', error);
