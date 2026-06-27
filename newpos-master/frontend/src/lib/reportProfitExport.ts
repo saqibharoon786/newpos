@@ -41,13 +41,15 @@ type BusinessReportExport = {
 };
 
 function formatExpenseDetailLabel(e: ReportExpenseItem): string {
-  const title = (e.subject || e.purpose || 'Expense').trim();
-  const datePart = e.date ? `${e.date} — ` : '';
-  const categoryPart =
-    e.category && e.category !== 'General' ? ` (${e.category})` : '';
-  const purposePart =
-    e.purpose && e.subject && e.purpose !== e.subject ? ` · ${e.purpose}` : '';
-  return `${datePart}${title}${categoryPart}${purposePart}`;
+  const title = (e.subject || e.purpose || e.category || 'Expense').trim();
+  const parts: string[] = [title];
+  if (e.category && e.category !== 'General' && e.category !== title) {
+    parts.push(`(${e.category})`);
+  }
+  if (e.date) {
+    parts.push(`— ${e.date}`);
+  }
+  return parts.join(' ');
 }
 
 function buildDetailExpenseLines(
@@ -66,8 +68,16 @@ function buildDetailExpenseLines(
 
   if (delivery > 0) {
     lines.push({
-      label: 'Delivery Charges-Sales',
+      label: 'Delivery Charges — Sales',
       amount: delivery,
+      indent: true,
+    });
+  }
+
+  if (lines.length === 0) {
+    lines.push({
+      label: 'No Kharcha entries in this period',
+      amount: 0,
       indent: true,
     });
   }
@@ -114,6 +124,9 @@ export function buildProfitLossExport(report: BusinessReportExport) {
     { label: 'Gross Profit', amount: grossProfit, bold: true },
     { label: 'Less Expenses (Kharcha + Delivery)', amount: null, isHeader: true },
     ...detailExpenseLines,
+    ...(allExpenses > 0
+      ? [{ label: 'Total Expenses', amount: allExpenses, bold: true } as PlExportLine]
+      : []),
     { label: 'Net Profit', amount: netProfit, bold: true },
   ];
 
@@ -236,7 +249,13 @@ export function exportBusinessProfitLossReport(
   }
 
   const body = `
-    <p style="color:#555;margin-bottom:16px;">Period: <strong>${escapeHtml(period)}</strong></p>
+    <p style="color:#555;margin-bottom:16px;">${escapeHtml(
+      data.meta.endDate
+        ? data.meta.startDate && data.meta.startDate !== data.meta.endDate
+          ? `For the period ${data.meta.startDate} — ${data.meta.endDate}`
+          : `For the period ending on ${data.meta.endDate}`
+        : `Period: ${period}`
+    )}</p>
     <h2 style="font-size:15px;margin:0 0 4px 0;">Summary</h2>
     ${buildPlTableHtml(data.summaryLines, data.costOfSaleNote)}
     <h2 style="font-size:15px;margin:20px 0 4px 0;">Detail Format</h2>
