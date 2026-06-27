@@ -193,13 +193,15 @@ function mapSaleRow(s) {
 }
 
 function mapExpenseRow(e) {
+  const purpose = String(e.purpose || '').trim();
+  const category = String(e.category || '').trim();
   return {
     _id: e._id,
     date: e.date,
-    category: e.category || 'General',
+    category: purpose || category || 'General',
+    purpose: purpose || category || 'General',
     subject: e.subject,
     description: e.description,
-    purpose: e.purpose,
     usage: e.usage,
     priceRs: parseMoney(e.price),
     personResponsible: e.personResponsible,
@@ -228,7 +230,7 @@ function parseSalePricesFromQuery(query) {
 
 function groupExpensesByCategory(expenses) {
   const map = expenses.reduce((acc, e) => {
-    const key = String(e.category || 'General');
+    const key = String(e.purpose || e.category || 'General').trim() || 'General';
     const existing = acc[key] || { category: key, totalRs: 0, count: 0 };
     existing.totalRs += e.priceRs;
     existing.count += 1;
@@ -236,11 +238,13 @@ function groupExpensesByCategory(expenses) {
     return acc;
   }, {});
 
-  return Object.values(map).map((item) => ({
-    category: item.category,
-    totalRs: Math.round(item.totalRs * 100) / 100,
-    count: item.count,
-  }));
+  return Object.values(map)
+    .map((item) => ({
+      category: item.category,
+      totalRs: Math.round(item.totalRs * 100) / 100,
+      count: item.count,
+    }))
+    .sort((a, b) => a.category.localeCompare(b.category));
 }
 
 exports.getProfitLossReport = async (req, res) => {

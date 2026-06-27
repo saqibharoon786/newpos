@@ -15,11 +15,16 @@ type BusinessReportLike = {
     _id?: string;
     date?: string;
     category?: string;
-    subject?: string;
     purpose?: string;
+    subject?: string;
     usage?: string;
     priceRs?: number;
     personResponsible?: string;
+  }>;
+  expenseCategories?: Array<{
+    category: string;
+    totalRs: number;
+    count?: number;
   }>;
 };
 
@@ -87,6 +92,7 @@ export function ProfitLossReportTables({
     endDate: report.endDate,
     summary: report.summary,
     expenses: report.expenses,
+    expenseCategories: report.expenseCategories,
   });
 
   const ending =

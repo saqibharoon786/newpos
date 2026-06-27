@@ -40,31 +40,38 @@ type BusinessReportExport = {
   expenseCategories?: ReportExpenseCategory[];
 };
 
-function formatExpenseDetailLabel(e: ReportExpenseItem): string {
-  const title = (e.subject || e.purpose || e.category || 'Expense').trim();
-  const parts: string[] = [title];
-  if (e.category && e.category !== 'General' && e.category !== title) {
-    parts.push(`(${e.category})`);
+function groupExpensesByType(
+  expenses: ReportExpenseItem[],
+  categories?: ReportExpenseCategory[]
+): ReportExpenseCategory[] {
+  if (categories && categories.length > 0) {
+    return [...categories].sort((a, b) => a.category.localeCompare(b.category));
   }
-  if (e.date) {
-    parts.push(`— ${e.date}`);
+
+  const map = new Map<string, ReportExpenseCategory>();
+  for (const e of expenses) {
+    const key = String(e.purpose || e.category || 'General').trim() || 'General';
+    const prev = map.get(key) || { category: key, totalRs: 0, count: 0 };
+    prev.totalRs = Math.round((prev.totalRs + (e.priceRs ?? 0)) * 100) / 100;
+    prev.count = (prev.count || 0) + 1;
+    map.set(key, prev);
   }
-  return parts.join(' ');
+
+  return Array.from(map.values()).sort((a, b) => a.category.localeCompare(b.category));
 }
 
+/** Detail P&L: one row per Kharcha type (Electricity, LPG Gas, …) with type total */
 function buildDetailExpenseLines(
-  expenses: ReportExpenseItem[],
+  expenseTypes: ReportExpenseCategory[],
   delivery: number
 ): PlExportLine[] {
-  const sorted = [...expenses].sort((a, b) =>
-    String(a.date || '').localeCompare(String(b.date || ''))
-  );
-
-  const lines: PlExportLine[] = sorted.map((e) => ({
-    label: formatExpenseDetailLabel(e),
-    amount: e.priceRs ?? 0,
-    indent: true,
-  }));
+  const lines: PlExportLine[] = expenseTypes
+    .filter((c) => (c.totalRs ?? 0) > 0)
+    .map((c) => ({
+      label: c.category,
+      amount: c.totalRs ?? 0,
+      indent: true,
+    }));
 
   if (delivery > 0) {
     lines.push({
@@ -108,7 +115,11 @@ export function buildProfitLossExport(report: BusinessReportExport) {
   const allExpenses = kharcha + delivery;
   const netProfit = s.netProfitRs ?? grossProfit - allExpenses;
 
-  const detailExpenseLines = buildDetailExpenseLines(report.expenses ?? [], delivery);
+  const expenseTypes = groupExpensesByType(
+    report.expenses ?? [],
+    report.expenseCategories
+  );
+  const detailExpenseLines = buildDetailExpenseLines(expenseTypes, delivery);
 
   const summaryLines: PlExportLine[] = [
     { label: 'Revenue/Sales', amount: revenue },
@@ -136,7 +147,7 @@ export function buildProfitLossExport(report: BusinessReportExport) {
     costOfSaleNote:
       'This head should only include the cost of products that have been sold.',
     expensesNote:
-      'This list automatically includes all the expenses that will be added through the Kharcha module.',
+      'Har Kharcha type (Electricity, LPG Gas, Rent, …) ka period total alag line par show hota hai — Kharcha module se auto.',
     meta: {
       label: report.label || 'Report',
       startDate: report.startDate,
