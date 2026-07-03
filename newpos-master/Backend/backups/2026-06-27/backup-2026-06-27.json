@@ -1,0 +1,364 @@
+{
+  "date": "2026-06-27",
+  "collections": {
+    "purchases": [
+      {
+        "_id": "6a3a3c69c91e4e0588f530a3",
+        "invoiceNo": "PV062600001",
+        "billNo": "",
+        "materialName": "HD Pipe",
+        "vendor": "ddddd",
+        "vendorId": "6a3a3c5fc91e4e0588f5308f",
+        "price": "133320",
+        "approvalStatus": "pending",
+        "createdBy": "owner",
+        "paymentMethod": "cash",
+        "materials": [
+          {
+            "name": "HD Pipe",
+            "weight": 30,
+            "pricePerKg": 4444,
+            "totalAmount": 133320,
+            "productCode": "100",
+            "productionConsumedWeight": 0,
+            "_id": "6a3a3c74c91e4e0588f530bd"
+          }
+        ],
+        "weight": "30",
+        "soldWeight": 0,
+        "productionConsumedWeight": 0,
+        "quality": "PP750",
+        "status": "available",
+        "advancePayment": 0,
+        "amountPaid": 0,
+        "totalPaid": 0,
+        "paidAmount": "none",
+        "remainingAmount": 133320,
+        "purchaseDate": "2026-06-23T07:57:00.000Z",
+        "materialColor": "#FFFFFF",
+        "receiptNo": "",
+        "vehicleImage": "",
+        "codeConsumption": {
+          "100": 0
+        },
+        "createdAt": "2026-06-23T07:57:29.154Z",
+        "updatedAt": "2026-06-23T07:57:40.743Z",
+        "remainingWeight": 30,
+        "__v": 0
+      }
+    ],
+    "sales": [],
+    "expenses": [],
+    "customers": [],
+    "transactions": [],
+    "productiondatas": [],
+    "processingmaterials": [],
+    "employees": [],
+    "assets": [],
+    "vendors": [
+      {
+        "_id": "6a3a3c5fc91e4e0588f5308f",
+        "name": "ddddd",
+        "phone": "",
+        "address": "",
+        "materials": [],
+        "advanceBalance": 0,
+        "payableBalance": 1320,
+        "vendorId": "VEND-20260623-14478",
+        "ledger": [
+          {
+            "type": "purchase",
+            "purchaseId": "6a3a3c69c91e4e0588f530a3",
+            "description": "HD Pipe",
+            "debit": 0,
+            "credit": 1320,
+            "balance": 1320,
+            "reference": "PV062600001",
+            "_id": "6a3a3c69c91e4e0588f530a7",
+            "date": "2026-06-23T07:57:29.165Z"
+          }
+        ],
+        "createdAt": "2026-06-23T07:57:19.005Z",
+        "updatedAt": "2026-06-23T07:57:29.165Z",
+        "__v": 1
+      }
+    ],
+    "companysettings": [
+      {
+        "_id": "6a33b8db1b7e4a25faae0d25",
+        "companyName": "International Plastic",
+        "logo": null,
+        "currencySymbol": "Rs.",
+        "address": "",
+        "phone": "",
+        "email": "",
+        "backupPath": "./backups",
+        "externalBackupPath": "",
+        "createdAt": "2026-06-18T09:22:35.040Z",
+        "updatedAt": "2026-06-23T07:57:01.523Z",
+        "__v": 0
+      }
+    ],
+    "activitylogs": [
+      {
+        "_id": "6a33b8f91b7e4a25faae0d85",
+        "userId": "super-admin",
+        "userName": "owner",
+        "action": "Delete",
+        "module": "Vendor",
+        "recordId": "6a33b8f61b7e4a25faae0d7d",
+        "beforeValues": {
+          "name": "sss",
+          "vendorId": "VEND-20260618-51433"
+        },
+        "afterValues": {
+          "cascade": {
+            "vendorId": "6a33b8f61b7e4a25faae0d7d",
+            "vendorName": "sss",
+            "purchasesDeleted": 0,
+            "salesDeleted": 0,
+            "productionsDeleted": 0
+          }
+        },
+        "reason": "",
+        "ipAddress": "::1",
+        "createdAt": "2026-06-18T09:23:05.001Z",
+        "updatedAt": "2026-06-18T09:23:05.001Z",
+        "__v": 0
+      },
+      {
+        "_id": "6a3a3c69c91e4e0588f530ab",
+        "userId": "super-admin",
+        "userName": "owner",
+        "action": "Create",
+        "module": "POP",
+        "recordId": "6a3a3c69c91e4e0588f530a3",
+        "afterValues": {
+          "invoiceNo": "PV062600001",
+          "billNo": "",
+          "materialName": "HD Pipe",
+          "vendor": "ddddd",
+          "vendorId": "6a3a3c5fc91e4e0588f5308f",
+          "price": "1320",
+          "approvalStatus": "pending",
+          "createdBy": "owner",
+          "paymentMethod": "cash",
+          "materials": [
+            {
+              "name": "HD Pipe",
+              "weight": 30,
+              "pricePerKg": 44,
+              "totalAmount": 1320,
+              "productCode": "100",
+              "productionConsumedWeight": 0,
+              "_id": "6a3a3c69c91e4e0588f530a4"
+            }
+          ],
+          "weight": "30",
+          "soldWeight": 0,
+          "productionConsumedWeight": 0,
+          "quality": "PP750",
+          "status": "available",
+          "advancePayment": 0,
+          "amountPaid": 0,
+          "totalPaid": 0,
+          "paidAmount": "none",
+          "remainingAmount": 1320,
+          "purchaseDate": "2026-06-23T07:57:00.000Z",
+          "materialColor": "#FFFFFF",
+          "receiptNo": "",
+          "vehicleImage": "",
+          "_id": "6a3a3c69c91e4e0588f530a3",
+          "codeConsumption": {
+            "100": 0
+          },
+          "createdAt": "2026-06-23T07:57:29.154Z",
+          "updatedAt": "2026-06-23T07:57:29.154Z",
+          "remainingWeight": 30,
+          "__v": 0
+        },
+        "reason": "",
+        "ipAddress": "::1",
+        "createdAt": "2026-06-23T07:57:29.176Z",
+        "updatedAt": "2026-06-23T07:57:29.176Z",
+        "__v": 0
+      },
+      {
+        "_id": "6a3a3c74c91e4e0588f530c0",
+        "userId": "super-admin",
+        "userName": "owner",
+        "action": "Edit",
+        "module": "POP",
+        "recordId": "6a3a3c69c91e4e0588f530a3",
+        "beforeValues": {
+          "_id": "6a3a3c69c91e4e0588f530a3",
+          "invoiceNo": "PV062600001",
+          "billNo": "",
+          "materialName": "HD Pipe",
+          "vendor": "ddddd",
+          "vendorId": "6a3a3c5fc91e4e0588f5308f",
+          "price": "1320",
+          "approvalStatus": "pending",
+          "createdBy": "owner",
+          "paymentMethod": "cash",
+          "materials": [
+            {
+              "name": "HD Pipe",
+              "weight": 30,
+              "pricePerKg": 44,
+              "totalAmount": 1320,
+              "productCode": "100",
+              "productionConsumedWeight": 0,
+              "_id": "6a3a3c69c91e4e0588f530a4"
+            }
+          ],
+          "weight": "30",
+          "soldWeight": 0,
+          "productionConsumedWeight": 0,
+          "quality": "PP750",
+          "status": "available",
+          "advancePayment": 0,
+          "amountPaid": 0,
+          "totalPaid": 0,
+          "paidAmount": "none",
+          "remainingAmount": 1320,
+          "purchaseDate": "2026-06-23T07:57:00.000Z",
+          "materialColor": "#FFFFFF",
+          "receiptNo": "",
+          "vehicleImage": "",
+          "codeConsumption": {
+            "100": 0
+          },
+          "createdAt": "2026-06-23T07:57:29.154Z",
+          "updatedAt": "2026-06-23T07:57:29.154Z",
+          "remainingWeight": 30,
+          "__v": 0
+        },
+        "afterValues": {
+          "_id": "6a3a3c69c91e4e0588f530a3",
+          "invoiceNo": "PV062600001",
+          "billNo": "",
+          "materialName": "HD Pipe",
+          "vendor": "ddddd",
+          "vendorId": "6a3a3c5fc91e4e0588f5308f",
+          "price": "133320",
+          "approvalStatus": "pending",
+          "createdBy": "owner",
+          "paymentMethod": "cash",
+          "materials": [
+            {
+              "name": "HD Pipe",
+              "weight": 30,
+              "pricePerKg": 4444,
+              "totalAmount": 133320,
+              "productCode": "100",
+              "productionConsumedWeight": 0,
+              "_id": "6a3a3c74c91e4e0588f530bd"
+            }
+          ],
+          "weight": "30",
+          "soldWeight": 0,
+          "productionConsumedWeight": 0,
+          "quality": "PP750",
+          "status": "available",
+          "advancePayment": 0,
+          "amountPaid": 0,
+          "totalPaid": 0,
+          "paidAmount": "none",
+          "remainingAmount": 133320,
+          "purchaseDate": "2026-06-23T07:57:00.000Z",
+          "materialColor": "#FFFFFF",
+          "receiptNo": "",
+          "vehicleImage": "",
+          "codeConsumption": {
+            "100": 0
+          },
+          "createdAt": "2026-06-23T07:57:29.154Z",
+          "updatedAt": "2026-06-23T07:57:40.743Z",
+          "remainingWeight": 30,
+          "__v": 0
+        },
+        "reason": "",
+        "ipAddress": "::1",
+        "createdAt": "2026-06-23T07:57:40.756Z",
+        "updatedAt": "2026-06-23T07:57:40.756Z",
+        "__v": 0
+      }
+    ],
+    "notifications": [
+      {
+        "_id": "6a3a3c69c91e4e0588f530a9",
+        "title": "Purchase Pending Approval",
+        "message": "Purchase PV062600001 from ddddd requires owner approval",
+        "type": "pending_approval",
+        "targetRoles": [
+          "owner",
+          "admin"
+        ],
+        "module": "POP",
+        "recordId": "6a3a3c69c91e4e0588f530a3",
+        "isRead": false,
+        "priority": "high",
+        "createdAt": "2026-06-23T07:57:29.170Z",
+        "updatedAt": "2026-06-23T07:57:29.170Z",
+        "__v": 0
+      },
+      {
+        "_id": "6a3a835072ddec74a0733af1",
+        "title": "Low Stock Alert",
+        "message": "HD Pipe from ddddd is running low",
+        "type": "low_stock",
+        "targetRoles": [
+          "owner",
+          "accountant1",
+          "accountant2"
+        ],
+        "module": "POP",
+        "recordId": "6a3a3c69c91e4e0588f530a3",
+        "isRead": false,
+        "priority": "medium",
+        "createdAt": "2026-06-23T13:00:00.034Z",
+        "updatedAt": "2026-06-23T13:00:00.034Z",
+        "__v": 0
+      },
+      {
+        "_id": "6a3a83505c621b3641aeee79",
+        "title": "Low Stock Alert",
+        "message": "HD Pipe from ddddd is running low",
+        "type": "low_stock",
+        "targetRoles": [
+          "owner",
+          "accountant1",
+          "accountant2"
+        ],
+        "module": "POP",
+        "recordId": "6a3a3c69c91e4e0588f530a3",
+        "isRead": false,
+        "priority": "medium",
+        "createdAt": "2026-06-23T13:00:00.068Z",
+        "updatedAt": "2026-06-23T13:00:00.068Z",
+        "__v": 0
+      },
+      {
+        "_id": "6a3fc950c032eef35ca3cb7e",
+        "title": "Low Stock Alert",
+        "message": "HD Pipe from ddddd is running low",
+        "type": "low_stock",
+        "targetRoles": [
+          "owner",
+          "accountant1",
+          "accountant2"
+        ],
+        "module": "POP",
+        "recordId": "6a3a3c69c91e4e0588f530a3",
+        "isRead": false,
+        "priority": "medium",
+        "createdAt": "2026-06-27T13:00:00.096Z",
+        "updatedAt": "2026-06-27T13:00:00.096Z",
+        "__v": 0
+      }
+    ],
+    "investmentaccounts": [],
+    "users": []
+  }
+}

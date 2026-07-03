@@ -3,6 +3,7 @@ const path = require('path');
 const Purchase = require('../models/pop.model');
 const Sale = require('../models/pos.model');
 const Transaction = require('../models/transaction.model');
+const { findPopPaymentTransactions } = require('./popPaymentSync');
 const Vendor = require('../models/vendor.model');
 const { ProductionData, ProcessingMaterial } = require('../models/process.model');
 
@@ -98,44 +99,15 @@ async function reverseFinanceTransaction({ type, method, amount, description, re
 
 async function reversePopPaymentTransactions(purchase) {
   const invoiceNo = purchase.invoiceNo || purchase.receiptNo || '';
-  const reversals = [];
-  const seen = new Set();
-
-  const txs = invoiceNo
-    ? await Transaction.find({
-        reference: invoiceNo,
-        status: 'completed',
-      }).lean()
-    : [];
+  const txs = await findPopPaymentTransactions(invoiceNo);
+  let deleted = 0;
 
   for (const tx of txs) {
-    const key = `${tx.type}|${tx.method}|${tx.amount}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const rev = await reverseFinanceTransaction({
-      type: tx.type,
-      method: tx.method,
-      amount: tx.amount,
-      description: `Reversal: ${tx.description || 'POP'} (record deleted)`,
-      reference: `REV-${tx.reference || invoiceNo}`,
-    });
-    if (rev) reversals.push(rev);
+    await Transaction.findByIdAndDelete(tx._id);
+    deleted += 1;
   }
 
-  const paid = num(purchase.amountPaid) || num(purchase.totalPaid);
-  if (reversals.length === 0 && paid > 0) {
-    const method = purchase.paymentMethod || 'drawer';
-    const rev = await reverseFinanceTransaction({
-      type: 'withdraw',
-      method,
-      amount: paid,
-      description: `Reversal: POP payment deleted ${invoiceNo}`,
-      reference: `REV-POP-${invoiceNo}`,
-    });
-    if (rev) reversals.push(rev);
-  }
-
-  return reversals;
+  return { deleted, transactions: txs };
 }
 
 async function reverseSaleFinance(sale) {
@@ -223,8 +195,8 @@ async function cascadeDeletePurchase(purchaseId) {
     summary.vendorLedgerEntriesRemoved = removed;
   }
 
-  const popReversals = await reversePopPaymentTransactions(purchase);
-  summary.financeReversals += popReversals.length;
+  const popFinanceResult = await reversePopPaymentTransactions(purchase);
+  summary.financeReversals = popFinanceResult.deleted;
 
   if (purchase.vehicleImage && String(purchase.vehicleImage).trim()) {
     const rel = purchase.vehicleImage.replace(/^\/+/, '');

@@ -427,9 +427,13 @@ async function getPurchaseTransactionLedger(query) {
     const rate = qty > 0 ? round2(amount / qty) : 0;
     const baseTime = p.createdAt ? new Date(p.createdAt).getTime() : new Date(p.purchaseDate).getTime();
 
+    const invoiceNo = p.invoiceNo || p.receiptNo || '—';
+    const billNo = String(p.billNo || p.receiptNo || '').trim() || '—';
+
     entries.push({
       date: ymd,
-      invoiceNo: p.invoiceNo || p.receiptNo || '—',
+      invoiceNo,
+      billNo,
       description: `Purchase — ${p.materialName || ''}`,
       vendor: p.vendor || '—',
       qty: round2(qty),
@@ -443,7 +447,8 @@ async function getPurchaseTransactionLedger(query) {
     if (cashPaid > 0) {
       entries.push({
         date: ymd,
-        invoiceNo: p.invoiceNo || p.receiptNo || '—',
+        invoiceNo,
+        billNo,
         description: `Payment to vendor — ${p.materialName || ''}`,
         vendor: p.vendor || '—',
         qty: 0,
@@ -638,18 +643,23 @@ async function getVendorLedger(vendorId, query) {
     .lean();
 
   const entries = [];
+  const invoiceToBillNo = new Map();
 
   for (const p of purchases) {
     const ymd = parseYmd(p.purchaseDate);
     const bill = num(p.price);
     const payment = computePurchasePayment(p);
+    const billNo = String(p.billNo || p.receiptNo || '').trim() || '—';
+    const invoiceNo = p.invoiceNo || p.receiptNo || '—';
+    if (invoiceNo !== '—') invoiceToBillNo.set(invoiceNo, billNo);
     // Cash paid only — vendor advance is already debited when given (vendor.ledger advance entry)
     const cashPaidOnBill = round2(payment.amountPaid);
     const baseTime = p.createdAt ? new Date(p.createdAt).getTime() : new Date(p.purchaseDate).getTime();
 
     entries.push({
       date: ymd,
-      invoiceNo: p.invoiceNo || p.receiptNo || '—',
+      invoiceNo,
+      billNo,
       description: `Purchase — ${p.materialName || ''}`,
       debit: 0,
       credit: round2(bill),
@@ -660,7 +670,8 @@ async function getVendorLedger(vendorId, query) {
     if (cashPaidOnBill > 0) {
       entries.push({
         date: ymd,
-        invoiceNo: p.invoiceNo || p.receiptNo || '—',
+        invoiceNo,
+        billNo,
         description: `Payment to vendor — ${p.materialName || ''}`,
         debit: cashPaidOnBill,
         credit: 0,
@@ -677,9 +688,11 @@ async function getVendorLedger(vendorId, query) {
 
   for (const e of nonPurchaseEntries) {
     const ymd = parseDateField(e.date);
+    const ref = e.reference || '—';
     entries.push({
       date: ymd,
-      invoiceNo: e.reference || '—',
+      invoiceNo: ref,
+      billNo: invoiceToBillNo.get(ref) || '—',
       description: e.description || (e.type === 'advance' ? 'Vendor advance — Finance (full debit)' : e.type),
       debit: round2(e.debit || 0),
       credit: round2(e.credit || 0),

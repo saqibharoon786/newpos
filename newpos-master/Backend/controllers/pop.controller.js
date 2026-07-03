@@ -12,6 +12,7 @@ const { logActivity } = require("../utils/activityLogger");
 const notificationController = require("./notification.controller");
 const { getPurchaseDisplayWeights, mergeMaterialsWithConsumption } = require("../utils/popMaterialConsumption");
 const { cascadeDeletePurchase } = require("../utils/purchaseCascadeDelete");
+const { syncPopFinancePaymentOnUpdate } = require("../utils/popPaymentSync");
 const { assertBillNoUnique } = require("../utils/billNumber");
 const Vendor = require("../models/vendor.model");
 
@@ -532,6 +533,17 @@ const updatePurchase = async (req, res) => {
       updatedFields.vehicleImage = `/uploads/vehicles/${req.file.filename}`;
     }
 
+    const financeSync = await syncPopFinancePaymentOnUpdate({
+      invoiceNo: existing.invoiceNo,
+      vendor: updatedFields.vendor,
+      purchaseDate: updatedFields.purchaseDate,
+      newAmountPaid: amountPaidNum,
+      paymentMethod: updatedFields.paymentMethod,
+    });
+    if (!financeSync.ok) {
+      return res.status(400).json({ success: false, message: financeSync.message });
+    }
+
     const purchase = await Purchase.findByIdAndUpdate(req.params.id, updatedFields, {
       new: true,
       runValidators: true,
@@ -550,8 +562,11 @@ const updatePurchase = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "Purchase updated successfully",
+      message: financeSync.synced
+        ? financeSync.message || "Purchase updated successfully — Finance payment sync ho gayi"
+        : "Purchase updated successfully",
       data: withComputedPayment(purchase.toObject()),
+      financeSynced: financeSync.synced,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
