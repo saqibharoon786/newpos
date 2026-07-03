@@ -542,7 +542,7 @@ export function AddSaleDialog({
     const w = parseFloat(formData.weight) || 0;
     const rate = parseFloat(formData.sellingPrice.replace(/,/g, "")) || 0;
     if (w <= 0 || rate <= 0) return;
-    const lineAmount = calculateTotalAmount();
+    const lineAmount = calculateLineAmount(w, rate, cartLines.length === 0);
     setCartLines((prev) => [
       ...prev,
       {
@@ -558,6 +558,42 @@ export function AddSaleDialog({
       },
     ]);
     alert("Product line added. Add more products or save the invoice.");
+  };
+
+  const buildCurrentLine = () => {
+    if (!formData.materialName || !formData.weight || !formData.sellingPrice) return null;
+    const w = parseFloat(formData.weight) || 0;
+    const rate = parseFloat(formData.sellingPrice.replace(/,/g, "")) || 0;
+    if (w <= 0 || rate <= 0) return null;
+    return {
+      materialName: formData.materialName,
+      quality: selectedMaterialInfo?.quality || "Standard",
+      materialColor: selectedColor,
+      weight: w,
+      sellingPricePerKg: rate,
+      discount: parseFloat(formData.discount) || 0,
+      transportationCost: parseFloat(formData.transportationCost) || 0,
+      amount: calculateLineAmount(w, rate, cartLines.length === 0),
+      actualCostPerKg: parseFloat(costPerKgDisplay || "0") || 0,
+    };
+  };
+
+  /** Cart lines + current form line (last product is often not added to cart before save). */
+  const buildInvoiceLines = () => {
+    const current = buildCurrentLine();
+    if (cartLines.length === 0) {
+      return current ? [current] : [];
+    }
+    if (!current) return cartLines;
+    const alreadyInCart = cartLines.some(
+      (line) =>
+        line.materialName === current.materialName &&
+        line.quality === current.quality &&
+        line.materialColor === current.materialColor &&
+        Math.abs(line.weight - current.weight) < 0.0001 &&
+        Math.abs(line.sellingPricePerKg - current.sellingPricePerKg) < 0.0001
+    );
+    return alreadyInCart ? cartLines : [...cartLines, current];
   };
 
   // Fetch materials from Production List – aggregated by material+quality+color (total weight per option)
@@ -888,14 +924,30 @@ export function AddSaleDialog({
 
   const getPricePerKg = () => parseFloat(String(formData.sellingPrice).replace(/,/g, "")) || 0;
 
-  /** Total bill = price per kg × weight − discount + transport */
-  const calculateTotalAmount = () => {
-    const kg = getSaleWeightKg();
-    const rate = getPricePerKg();
+  const calculateLineAmount = (kg: number, rate: number, applyInvoiceAdjustments = true) => {
+    if (kg <= 0 || rate <= 0) return 0;
+    const base = Math.round(kg * rate * 100) / 100;
+    if (!applyInvoiceAdjustments) return base;
     const discount = parseFloat(String(formData.discount).replace(/,/g, "")) || 0;
     const transport = parseFloat(String(formData.transportationCost).replace(/,/g, "")) || 0;
-    if (kg <= 0 || rate <= 0) return 0;
-    return Math.max(0, Math.round((kg * rate - discount + transport) * 100) / 100);
+    return Math.max(0, Math.round((base - discount + transport) * 100) / 100);
+  };
+
+  /** Total bill = sum of invoice lines when multi-product; else current line only */
+  const calculateTotalAmount = () => {
+    const invoiceLines = buildInvoiceLines();
+    if (invoiceLines.length > 1) {
+      const subtotal = invoiceLines.reduce(
+        (sum, line) => sum + line.weight * line.sellingPricePerKg,
+        0
+      );
+      const discount = parseFloat(String(formData.discount).replace(/,/g, "")) || 0;
+      const transport = parseFloat(String(formData.transportationCost).replace(/,/g, "")) || 0;
+      return Math.max(0, Math.round((subtotal - discount + transport) * 100) / 100);
+    }
+    const kg = getSaleWeightKg();
+    const rate = getPricePerKg();
+    return calculateLineAmount(kg, rate, true);
   };
 
   const calculateRemainingAmount = () => {
@@ -1125,8 +1177,10 @@ export function AddSaleDialog({
       };
 
       const dateTime = parseDate(fd.purchaseDate, fd.purchaseTime);
-      const pricePerKg = parseFloat(fd.sellingPrice.replace(/,/g, "")) || 0;
+      const invoiceLines = buildInvoiceLines();
+      const isMultiLine = invoiceLines.length > 1;
       const totalBill = calculateTotalAmount();
+      const pricePerKg = isMultiLine ? 0 : parseFloat(fd.sellingPrice.replace(/,/g, "")) || 0;
       const finalAmount = totalBill.toFixed(2);
 
       const qualityValue =
@@ -1136,10 +1190,12 @@ export function AddSaleDialog({
 
       // Prepare form data (aggregated = no productionId/purchaseId; backend uses materialName+quality+materialColor and FIFO)
       const formDataToSend = new FormData();
-      if (selectedMaterialInfo?.productionId) {
-        formDataToSend.append('productionId', selectedMaterialInfo.productionId);
-      } else if (selectedMaterialInfo?.purchaseId) {
-        formDataToSend.append('purchaseId', selectedMaterialInfo.purchaseId);
+      if (!isMultiLine) {
+        if (selectedMaterialInfo?.productionId) {
+          formDataToSend.append('productionId', selectedMaterialInfo.productionId);
+        } else if (selectedMaterialInfo?.purchaseId) {
+          formDataToSend.append('purchaseId', selectedMaterialInfo.purchaseId);
+        }
       }
       // else: aggregated production – do not send productionId/purchaseId; materialName, quality, materialColor are enough
       formDataToSend.append('customerName', fd.buyerName);
@@ -1183,15 +1239,24 @@ export function AddSaleDialog({
       formDataToSend.append('buyerAddress', fd.buyerAddress || '');
       formDataToSend.append('buyerCnic', fd.buyerCnic || '');
       formDataToSend.append('buyerCompany', fd.buyerCompany || '');
-      const cartTotal = cartLines.reduce((s, l) => s + l.amount, 0);
-      const combinedTotal = cartLines.length > 0 ? cartTotal : totalBill;
-      formDataToSend.append('finalAmount', String(combinedTotal));
-      formDataToSend.append('sellingPrice', String(combinedTotal));
-      if (cartLines.length > 0) {
-        formDataToSend.append('lineItems', JSON.stringify(cartLines));
-        const totalKg = cartLines.reduce((s, l) => s + l.weight, 0);
+      formDataToSend.append('finalAmount', String(totalBill));
+      formDataToSend.append('sellingPrice', String(totalBill));
+      if (isMultiLine) {
+        const normalizedLines = invoiceLines.map((line) => ({
+          ...line,
+          discount: 0,
+          transportationCost: 0,
+          amount: Math.round(line.weight * line.sellingPricePerKg * 100) / 100,
+        }));
+        formDataToSend.append('lineItems', JSON.stringify(normalizedLines));
+        const totalKg = invoiceLines.reduce((sum, line) => sum + line.weight, 0);
         formDataToSend.set('sellingWeight', String(totalKg));
         formDataToSend.set('weight', String(totalKg));
+        formDataToSend.set('pricePerKg', '0');
+        formDataToSend.set(
+          'materialName',
+          [...new Set(invoiceLines.map((line) => line.materialName))].join(' + ')
+        );
       }
 
       // Add receipt file

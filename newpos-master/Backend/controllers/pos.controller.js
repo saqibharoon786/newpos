@@ -59,10 +59,15 @@ async function recordPosFinanceDeposit({
   invoiceNo,
   customerName,
   customerId,
+  transactionDate,
 }) {
   if (!amount || amount <= 0) return null;
   const method = normalizePosPaymentMethod(paymentMethod);
   if (!['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(method)) return null;
+  const date =
+    transactionDate && !Number.isNaN(new Date(transactionDate).getTime())
+      ? new Date(transactionDate)
+      : new Date();
   return Transaction.create({
     type: 'deposit',
     method,
@@ -71,11 +76,93 @@ async function recordPosFinanceDeposit({
     description: `Payment received - POS ${invoiceNo} - ${customerName}`,
     reference: invoiceNo,
     status: 'completed',
+    date,
     partyType: customerId ? 'customer' : undefined,
     partyId: customerId || undefined,
     partyName: customerName || undefined,
     category: 'pos_payment',
   });
+}
+
+function parsePosPaymentDate(input) {
+  if (!input) return new Date();
+  const direct = new Date(input);
+  if (!Number.isNaN(direct.getTime())) return direct;
+
+  const ymd = String(input).trim();
+  const isoDate = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDate) {
+    return new Date(
+      parseInt(isoDate[1], 10),
+      parseInt(isoDate[2], 10) - 1,
+      parseInt(isoDate[3], 10),
+      12,
+      0,
+      0
+    );
+  }
+
+  const dmy = ymd.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (dmy) {
+    return new Date(
+      parseInt(dmy[3], 10),
+      parseInt(dmy[2], 10) - 1,
+      parseInt(dmy[1], 10),
+      12,
+      0,
+      0
+    );
+  }
+
+  return new Date();
+}
+
+function resolvePosFinancePaymentDate({ saleDate, purchaseDate, paymentDate }) {
+  if (paymentDate) return parsePosPaymentDate(paymentDate);
+  if (saleDate) return parsePosPaymentDate(saleDate);
+  if (purchaseDate) return parsePosPaymentDate(purchaseDate);
+  return new Date();
+}
+
+/** Sale form date/time → stored purchaseDate, purchaseTime, and Finance transaction date */
+function splitSaleDateTime(saleDate) {
+  if (!saleDate) {
+    const now = new Date();
+    return {
+      purchaseDate: now.toISOString().split('T')[0],
+      purchaseTime: now.toLocaleTimeString('en-US', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      paymentDate: now,
+    };
+  }
+
+  const parsed = new Date(saleDate);
+  if (!Number.isNaN(parsed.getTime())) {
+    const yyyy = parsed.getFullYear();
+    const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+    const dd = String(parsed.getDate()).padStart(2, '0');
+    const hours = String(parsed.getHours()).padStart(2, '0');
+    const mins = String(parsed.getMinutes()).padStart(2, '0');
+    return {
+      purchaseDate: `${yyyy}-${mm}-${dd}`,
+      purchaseTime: `${hours}:${mins}`,
+      paymentDate: parsed,
+    };
+  }
+
+  const dateOnly = String(saleDate).trim();
+  return {
+    purchaseDate: dateOnly.includes('T') ? dateOnly.split('T')[0] : dateOnly,
+    purchaseTime: new Date().toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+    paymentDate: parsePosPaymentDate(dateOnly),
+  };
 }
 
 function buildPaymentLedgerEntry({
@@ -132,19 +219,89 @@ async function applyCustomerFinanceAdvance(customerId, amount, invoiceNo) {
   return { ok: true, applied: amount };
 }
 
-/** Bill total: pricePerKg × kg − discount + transport; else finalAmount / sellingPrice total. */
+function parseLineItemsFromBody(body) {
+  let items = body?.lineItems;
+  if (typeof items === 'string') {
+    try {
+      items = JSON.parse(items);
+    } catch {
+      items = [];
+    }
+  }
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((li) => {
+      const weight = parseFloat(li.weight) || 0;
+      const rate = parseFloat(li.sellingPricePerKg) || 0;
+      const lineDiscount = parseFloat(li.discount) || 0;
+      const lineTransport = parseFloat(li.transportationCost) || 0;
+      let amount = parseFloat(li.amount) || 0;
+      if (amount <= 0 && weight > 0 && rate > 0) {
+        amount = Math.max(0, round2(weight * rate - lineDiscount + lineTransport));
+      }
+      return {
+        materialName: String(li.materialName || '').trim(),
+        quality: String(li.quality || 'Standard').trim(),
+        materialColor: String(li.materialColor || '#FFFFFF').trim(),
+        weight,
+        sellingPricePerKg: rate,
+        discount: lineDiscount,
+        transportationCost: lineTransport,
+        amount,
+        actualCostPerKg: parseFloat(li.actualCostPerKg) || 0,
+        productionId: li.productionId || undefined,
+      };
+    })
+    .filter((li) => li.materialName && li.weight > 0);
+}
+
+function sumLineItemsAmount(lineItems) {
+  return round2(lineItems.reduce((sum, li) => sum + (li.amount || 0), 0));
+}
+
+async function enrichLineItemsWithCost(lineItems) {
+  return Promise.all(
+    lineItems.map(async (li) => {
+      const fifoCost = await getFifoActualCostPerKg({
+        materialName: li.materialName,
+        quality: li.quality,
+        materialColor: li.materialColor,
+      });
+      return {
+        materialName: li.materialName,
+        quality: li.quality,
+        materialColor: li.materialColor,
+        weight: li.weight,
+        sellingPricePerKg: li.sellingPricePerKg,
+        discount: li.discount,
+        transportationCost: 0,
+        amount: li.amount,
+        actualCostPerKg: li.actualCostPerKg > 0 ? li.actualCostPerKg : fifoCost,
+        productionId: li.productionId,
+      };
+    })
+  );
+}
+
+/** Bill total: sum line items when present; else pricePerKg × kg − discount + transport. */
 function computeSaleBillTotal(body) {
-  const kg = parseSaleWeight(body.sellingWeight ?? body.weight);
-  const pricePerKg = parseFloat(body.pricePerKg);
+  const lineItems = parseLineItemsFromBody(body);
   const discount = parseFloat(body.discount) || 0;
   const transport = parseFloat(body.transportationCost) || 0;
+
+  if (lineItems.length > 0) {
+    return Math.max(0, round2(sumLineItemsAmount(lineItems) - discount + transport));
+  }
+
+  const kg = parseSaleWeight(body.sellingWeight ?? body.weight);
+  const pricePerKg = parseFloat(body.pricePerKg);
   if (!isNaN(pricePerKg) && pricePerKg > 0 && kg > 0) {
-    return Math.max(0, Math.round((kg * pricePerKg - discount + transport) * 100) / 100);
+    return Math.max(0, round2(kg * pricePerKg - discount + transport));
   }
   const fromFinal = parseFloat(body.finalAmount);
   if (!isNaN(fromFinal) && fromFinal > 0) return fromFinal;
   const sp = parseFloat(body.sellingPrice) || 0;
-  return Math.max(0, Math.round((sp - discount + transport) * 100) / 100);
+  return Math.max(0, round2(sp - discount + transport));
 }
 
 /**
@@ -248,6 +405,23 @@ async function fifoReturnProduction({ materialName, quality, materialColor }, we
 
 /** Reverse stock when a POS sale is deleted (POP soldWeight or production FIFO). */
 async function restoreSaleStock(sale) {
+  if (Array.isArray(sale.lineItems) && sale.lineItems.length > 0) {
+    for (const li of sale.lineItems) {
+      const lineWeight = parseFloat(li.weight) || 0;
+      if (lineWeight <= 0) continue;
+      const result = await fifoReturnProduction(
+        {
+          materialName: li.materialName,
+          quality: li.quality,
+          materialColor: li.materialColor,
+        },
+        lineWeight
+      );
+      if (!result.ok) return result;
+    }
+    return { ok: true };
+  }
+
   const weight = parseSaleWeight(sale.weight);
   if (weight <= 0) return { ok: true };
 
@@ -337,21 +511,31 @@ const addSale = async (req, res) => {
         message: `Duplicate invoice number: ${finalInvoiceNo}`,
       });
     }
+    const parsedLineItems = parseLineItemsFromBody(req.body);
+    const isMultiLineSale = parsedLineItems.length > 1;
+
     if (productionId && purchaseId) {
       return res.status(400).json({
         success: false,
         message: "Provide either purchaseId or productionId, not both"
       });
     }
-    const fromAggregatedProduction = !productionId && !purchaseId && bodyMaterialName && bodyMaterialName.trim() !== "";
-    if (!productionId && !purchaseId && !fromAggregatedProduction) {
+    const fromAggregatedProduction =
+      !isMultiLineSale &&
+      !productionId &&
+      !purchaseId &&
+      bodyMaterialName &&
+      bodyMaterialName.trim() !== "";
+    if (!isMultiLineSale && !productionId && !purchaseId && !fromAggregatedProduction) {
       return res.status(400).json({
         success: false,
         message: "Required: purchaseId (POP), productionId (single batch), or materialName+quality+materialColor (aggregated Production)"
       });
     }
 
-    const weightToSell = parseFloat(sellingWeight);
+    const weightToSell = isMultiLineSale
+      ? parsedLineItems.reduce((sum, li) => sum + li.weight, 0)
+      : parseFloat(sellingWeight);
     if (isNaN(weightToSell) || weightToSell <= 0) {
       return res.status(400).json({
         success: false,
@@ -360,6 +544,7 @@ const addSale = async (req, res) => {
     }
 
     const receiptImage = req.file ? `/uploads/receipts/${req.file.filename}` : "";
+    const saleDateParts = splitSaleDateTime(saleDate);
     const cashFromBody = parseFloat(amountPaid) || 0;
     const discountNum = parseFloat(req.body.discount) || 0;
     const sellingPriceNum = computeSaleBillTotal({
@@ -400,8 +585,9 @@ const addSale = async (req, res) => {
     const billTotalStr = String(sellingPriceNum);
     const transportNum = parseFloat(transportationCost) || 0;
     const pricePerKgBody = parseFloat(req.body.pricePerKg);
-    const sellingPricePerKg =
-      !isNaN(pricePerKgBody) && pricePerKgBody > 0
+    const sellingPricePerKg = isMultiLineSale
+      ? 0
+      : !isNaN(pricePerKgBody) && pricePerKgBody > 0
         ? pricePerKgBody
         : weightToSell > 0
           ? Math.round(((sellingPriceNum + discountNum - transportNum) / weightToSell) * 100) / 100
@@ -415,7 +601,77 @@ const addSale = async (req, res) => {
 
     let materialName, supplierName, materialColor, actualPrice, salePayload;
 
-    if (productionId) {
+    if (isMultiLineSale) {
+      for (const li of parsedLineItems) {
+        if (li.sellingPricePerKg <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Valid selling rate required for ${li.materialName}`,
+          });
+        }
+        const stockResult = await fifoDeductProduction(
+          {
+            materialName: li.materialName,
+            quality: li.quality,
+            materialColor: li.materialColor,
+          },
+          li.weight
+        );
+        if (!stockResult.ok) {
+          return res.status(400).json({
+            success: false,
+            message: `${li.materialName}: ${stockResult.message}`,
+          });
+        }
+      }
+
+      const uniqueMaterials = [...new Set(parsedLineItems.map((li) => li.materialName))];
+      const enrichedLineItems = await enrichLineItemsWithCost(parsedLineItems);
+      materialName = uniqueMaterials.join(" + ");
+      supplierName = bodySupplierName || "Production";
+      materialColor = enrichedLineItems[0]?.materialColor || "#FFFFFF";
+      actualPrice = bodyActualPrice || "0";
+
+      salePayload = {
+        productionId: enrichedLineItems[0]?.productionId || undefined,
+        purchaseId: undefined,
+        materialName,
+        supplierName,
+        quality: enrichedLineItems[0]?.quality || "Standard",
+        invoiceNo: finalInvoiceNo,
+        weight: String(weightToSell),
+        unit:
+          requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== ""
+            ? String(requestUnit).trim()
+            : "0",
+        purchaseDate: saleDateParts.purchaseDate,
+        purchaseTime: saleDateParts.purchaseTime,
+        branch: "Main",
+        materialColor,
+        actualPrice,
+        productionCost: "0",
+        costPerKg: 0,
+        actualCostPerKg: 0,
+        sellingPrice: billTotalStr,
+        sellingPricePerKg: 0,
+        discount: String(discountNum),
+        finalAmount: billTotalStr,
+        advancePayment: advanceApplied,
+        amountPaid: paidAmount,
+        remainingAmount: remainingAmount,
+        paymentStatus: finalPaymentStatus,
+        buyerName: customerName,
+        buyerAddress: req.body.buyerAddress || "",
+        buyerPhone: customerPhone || "",
+        buyerEmail: customerEmail || "",
+        buyerCnic: req.body.buyerCnic || "",
+        buyerCompany: req.body.buyerCompany || "",
+        receiptImage,
+        transportationCost: transportationCost || 0,
+        notes: notes || "",
+        lineItems: enrichedLineItems,
+      };
+    } else if (productionId) {
       // Sale from single Production batch
       const production = await ProductionData.findById(productionId);
       if (!production) {
@@ -450,8 +706,8 @@ const addSale = async (req, res) => {
         invoiceNo: finalInvoiceNo,
         weight: sellingWeight.toString(),
         unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : "0",
-        purchaseDate: saleDate ? (typeof saleDate === 'string' && saleDate.includes('T') ? saleDate.split('T')[0] : saleDate) : new Date().toISOString().split('T')[0],
-        purchaseTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+        purchaseDate: saleDateParts.purchaseDate,
+        purchaseTime: saleDateParts.purchaseTime,
         branch: "Main",
         materialColor,
         actualPrice,
@@ -536,8 +792,8 @@ const addSale = async (req, res) => {
         invoiceNo: finalInvoiceNo,
         weight: sellingWeight.toString(),
         unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : "0",
-        purchaseDate: saleDate ? (typeof saleDate === 'string' && saleDate.includes('T') ? saleDate.split('T')[0] : saleDate) : new Date().toISOString().split('T')[0],
-        purchaseTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+        purchaseDate: saleDateParts.purchaseDate,
+        purchaseTime: saleDateParts.purchaseTime,
         branch: "Main",
         materialColor,
         actualPrice,
@@ -603,8 +859,8 @@ const addSale = async (req, res) => {
         invoiceNo: finalInvoiceNo,
         weight: sellingWeight.toString(),
         unit: (requestUnit !== undefined && requestUnit !== null && String(requestUnit).trim() !== "") ? String(requestUnit).trim() : (purchase.unit || "0"),
-        purchaseDate: saleDate ? (typeof saleDate === 'string' && saleDate.includes('T') ? saleDate.split('T')[0] : saleDate) : new Date().toISOString().split('T')[0],
-        purchaseTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+        purchaseDate: saleDateParts.purchaseDate,
+        purchaseTime: saleDateParts.purchaseTime,
         branch: "Main",
         materialColor,
         actualPrice,
@@ -643,7 +899,7 @@ const addSale = async (req, res) => {
     const matForCost = salePayload.materialName || bodyMaterialName;
     const qualForCost = salePayload.quality || bodyQuality;
     const colorForCost = salePayload.materialColor || bodyMaterialColor;
-    if (matForCost) {
+    if (matForCost && !isMultiLineSale) {
       const fifoCost = await getFifoActualCostPerKg({
         materialName: matForCost,
         quality: qualForCost,
@@ -683,17 +939,22 @@ const addSale = async (req, res) => {
       }
     }
     if (cashPaid > 0) {
+      const resolvedPaymentDate = resolvePosFinancePaymentDate({
+        saleDate,
+        purchaseDate: salePayload.purchaseDate,
+      });
       const tx = await recordPosFinanceDeposit({
         amount: cashPaid,
         paymentMethod: payMethod,
         invoiceNo: finalInvoiceNo,
         customerName,
         customerId: req.body.customerId,
+        transactionDate: resolvedPaymentDate,
       });
       salePayload.paymentLedger = [
         buildPaymentLedgerEntry({
           amount: cashPaid,
-          paymentDate: salePayload.purchaseDate || new Date(),
+          paymentDate: resolvedPaymentDate,
           paymentMethod: payMethod,
           notes: 'Payment on sale',
           transactionId: tx?._id,
@@ -701,28 +962,11 @@ const addSale = async (req, res) => {
       ];
     }
 
-    let parsedLineItems = req.body.lineItems;
-    if (typeof parsedLineItems === 'string') {
-      try {
-        parsedLineItems = JSON.parse(parsedLineItems);
-      } catch {
-        parsedLineItems = [];
+    if (!salePayload.lineItems?.length) {
+      const singleLineItems = parseLineItemsFromBody(req.body);
+      if (singleLineItems.length > 0) {
+        salePayload.lineItems = await enrichLineItemsWithCost(singleLineItems);
       }
-    }
-    if (Array.isArray(parsedLineItems) && parsedLineItems.length > 0) {
-      // Line-item transportation cost should also be recorded as Expense (not saved on invoice).
-      salePayload.lineItems = parsedLineItems.map((li) => ({
-        materialName: li.materialName,
-        quality: li.quality || 'Standard',
-        materialColor: li.materialColor || '#FFFFFF',
-        weight: parseFloat(li.weight) || 0,
-        sellingPricePerKg: parseFloat(li.sellingPricePerKg) || 0,
-        discount: parseFloat(li.discount) || 0,
-        transportationCost: 0,
-        amount: parseFloat(li.amount) || 0,
-        actualCostPerKg: parseFloat(li.actualCostPerKg) || 0,
-        productionId: li.productionId,
-      }));
     }
 
     const sale = await Sale.create(salePayload);
@@ -1064,6 +1308,10 @@ const updateSale = async (req, res) => {
       const payMethod = String(
         updateData.paymentMethod || existingSale.paymentMethod || 'cash'
       ).toLowerCase();
+      const resolvedPaymentDate = resolvePosFinancePaymentDate({
+        paymentDate: req.body.paymentDate || req.body.payment_date,
+        purchaseDate: existingSale.purchaseDate,
+      });
       let tx = null;
       if (payMethod !== 'advance') {
         tx = await recordPosFinanceDeposit({
@@ -1072,11 +1320,12 @@ const updateSale = async (req, res) => {
           invoiceNo: existingSale.invoiceNo || id,
           customerName: existingSale.buyerName || 'Customer',
           customerId: existingSale.customerId,
+          transactionDate: resolvedPaymentDate,
         });
       }
       paymentLedgerEntry = buildPaymentLedgerEntry({
         amount: delta,
-        paymentDate: req.body.paymentDate || req.body.payment_date,
+        paymentDate: resolvedPaymentDate,
         paymentMethod: payMethod,
         notes: req.body.paymentNotes || req.body.notes || `Payment Rs. ${delta.toLocaleString('en-PK')}`,
         clientPaymentId: req.body.clientPaymentId || req.body.paymentId || '',

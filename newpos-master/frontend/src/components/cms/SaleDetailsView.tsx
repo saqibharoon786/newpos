@@ -63,6 +63,15 @@ interface Sale {
   
   createdAt: string;
   updatedAt: string;
+  lineItems?: {
+    materialName?: string;
+    quality?: string;
+    materialColor?: string;
+    weight?: number;
+    sellingPricePerKg?: number;
+    discount?: number;
+    amount?: number;
+  }[];
 }
 
 interface SaleDetailsViewProps {
@@ -449,6 +458,31 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
             <!-- Product & Sale Details -->
             <div class="print-section">
               <h3>Product & Sale Details</h3>
+              ${hasMultipleLineItems(sale as Sale) ? `
+              <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:8px;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left; border-bottom:1px solid #ddd; padding:4px;">Material</th>
+                    <th style="text-align:right; border-bottom:1px solid #ddd; padding:4px;">Kg</th>
+                    <th style="text-align:right; border-bottom:1px solid #ddd; padding:4px;">Rate/kg</th>
+                    <th style="text-align:right; border-bottom:1px solid #ddd; padding:4px;">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(sale as Sale).lineItems!.map((line) => `
+                    <tr>
+                      <td style="padding:4px;">${line.materialName || 'N/A'}${line.quality ? ` (${line.quality})` : ''}</td>
+                      <td style="padding:4px; text-align:right;">${line.weight || 0}</td>
+                      <td style="padding:4px; text-align:right;">Rs. ${Number(line.sellingPricePerKg || 0).toLocaleString()}</td>
+                      <td style="padding:4px; text-align:right;">Rs. ${Number(line.amount || 0).toLocaleString()}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+              <div class="print-row">
+                <span class="print-label">Total Weight (kg):</span>
+                <span class="print-value">${sale?.weight || '0'} kg</span>
+              </div>` : `
               <div class="print-row">
                 <span class="print-label">Material Name:</span>
                 <span class="print-value">${sale?.materialName || 'N/A'}</span>
@@ -467,7 +501,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
                   <span class="color-dot" style="background-color: ${sale?.materialColor || '#FFFFFF'};"></span>
                   ${getColorName(sale?.materialColor || '')}
                 </span>
-              </div>
+              </div>`}
               ${sale?.branch ? `
               <div class="print-row">
                 <span class="print-label">Branch:</span>
@@ -491,10 +525,11 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
             <!-- Pricing Details -->
             <div class="print-section">
               <h3>Pricing Details</h3>
+              ${hasMultipleLineItems(sale as Sale) ? '' : `
               <div class="print-row">
                 <span class="print-label">Rate per kg:</span>
                 <span class="print-value">${formatCurrency(String(getRatePerKg(sale as Sale)))}</span>
-              </div>
+              </div>`}
               <div class="print-row">
                 <span class="print-label">Discount:</span>
                 <span class="print-value">${formatCurrency(sale?.discount || '0')}</span>
@@ -669,6 +704,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
   };
 
   const getRatePerKg = (s: Sale): number => {
+    if (s.lineItems && s.lineItems.length > 1) return 0;
     if (s.sellingPricePerKg != null && s.sellingPricePerKg > 0) return s.sellingPricePerKg;
     const w = parseFloat(s.weight) || 0;
     if (w <= 0) return 0;
@@ -678,6 +714,9 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
     if (finalAmt <= 0) return 0;
     return Math.round(((finalAmt + discount - transport) / w) * 100) / 100;
   };
+
+  const hasMultipleLineItems = (s: Sale | null) =>
+    !!(s?.lineItems && s.lineItems.length > 1);
 
   // Calculate profit
   const calculateProfit = () => {
@@ -826,6 +865,46 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
         {/* Product & Sale Details */}
         <div className="bg-cms-card rounded-xl p-5 border border-border">
           <h3 className="text-base font-semibold text-foreground mb-4 pb-3 border-b border-border">Product & Sale Details</h3>
+          {hasMultipleLineItems(sale) ? (
+            <div className="space-y-4">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-muted-foreground">
+                      <th className="text-left py-2 pr-2">Material</th>
+                      <th className="text-right py-2 px-2">Kg</th>
+                      <th className="text-right py-2 px-2">Rate/kg</th>
+                      <th className="text-right py-2 pl-2">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sale.lineItems!.map((line, index) => (
+                      <tr key={index} className="border-b border-border/60">
+                        <td className="py-2 pr-2 text-foreground">
+                          {line.materialName || "N/A"}
+                          {line.quality ? ` (${line.quality})` : ""}
+                        </td>
+                        <td className="py-2 px-2 text-right text-foreground">{line.weight || 0}</td>
+                        <td className="py-2 px-2 text-right text-foreground">
+                          Rs. {Number(line.sellingPricePerKg || 0).toLocaleString()}
+                        </td>
+                        <td className="py-2 pl-2 text-right text-foreground font-medium">
+                          Rs. {Number(line.amount || 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 text-muted-foreground">
+                  <Scale className="w-4 h-4" />
+                  <span className="text-sm">Total Weight</span>
+                </div>
+                <span className="text-sm text-foreground">{sale.weight || "0"} kg</span>
+              </div>
+            </div>
+          ) : (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
@@ -908,12 +987,14 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* Pricing Details */}
         <div className="bg-cms-card rounded-xl p-5 border border-border">
           <h3 className="text-base font-semibold text-foreground mb-4 pb-3 border-b border-border">Pricing Details</h3>
           <div className="space-y-4">
+            {!hasMultipleLineItems(sale) && (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
                 <DollarSign className="w-4 h-4" />
@@ -921,6 +1002,7 @@ export function SaleDetailsView({ saleId, onBack }: SaleDetailsViewProps) {
               </div>
               <span className="text-sm text-foreground">{formatCurrency(String(getRatePerKg(sale)))}</span>
             </div>
+            )}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 text-muted-foreground">
                 <Percent className="w-4 h-4" />
