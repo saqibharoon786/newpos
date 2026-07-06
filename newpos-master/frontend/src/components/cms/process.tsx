@@ -829,7 +829,11 @@ const ProcessingQueue = ({
                             new Date(b.purchaseDate || 0).getTime()
                         );
                         const first = fifo[0];
-                        onStartProcess(first, first.availableWeight, fifo);
+                        const groupTotalKg = items.reduce(
+                          (sum, item) => sum + item.availableWeight,
+                          0
+                        );
+                        onStartProcess(first, groupTotalKg, fifo);
                       }}
                       className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 transition-colors"
                     >
@@ -869,11 +873,13 @@ const ProcessingQueue = ({
                     .filter((n, i, arr) => arr.indexOf(n) === i)
                     .join(" · ")}
                 </h2>
-                <div className="flex items-center gap-4 mt-2">
+                <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-muted-foreground">
                   <StatusBadge status={selectedMaterial.status} />
-                  <div className="text-sm text-muted-foreground">
-                    Receipt #: {selectedMaterial.receiptNo}
-                  </div>
+                  {detailsGroupItems.length === 1 ? (
+                    <span>Receipt #: {selectedMaterial.receiptNo}</span>
+                  ) : (
+                    <span>{detailsGroupItems.length} receipts grouped by code</span>
+                  )}
                 </div>
               </div>
               
@@ -1594,11 +1600,20 @@ const StartProcessFormModal = ({
     return popAvailableLines[0];
   }, [popAvailableLines, selectedLineIndex, productCode]);
 
-  const popAvailableWeight =
-    activePopLine?.availableKg ??
-    activeReceipt?.availableWeight ??
-    initialMaterial?.popAvailableWeight ??
-    0;
+  const groupAvailableWeight = initialMaterial?.materialOptions
+    ? initialMaterial.materialOptions.reduce(
+        (sum, line) => sum + (line.availableWeight ?? 0),
+        0
+      )
+    : 0;
+  const isGroupProcess = (initialMaterial?.materialOptions?.length ?? 0) > 1;
+
+  const popAvailableWeight = isGroupProcess
+    ? groupAvailableWeight
+    : activePopLine?.availableKg ??
+      activeReceipt?.availableWeight ??
+      initialMaterial?.popAvailableWeight ??
+      0;
   const isFromQueue = !!(selectedReceiptId && popAvailableWeight > 0);
 
   const productCodeOptions = useMemo(() => {
@@ -2042,10 +2057,13 @@ const StartProcessFormModal = ({
                   {initialMaterial?.vendor && (
                     <span>Vendor: <strong className="text-foreground">{initialMaterial.vendor}</strong></span>
                   )}
-                  {initialMaterial?.receiptNo && (
+                  {initialMaterial?.receiptNo && initialMaterial?.materialOptions?.length <= 1 && (
                     <span>Receipt: <strong className="text-foreground">{initialMaterial.receiptNo}</strong></span>
                   )}
                   <span>POP available: <strong className="text-foreground">{popAvailableWeight} kg</strong></span>
+                  {initialMaterial?.materialOptions?.length > 1 && (
+                    <span>{initialMaterial.materialOptions.length} receipts grouped by code</span>
+                  )}
                   {purchasePrice > 0 && purchaseWeight > 0 && (
                     <span>POP cost: <strong className="text-foreground">Rs. {purchasePrice.toLocaleString()}</strong> ({purchaseWeight} kg)</span>
                   )}
@@ -2090,6 +2108,9 @@ const StartProcessFormModal = ({
               <div className="space-y-4">
                 {receiptOptions.length > 1 && (
                   <div>
+                    <p className="text-xs font-semibold text-muted-foreground mb-1.5">
+                      Total available for Code {productCode}: {groupAvailableWeight} kg across {receiptOptions.length} receipts
+                    </p>
                     <label className="block text-xs text-muted-foreground mb-1.5">
                       POP receipt (har receipt ki apni costing)
                     </label>
@@ -3881,7 +3902,7 @@ export function ProcessingModule() {
             ? {
                 materialName: materialForStartProcess.materialName,
                 quality: materialForStartProcess.quality,
-                popAvailableWeight: materialForStartProcess.availableWeight,
+                popAvailableWeight: groupTotalWeight ?? materialForStartProcess.availableWeight,
                 color: materialForStartProcess.color,
                 receiptNo: materialForStartProcess.receiptNo,
                 vendor: materialForStartProcess.vendor,

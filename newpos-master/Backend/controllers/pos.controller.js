@@ -7,6 +7,7 @@ const { ProductionData } = require("../models/process.model.js");
 const { generateSaleInvoiceNo } = require("../utils/invoiceGenerator");
 const { assertBillNoUnique } = require("../utils/billNumber");
 const Expense = require("../models/expense.model");
+const { syncPosFinancePaymentOnUpdate } = require("../utils/posPaymentSync");
 const path = require("path");
 const fs = require("fs");
 
@@ -1301,6 +1302,34 @@ const updateSale = async (req, res) => {
         ? parseFloat(updateData.amountPaid) || 0
         : oldPaid;
 
+    let financeSyncMessage = '';
+    if (updateData.amountPaid !== undefined && newPaid < oldPaid) {
+      const advanceAmt =
+        updateData.advancePayment !== undefined
+          ? parseFloat(updateData.advancePayment) || 0
+          : Number(existingSale.advancePayment) || 0;
+      const financeSync = await syncPosFinancePaymentOnUpdate({
+        invoiceNo: existingSale.invoiceNo,
+        customerName: existingSale.buyerName,
+        customerId: existingSale.customerId,
+        newAmountPaid: newPaid,
+        advancePayment: advanceAmt,
+        paymentMethod: updateData.paymentMethod || existingSale.paymentMethod,
+        transactionDate: resolvePosFinancePaymentDate({
+          paymentDate: req.body.paymentDate || req.body.payment_date,
+          purchaseDate: existingSale.purchaseDate,
+        }),
+        existingLedger: existingSale.paymentLedger || [],
+      });
+      if (!financeSync.ok) {
+        return res.status(400).json({ success: false, message: financeSync.message });
+      }
+      if (financeSync.synced) {
+        updateData.paymentLedger = financeSync.paymentLedger;
+        financeSyncMessage = financeSync.message || '';
+      }
+    }
+
     const delta = newPaid > oldPaid ? round2(newPaid - oldPaid) : 0;
     let paymentLedgerEntry = null;
 
@@ -1365,7 +1394,9 @@ const updateSale = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "Sale updated successfully",
+      message: financeSyncMessage
+        ? `Sale updated successfully — ${financeSyncMessage}`
+        : "Sale updated successfully",
       data: saleObj,
     });
   } catch (error) {

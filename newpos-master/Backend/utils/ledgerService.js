@@ -273,11 +273,35 @@ async function getRmDetail(code, query) {
   };
 }
 
+function getSaleWeightForCode(sale, code, productionById) {
+  let qty = 0;
+  if (Array.isArray(sale.lineItems) && sale.lineItems.length > 0) {
+    for (const li of sale.lineItems) {
+      if (!li.productionId) continue;
+      const prod = productionById[String(li.productionId)];
+      if (!prod) continue;
+      if (String(prod.productCode || '').trim() !== code) continue;
+      qty += num(li.weight);
+    }
+    return qty;
+  }
+
+  if (!sale.productionId) return 0;
+  const prodOfSale = productionById[String(sale.productionId)];
+  if (!prodOfSale || String(prodOfSale.productCode || '').trim() !== code) return 0;
+  return num(sale.weight);
+}
+
 function aggregateFpForCode(productions, sales, code, startYmd, endYmd) {
   let openingQty = 0;
   let productionQty = 0;
   let saleQty = 0;
   let productionAmount = 0;
+
+  const productionById = productions.reduce((map, p) => {
+    map[String(p._id)] = p;
+    return map;
+  }, {});
 
   for (const prod of productions) {
     if (String(prod.productCode || '').trim() !== code) continue;
@@ -286,15 +310,31 @@ function aggregateFpForCode(productions, sales, code, startYmd, endYmd) {
     const avail = prod.availableWeight != null ? num(prod.availableWeight) : total;
 
     if (ymd && startYmd && ymd < startYmd) {
-      // Find all sales of this batch where sale.date >= startYmd
       const salesOnOrAfter = sales.filter((s) => {
-        if (!s.productionId) return false;
-        if (String(s.productionId) !== String(prod._id)) return false;
         const sYmd = parseYmd(s.purchaseDate);
-        return sYmd && sYmd >= startYmd;
+        if (!sYmd) return false;
+        if (sYmd < startYmd) return false;
+        if (Array.isArray(s.lineItems) && s.lineItems.length > 0) {
+          return s.lineItems.some(
+            (li) => li.productionId && String(li.productionId) === String(prod._id)
+          );
+        }
+        return s.productionId && String(s.productionId) === String(prod._id);
       });
-      const soldOnOrAfter = salesOnOrAfter.reduce((sum, s) => sum + num(s.weight), 0);
-      openingQty += (avail + soldOnOrAfter);
+      const soldOnOrAfter = salesOnOrAfter.reduce((sum, s) => {
+        if (Array.isArray(s.lineItems) && s.lineItems.length > 0) {
+          return (
+            sum +
+            s.lineItems.reduce((liSum, li) => {
+              if (!li.productionId) return liSum;
+              if (String(li.productionId) !== String(prod._id)) return liSum;
+              return liSum + num(li.weight);
+            }, 0)
+          );
+        }
+        return sum + num(s.weight);
+      }, 0);
+      openingQty += avail + soldOnOrAfter;
     } else if (inRange(ymd, startYmd, endYmd)) {
       productionQty += total;
       productionAmount += num(prod.totalProductionCost);
@@ -302,13 +342,11 @@ function aggregateFpForCode(productions, sales, code, startYmd, endYmd) {
   }
 
   for (const s of sales) {
-    if (!s.productionId) continue;
     const sYmd = parseYmd(s.purchaseDate);
     if (!inRange(sYmd, startYmd, endYmd)) continue;
-
-    const prodOfSale = productions.find((p) => String(p._id) === String(s.productionId));
-    if (prodOfSale && String(prodOfSale.productCode || '').trim() === code) {
-      saleQty += num(s.weight);
+    const qty = getSaleWeightForCode(s, code, productionById);
+    if (qty > 0) {
+      saleQty += qty;
     }
   }
 
@@ -345,7 +383,12 @@ async function getFpDetail(code, query) {
   const { startDate, endDate } = resolveRange(query);
   const productions = await ProductionData.find({ productCode: code }).lean();
   const prodIds = new Set(productions.map((p) => String(p._id)));
-  const sales = await Sale.find({ productionId: { $in: [...prodIds] } }).lean();
+  const sales = await Sale.find({
+    $or: [
+      { productionId: { $in: [...prodIds] } },
+      { 'lineItems.productionId': { $in: [...prodIds] } },
+    ],
+  }).lean();
 
   const summary = aggregateFpForCode(productions, sales, code, startDate, endDate);
   const entries = [];
@@ -371,6 +414,34 @@ async function getFpDetail(code, query) {
   for (const s of sales) {
     const ymd = parseYmd(s.purchaseDate);
     if (!inRange(ymd, startDate, endDate)) continue;
+
+    if (Array.isArray(s.lineItems) && s.lineItems.length > 0) {
+      s.lineItems.forEach((li, index) => {
+        if (!li.productionId) return;
+        const prod = productions.find((p) => String(p._id) === String(li.productionId));
+        if (!prod || String(prod.productCode || '').trim() !== code) return;
+        const qty = num(li.weight);
+        if (qty <= 0) return;
+        const rate = li.sellingPricePerKg > 0
+          ? round2(li.sellingPricePerKg)
+          : qty > 0
+            ? round2(num(li.amount) / qty)
+            : 0;
+        entries.push({
+          date: ymd,
+          description: `Sale ${s.invoiceNo || ''} — ${s.buyerName || ''}`,
+          receivedQty: 0,
+          receivedRate: 0,
+          receivedAmount: 0,
+          saleQty: qty,
+          saleRate: rate,
+          timestamp: s.createdAt ? new Date(s.createdAt).getTime() : new Date(s.purchaseDate).getTime(),
+          sortKey: `${ymd}S${s._id}-${index}`,
+        });
+      });
+      continue;
+    }
+
     const qty = num(s.weight);
     const bill = num(s.finalAmount) || num(s.sellingPrice);
     const rate = qty > 0 ? round2(bill / qty) : 0;
@@ -835,10 +906,26 @@ async function getCustomerLedger(customerId, query) {
 
 async function getOwnerAdvanceLedger(query) {
   const { startDate, endDate } = resolveRange(query);
-  const accounts = await InvestmentAccount.find({
-    isActive: true,
-    accountType: { $in: ['advance_to_owner', 'loan_to_owner'] },
-  }).lean();
+  const accountId = String(query?.accountId || query?.ownerAccountId || '').trim();
+  let accounts = [];
+
+  if (accountId) {
+    const account = await InvestmentAccount.findOne({
+      _id: accountId,
+      isActive: true,
+      accountType: { $in: ['advance_to_owner', 'loan_to_owner'] },
+    }).lean();
+    if (account) {
+      accounts = [account];
+    }
+  }
+
+  if (!accounts.length) {
+    accounts = await InvestmentAccount.find({
+      isActive: true,
+      accountType: { $in: ['advance_to_owner', 'loan_to_owner'] },
+    }).lean();
+  }
 
   const allLines = [];
   for (const acc of accounts) {
@@ -909,6 +996,12 @@ async function getOwnerAdvanceLedger(query) {
       ownerName: a.ownerName || '',
       balance: round2(num(a.balance)),
     })),
+    selectedAccount: accounts.length === 1 ? {
+      _id: accounts[0]._id,
+      accountName: accounts[0].accountName,
+      ownerName: accounts[0].ownerName || '',
+      balance: round2(num(accounts[0].balance)),
+    } : undefined,
   };
 }
 

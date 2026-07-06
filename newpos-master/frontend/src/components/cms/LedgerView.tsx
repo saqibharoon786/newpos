@@ -83,11 +83,13 @@ export default function LedgerView() {
   const [vendors, setVendors] = useState<{ _id: string; name: string }[]>([]);
   const [customers, setCustomers] = useState<{ _id: string; name: string }[]>([]);
   const [employees, setEmployees] = useState<{ _id: string; name: string; employeeId: string }[]>([]);
+  const [ownerAccounts, setOwnerAccounts] = useState<{ _id: string; ownerName: string; accountName: string; balance: number }[]>([]);
 
   const [selectedCode, setSelectedCode] = useState('100');
   const [vendorId, setVendorId] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [employeeId, setEmployeeId] = useState('');
+  const [ownerAccountId, setOwnerAccountId] = useState('');
 
   const params = { startDate, endDate };
 
@@ -108,6 +110,17 @@ export default function LedgerView() {
         }
       })
       .catch(() => {});
+
+    api
+      .get('/api/finance/owner-accounts')
+      .then((r) => {
+        if (r.data?.success) {
+          const oList = r.data.data || [];
+          setOwnerAccounts(oList);
+          if (oList.length && !ownerAccountId) setOwnerAccountId(oList[0]._id);
+        }
+      })
+      .catch(() => {});
   }, [startDate, endDate]);
 
   const load = useCallback(async () => {
@@ -124,6 +137,11 @@ export default function LedgerView() {
         } catch {
           /* optional rebuild */
         }
+      }
+
+      const paramsWithRange: Record<string, string> = { startDate, endDate };
+      if (activeTab === 'owner' && ownerAccountId) {
+        paramsWithRange.accountId = ownerAccountId;
       }
 
       let url = '';
@@ -174,7 +192,7 @@ export default function LedgerView() {
           url = `${LEDGER_API}/employee/${employeeId}`;
           break;
       }
-      const r = await api.get(url, { params });
+      const r = await api.get(url, { params: paramsWithRange });
       if (r.data?.success) setData(r.data.data);
       else throw new Error(r.data?.message || 'Failed');
     } catch (e: unknown) {
@@ -187,14 +205,15 @@ export default function LedgerView() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, startDate, endDate, selectedCode, vendorId, customerId, employeeId]);
+  }, [activeTab, startDate, endDate, selectedCode, vendorId, customerId, employeeId, ownerAccountId]);
 
   useEffect(() => {
     if (activeTab === 'vendor' && !vendorId) return;
     if (activeTab === 'customer' && !customerId) return;
     if (activeTab === 'employee' && !employeeId) return;
+    if (activeTab === 'owner' && !ownerAccountId) return;
     load();
-  }, [load, activeTab, vendorId, customerId, employeeId]);
+  }, [load, activeTab, vendorId, customerId, employeeId, ownerAccountId]);
 
   const exportLedger = (format: 'excel' | 'pdf' | 'csv') => {
     if (!data) {
@@ -674,8 +693,29 @@ export default function LedgerView() {
     }
 
     if (activeTab === 'owner' && data.lines) {
+      const selectedAccount =
+        (data.selectedAccount as { _id: string; accountName: string; ownerName: string; balance: number }) ||
+        ((data.accounts as { _id: string; accountName: string; ownerName: string; balance: number }[])?.[0] ?? null);
+
       return (
-        <div className="space-y-3">
+        <div className="space-y-4">
+          {selectedAccount ? (
+            <div className="grid gap-3 sm:grid-cols-3 text-sm">
+              <div className="rounded-lg border border-border/70 bg-secondary p-3">
+                <p className="text-muted-foreground text-xs">Owner</p>
+                <p className="font-semibold">{selectedAccount.ownerName || selectedAccount.accountName}</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-secondary p-3">
+                <p className="text-muted-foreground text-xs">Ledger</p>
+                <p className="font-semibold">{selectedAccount.accountName}</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-secondary p-3">
+                <p className="text-muted-foreground text-xs">Outstanding</p>
+                <p className="font-semibold text-green-700">{fmtRs(selectedAccount.balance)}</p>
+              </div>
+            </div>
+          ) : null}
+
           <p className="text-xs text-muted-foreground">
             Balance = Opening + Debit (Advance Given) − Credit (Payment Received)
           </p>
@@ -691,7 +731,7 @@ export default function LedgerView() {
             (data.lines as Record<string, unknown>[]).map((l) => ({
               date: l.date,
               voucherNo: l.voucherNo,
-              description: `${l.description} (${l.accountName})`,
+              description: l.description,
               debit: l.debit ? fmtRs(l.debit as number) : '—',
               credit: l.credit ? fmtRs(l.credit as number) : '—',
               balance: fmtRs(l.balance as number),
@@ -835,6 +875,20 @@ export default function LedgerView() {
               {employees.map((e) => (
                 <SelectItem key={e._id} value={e._id}>
                   {e.name} ({e.employeeId})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {activeTab === 'owner' && (
+          <Select value={ownerAccountId} onValueChange={setOwnerAccountId}>
+            <SelectTrigger className="w-48 h-9">
+              <SelectValue placeholder="Owner" />
+            </SelectTrigger>
+            <SelectContent>
+              {ownerAccounts.map((o) => (
+                <SelectItem key={o._id} value={o._id}>
+                  {o.ownerName || o.accountName} — {o.accountName} ({fmtRs(o.balance)})
                 </SelectItem>
               ))}
             </SelectContent>
