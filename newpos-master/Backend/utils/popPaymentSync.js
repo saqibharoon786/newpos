@@ -63,7 +63,6 @@ async function findPopPaymentTransactions(invoiceNo) {
   const txs = await Transaction.find({
     reference: ref,
     type: 'withdraw',
-    status: 'completed',
   })
     .sort({ createdAt: 1 })
     .lean();

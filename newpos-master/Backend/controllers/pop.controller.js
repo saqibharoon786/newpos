@@ -11,13 +11,132 @@ const vendorController = require("./vendor.controller");
 const { logActivity } = require("../utils/activityLogger");
 const notificationController = require("./notification.controller");
 const { getPurchaseDisplayWeights, mergeMaterialsWithConsumption } = require("../utils/popMaterialConsumption");
-const { cascadeDeletePurchase } = require("../utils/purchaseCascadeDelete");
+const {
+  cascadeDeletePurchase,
+  removeVendorLedgerForPurchase,
+  rebuildVendorLedger,
+} = require("../utils/purchaseCascadeDelete");
 const { syncPopFinancePaymentOnUpdate } = require("../utils/popPaymentSync");
 const { assertBillNoUnique } = require("../utils/billNumber");
 const Vendor = require("../models/vendor.model");
 
 function round2(n) {
   return Math.round(n * 100) / 100;
+}
+
+function normalizeVendorPaymentMethod(method) {
+  const raw = String(method || "cash").toLowerCase();
+  if (raw === "cash") return "drawer";
+  if (["drawer", "easypaisa", "jazzcash", "bank"].includes(raw)) return raw;
+  return "drawer";
+}
+
+async function syncVendorPurchaseLedgerForUpdate(existing, updatedFields) {
+  const oldVendor = String(existing.vendor || "").trim();
+  const newVendor = String(updatedFields.vendor || "").trim();
+  const purchaseId = existing._id;
+
+  if (oldVendor) {
+    await removeVendorLedgerForPurchase(oldVendor, purchaseId);
+  }
+  if (newVendor && newVendor !== oldVendor) {
+    await removeVendorLedgerForPurchase(newVendor, purchaseId);
+  }
+
+  if (!newVendor) return;
+
+  const priceNum = Number(updatedFields.price) || 0;
+  const amountPaidNum = Number(updatedFields.amountPaid) || 0;
+  const advancePaymentNum = Number(updatedFields.advancePayment) || 0;
+
+  await vendorController.updateVendorLedger(newVendor, {
+    type: 'purchase',
+    purchaseId,
+    reference: updatedFields.invoiceNo || existing.invoiceNo,
+    description: updatedFields.materialName || existing.materialName || 'Purchase',
+    debit: 0,
+    credit: priceNum,
+  });
+
+  if (amountPaidNum > 0) {
+    await vendorController.updateVendorLedger(newVendor, {
+      type: 'payment',
+      purchaseId,
+      reference: updatedFields.invoiceNo || existing.invoiceNo,
+      description: `Payment on ${updatedFields.invoiceNo || existing.invoiceNo}`,
+      debit: amountPaidNum,
+      credit: 0,
+      paymentMethod: normalizeVendorPaymentMethod(updatedFields.paymentMethod),
+    });
+  }
+
+  if (advancePaymentNum > 0) {
+    await vendorController.updateVendorLedger(newVendor, {
+      type: 'apply_advance',
+      purchaseId,
+      reference: updatedFields.invoiceNo || existing.invoiceNo,
+      description: `Advance applied on ${updatedFields.invoiceNo || existing.invoiceNo}`,
+      debit: advancePaymentNum,
+      credit: 0,
+    });
+  }
+}
+
+async function syncVendorPurchasePaymentLedger({
+  oldVendor,
+  newVendor,
+  purchaseId,
+  invoiceNo,
+  materialName,
+  price,
+  amountPaid,
+  advancePayment,
+  paymentMethod,
+}) {
+  if (oldVendor) {
+    await removeVendorLedgerForPurchase(oldVendor, purchaseId);
+  }
+  if (newVendor && newVendor !== oldVendor) {
+    await removeVendorLedgerForPurchase(newVendor, purchaseId);
+  }
+
+  if (!newVendor) return;
+
+  const amountPaidNum = Number(amountPaid) || 0;
+  const advancePaymentNum = Number(advancePayment) || 0;
+  const priceNum = Number(price) || 0;
+
+  await vendorController.updateVendorLedger(newVendor, {
+    type: 'purchase',
+    purchaseId,
+    reference: invoiceNo,
+    description: materialName || 'Purchase',
+    debit: 0,
+    credit: priceNum,
+  });
+
+  if (amountPaidNum > 0) {
+    await vendorController.updateVendorLedger(newVendor, {
+      type: 'payment',
+      purchaseId,
+      reference: invoiceNo,
+      description: `Payment on ${invoiceNo}`,
+      debit: amountPaidNum,
+      credit: 0,
+      paymentMethod: normalizeVendorPaymentMethod(paymentMethod),
+    });
+  }
+
+  if (advancePaymentNum > 0) {
+    await vendorController.updateVendorLedger(newVendor, {
+      type: 'apply_advance',
+      purchaseId,
+      reference: invoiceNo,
+      description: `Advance applied on ${invoiceNo}`,
+      debit: advancePaymentNum,
+      credit: 0,
+    });
+  }
 }
 
 /** Vendor ledger balance immediately before this purchase bill was posted */
@@ -232,6 +351,7 @@ const addPurchase = async (req, res) => {
           description: `Payment on ${invoiceNo}`,
           debit: amountPaidNum,
           credit: 0,
+          paymentMethod: normalizeVendorPaymentMethod(req.body.paymentMethod),
         });
       }
       if (advancePaymentNum > 0) {
@@ -246,7 +366,7 @@ const addPurchase = async (req, res) => {
       }
     }
 
-    const payMethod = req.body.paymentMethod || 'drawer';
+    const payMethod = normalizePopPaymentMethod(req.body.paymentMethod || 'drawer');
     const cashPaid = amountPaidNum;
     if (cashPaid > 0 && ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(payMethod)) {
       const balances = await Transaction.getBalances();
@@ -547,6 +667,20 @@ const updatePurchase = async (req, res) => {
     const purchase = await Purchase.findByIdAndUpdate(req.params.id, updatedFields, {
       new: true,
       runValidators: true,
+    });
+
+    await syncVendorPurchaseLedgerForUpdate(existing, purchase.toObject());
+
+    await syncVendorPurchasePaymentLedger({
+      oldVendor: existing.vendor,
+      newVendor: updatedFields.vendor,
+      purchaseId: existing._id,
+      invoiceNo: existing.invoiceNo,
+      materialName: updatedFields.materialName,
+      price: updatedFields.price,
+      amountPaid: amountPaidNum,
+      advancePayment: advancePaymentNum,
+      paymentMethod: updatedFields.paymentMethod,
     });
 
     await logActivity({
