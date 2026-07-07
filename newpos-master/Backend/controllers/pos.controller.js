@@ -21,16 +21,18 @@ function parseSaleWeight(v) {
 }
 
 /** FIFO actual cost per kg from oldest production batch for material+quality+color */
-async function getFifoActualCostPerKg({ materialName, quality, materialColor }) {
+async function getFifoActualCostPerKg({ materialName, quality, materialColor, productions = null }) {
   const qualityQ = String(quality || "Standard").trim();
   const colorC = String(materialColor || "#FFFFFF").trim();
-  const productions = await ProductionData.find({
-    materialName: String(materialName || "").trim(),
-    $or: [{ availableWeight: { $gt: 0 } }, { availableWeight: { $exists: false } }],
-  })
-    .sort({ productionDate: 1 })
-    .lean();
-  const match = productions.find(
+  const productionDocs = Array.isArray(productions)
+    ? productions
+    : await ProductionData.find({
+        materialName: String(materialName || "").trim(),
+        $or: [{ availableWeight: { $gt: 0 } }, { availableWeight: { $exists: false } }],
+      })
+        .sort({ productionDate: 1 })
+        .lean();
+  const match = productionDocs.find(
     (p) =>
       normStr(p.materialName) === normStr(materialName) &&
       normStr(p.quality || "Standard") === normStr(qualityQ) &&
@@ -260,14 +262,41 @@ function sumLineItemsAmount(lineItems) {
   return round2(lineItems.reduce((sum, li) => sum + (li.amount || 0), 0));
 }
 
-async function enrichLineItemsWithCost(lineItems) {
+async function createSaleLineItemsWithProductionIds(lineItems, productions = null) {
+  if (!Array.isArray(lineItems) || lineItems.length === 0) return [];
+
+  const productionDocs = Array.isArray(productions)
+    ? productions
+    : await ProductionData.find({
+        $or: [{ availableWeight: { $gt: 0 } }, { availableWeight: { $exists: false } }],
+      })
+        .sort({ productionDate: 1 })
+        .lean();
+
   return Promise.all(
     lineItems.map(async (li) => {
       const fifoCost = await getFifoActualCostPerKg({
         materialName: li.materialName,
         quality: li.quality,
         materialColor: li.materialColor,
+        productions: productionDocs,
       });
+
+      let resolvedProductionId = li.productionId;
+      if (!resolvedProductionId) {
+        const qualityQ = String(li.quality || 'Standard').trim();
+        const colorC = String(li.materialColor || '#FFFFFF').trim();
+        const mName = String(li.materialName || '').trim();
+        const match = productionDocs.find(
+          (p) =>
+            normStr(p.materialName) === normStr(mName) &&
+            normStr(p.quality || 'Standard') === normStr(qualityQ) &&
+            normStr(p.color || '#FFFFFF') === normStr(colorC) &&
+            (p.availableWeight ?? p.totalWeight ?? 0) > 0
+        );
+        resolvedProductionId = match ? match._id : undefined;
+      }
+
       return {
         materialName: li.materialName,
         quality: li.quality,
@@ -278,10 +307,14 @@ async function enrichLineItemsWithCost(lineItems) {
         transportationCost: 0,
         amount: li.amount,
         actualCostPerKg: li.actualCostPerKg > 0 ? li.actualCostPerKg : fifoCost,
-        productionId: li.productionId,
+        productionId: resolvedProductionId,
       };
     })
   );
+}
+
+async function enrichLineItemsWithCost(lineItems) {
+  return createSaleLineItemsWithProductionIds(lineItems);
 }
 
 /** Bill total: sum line items when present; else pricePerKg × kg − discount + transport. */
@@ -1713,4 +1746,5 @@ module.exports = {
   getSalesStatistics,
   approveSale,
   syncSalePayments,
+  createSaleLineItemsWithProductionIds,
 };
