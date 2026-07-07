@@ -31,6 +31,13 @@ function normalizeVendorPaymentMethod(method) {
   return "drawer";
 }
 
+function normalizePopPaymentMethod(method) {
+  const raw = String(method || "cash").toLowerCase();
+  if (raw === "cash") return "drawer";
+  if (["drawer", "easypaisa", "jazzcash", "bank"].includes(raw)) return raw;
+  return "drawer";
+}
+
 async function syncVendorPurchaseLedgerForUpdate(existing, updatedFields) {
   const oldVendor = String(existing.vendor || "").trim();
   const newVendor = String(updatedFields.vendor || "").trim();
