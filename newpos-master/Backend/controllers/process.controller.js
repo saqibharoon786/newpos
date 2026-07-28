@@ -9,6 +9,7 @@ const {
   restorePopWeight,
   restorePopWeightFromAllocations,
   getPopLinePricing,
+  buildProcessingQueueItems,
   buildProcessingQueueByCode,
   getAvailableKgForLine,
   getTotalAvailableKgForCode,
@@ -54,15 +55,28 @@ function formatProcessError(error) {
   return error.message || "Failed to process";
 }
 
-/** Processing queue — overall by product code (100/105/110), total kg across all POP invoices */
+/** Processing queue — per POP line (available only); frontend groups by product code for total + invoice list */
 const getProcessingQueue = async (req, res) => {
   try {
     const purchases = await Purchase.find().sort({ createdAt: -1 }).lean();
-    const items = buildProcessingQueueByCode(purchases);
+    const lineItems = buildProcessingQueueItems(purchases);
+    // Also attach code-level totals for convenience
+    const byCode = buildProcessingQueueByCode(purchases);
+    const totalsByCode = Object.fromEntries(
+      byCode.map((g) => [
+        g.productCode,
+        {
+          availableWeight: g.availableWeight,
+          receiptCount: g.receiptCount,
+          pricePerKg: g.pricePerKg,
+        },
+      ])
+    );
     res.status(200).json({
       success: true,
-      count: items.length,
-      data: items,
+      count: lineItems.length,
+      data: lineItems,
+      totalsByCode,
     });
   } catch (error) {
     res.status(500).json({

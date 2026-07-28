@@ -771,78 +771,143 @@ const ProcessingQueue = ({
             const items = Array.isArray(groupMaterials) ? groupMaterials : [];
             const first = items[0];
             if (!first) return null;
+            // Expand nested lines if any aggregated row slipped in
+            const invoiceLines = items
+              .flatMap((m) =>
+                m.lines && m.lines.length > 0 ? m.lines : [m]
+              )
+              .filter((m) => (m.availableWeight ?? 0) > 0)
+              .sort(
+                (a, b) =>
+                  new Date(a.purchaseDate || 0).getTime() -
+                  new Date(b.purchaseDate || 0).getTime()
+              );
             const quality = first.quality;
             const colorHex = first.color || '#FFFFFF';
             const colorName = getColorName(colorHex);
-            const totalWeightKg = items.reduce((sum, m) => sum + m.availableWeight, 0);
+            const totalWeightKg = invoiceLines.reduce(
+              (sum, m) => sum + (m.availableWeight || 0),
+              0
+            );
             const displayCode = first.productCode && first.productCode !== '—' ? first.productCode : null;
             const codeLabel = displayCode ? getProductCodeLabel(displayCode) : null;
+            const uniqueReceipts = new Set(
+              invoiceLines.map((m) => m.receiptNo || m.purchaseId)
+            ).size;
             return (
               <div
                 key={groupKey}
-                className="flex items-center justify-between p-4 rounded-lg border border-border bg-cms-card-hover hover:border-primary transition-colors"
+                className="rounded-lg border border-border bg-cms-card-hover hover:border-primary transition-colors p-4"
               >
-                <div className="flex items-center gap-4">
-                  <div
-                    className="w-6 h-6 rounded-full border border-border shrink-0"
-                    style={{ backgroundColor: colorHex }}
-                    title={colorName}
-                  />
-                  <div>
-                    <div className="text-2xl font-bold text-primary tracking-wide">
-                      {displayCode ? `Code ${displayCode}` : "No code"}
-                    </div>
-                    <div className="text-sm text-muted-foreground mt-0.5">
-                      Quality: {quality} • {colorName} color
-                      {items[0]?.vendor && items[0].vendor !== "Multiple"
-                        ? ` • ${items[0].vendor}`
-                        : ""}
-                    </div>
-                    {codeLabel && displayCode && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Overall Code {displayCode} stock — Start Process par sirf bags/kg add karen
-                      </p>
-                    )}
-                    <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Scale className="w-3.5 h-3.5" />
-                        <span className="font-semibold text-primary">Total weight: {totalWeightKg} kg</span>
-                      </span>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div
+                      className="w-6 h-6 rounded-full border border-border shrink-0"
+                      style={{ backgroundColor: colorHex }}
+                      title={colorName}
+                    />
+                    <div className="min-w-0">
+                      <div className="text-2xl font-bold text-primary tracking-wide">
+                        {displayCode ? `Code ${displayCode}` : "No code"}
+                      </div>
+                      <div className="text-sm text-muted-foreground mt-0.5">
+                        Quality: {quality} • {colorName} color
+                        {uniqueReceipts > 0
+                          ? ` • ${uniqueReceipts} pending invoice${uniqueReceipts > 1 ? "s" : ""}`
+                          : ""}
+                      </div>
+                      {codeLabel && displayCode && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Sab pending invoices ka total — process par FIFO (purani pehle)
+                        </p>
+                      )}
+                      <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Scale className="w-3.5 h-3.5" />
+                          <span className="font-semibold text-primary">
+                            Total weight: {Math.round(totalWeightKg * 10) / 10} kg
+                          </span>
+                        </span>
+                      </div>
                     </div>
                   </div>
+                  {onStartProcess && invoiceLines.length > 0 && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => {
+                          setSelectedMaterial(invoiceLines[0]);
+                          setDetailsGroupItems(invoiceLines);
+                          setShowDetails(true);
+                        }}
+                        className="p-2 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+                        title="View invoices"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          const groupTotalKg = invoiceLines.reduce(
+                            (sum, item) => sum + (item.availableWeight || 0),
+                            0
+                          );
+                          onStartProcess(invoiceLines[0], groupTotalKg, invoiceLines);
+                        }}
+                        className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 transition-colors"
+                      >
+                        <ArrowRight className="w-4 h-4" />
+                        Start Process
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {onStartProcess && items.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        setSelectedMaterial(first);
-                        setDetailsGroupItems(items);
-                        setShowDetails(true);
-                      }}
-                      className="p-2 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
-                      title="View details"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        const fifo = [...items].sort(
-                          (a, b) =>
-                            new Date(a.purchaseDate || 0).getTime() -
-                            new Date(b.purchaseDate || 0).getTime()
-                        );
-                        const first = fifo[0];
-                        const groupTotalKg = items.reduce(
-                          (sum, item) => sum + item.availableWeight,
-                          0
-                        );
-                        onStartProcess(first, groupTotalKg, fifo);
-                      }}
-                      className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium flex items-center gap-2 transition-colors"
-                    >
-                      <ArrowRight className="w-4 h-4" />
-                      Start Process
-                    </button>
+
+                {/* Pending invoices under this code (fully processed hide — availableWeight > 0 only) */}
+                {invoiceLines.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-border/60">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">
+                      Pending POP invoices (oldest first)
+                    </p>
+                    <div className="space-y-1.5">
+                      {invoiceLines.map((inv, idx) => (
+                        <div
+                          key={inv._id || `${inv.purchaseId}-${inv.materialLineIndex}-${idx}`}
+                          className="flex items-center justify-between gap-3 text-sm px-2.5 py-1.5 rounded-md bg-background/60 border border-border/50"
+                        >
+                          <div className="min-w-0 flex items-center gap-2">
+                            <span className="text-[10px] font-semibold text-muted-foreground w-5 shrink-0">
+                              #{idx + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="font-medium text-foreground truncate">
+                                {inv.receiptNo || "Receipt"}
+                                {inv.materialName ? (
+                                  <span className="text-muted-foreground font-normal">
+                                    {" "}
+                                    · {inv.materialName}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="text-xs text-muted-foreground truncate">
+                                {inv.vendor && inv.vendor !== "Unknown" ? `${inv.vendor} · ` : ""}
+                                {inv.purchaseDate
+                                  ? new Date(inv.purchaseDate).toLocaleDateString()
+                                  : ""}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="font-semibold text-primary">
+                              {inv.availableWeight} kg
+                            </div>
+                            {inv.pricePerKg != null && inv.pricePerKg > 0 && (
+                              <div className="text-[10px] text-muted-foreground">
+                                Rs. {inv.pricePerKg}/kg
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -897,19 +962,36 @@ const ProcessingQueue = ({
                   <div className="space-y-3">
                     {detailsGroupItems.length > 0 && (
                       <div>
-                        <div className="text-xs text-muted-foreground">Materials (overall by code)</div>
-                        <ul className="text-sm text-foreground list-disc list-inside">
-                          {(detailsGroupItems[0]?.lines?.length
-                            ? detailsGroupItems[0].lines
-                            : detailsGroupItems
-                          ).map((m) => (
-                            <li key={m._id}>
-                              {m.materialName}: {m.availableWeight} kg
-                              {m.pricePerKg != null && m.pricePerKg > 0
-                                ? ` @ Rs. ${m.pricePerKg}/kg`
-                                : ""}
-                            </li>
-                          ))}
+                        <div className="text-xs text-muted-foreground">Pending invoices (FIFO)</div>
+                        <ul className="text-sm text-foreground space-y-1 mt-1">
+                          {detailsGroupItems
+                            .flatMap((m) =>
+                              m.lines && m.lines.length > 0 ? m.lines : [m]
+                            )
+                            .filter((m) => (m.availableWeight ?? 0) > 0)
+                            .sort(
+                              (a, b) =>
+                                new Date(a.purchaseDate || 0).getTime() -
+                                new Date(b.purchaseDate || 0).getTime()
+                            )
+                            .map((m, idx) => (
+                              <li
+                                key={m._id || `${m.purchaseId}-${idx}`}
+                                className="flex justify-between gap-2 border-b border-border/40 pb-1"
+                              >
+                                <span>
+                                  <span className="text-muted-foreground mr-1">#{idx + 1}</span>
+                                  {m.receiptNo || "Receipt"}
+                                  {m.materialName ? ` · ${m.materialName}` : ""}
+                                </span>
+                                <span className="font-medium text-primary shrink-0">
+                                  {m.availableWeight} kg
+                                  {m.pricePerKg != null && m.pricePerKg > 0
+                                    ? ` @ Rs. ${m.pricePerKg}`
+                                    : ""}
+                                </span>
+                              </li>
+                            ))}
                         </ul>
                       </div>
                     )}
@@ -2105,6 +2187,9 @@ const StartProcessFormModal = ({
                   <span>
                     POP available (Code {productCode}):{" "}
                     <strong className="text-foreground">{popAvailableWeight} kg</strong>
+                    {initialMaterial?.materialOptions && initialMaterial.materialOptions.length > 0
+                      ? ` · ${initialMaterial.materialOptions.length} invoice${initialMaterial.materialOptions.length > 1 ? "s" : ""}`
+                      : ""}
                   </span>
                   {purchasePrice > 0 && purchaseWeight > 0 && (
                     <span>
@@ -2115,6 +2200,31 @@ const StartProcessFormModal = ({
                     </span>
                   )}
                 </div>
+                {consumeByCode &&
+                  initialMaterial?.materialOptions &&
+                  initialMaterial.materialOptions.length > 0 && (
+                    <div className="mt-3 rounded-md border border-border/60 bg-background/50 p-2.5">
+                      <p className="text-[11px] font-medium text-muted-foreground mb-1.5">
+                        Pending invoices (FIFO — purani pehle; process ke baad khali hide)
+                      </p>
+                      <div className="space-y-1 max-h-28 overflow-y-auto">
+                        {initialMaterial.materialOptions.map((opt, idx) => (
+                          <div
+                            key={`${opt.purchaseId}-${opt.materialLineIndex ?? idx}`}
+                            className="flex justify-between gap-2 text-xs"
+                          >
+                            <span className="truncate text-foreground">
+                              #{idx + 1} {opt.receiptNo || "Receipt"}
+                              {opt.materialName ? ` · ${opt.materialName}` : ""}
+                            </span>
+                            <span className="shrink-0 font-semibold text-primary">
+                              {opt.availableWeight ?? 0} kg
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
               </div>
             ) : (
               <p className="text-sm text-muted-foreground mt-1">Enter material details and production output below.</p>
@@ -3896,7 +4006,22 @@ export function ProcessingModule() {
             ? {
                 materialName: materialForStartProcess.materialName,
                 quality: materialForStartProcess.quality,
-                popAvailableWeight: groupTotalWeight ?? materialForStartProcess.availableWeight,
+                popAvailableWeight: (() => {
+                  const lines = (groupMaterials || [materialForStartProcess])
+                    .flatMap((m) =>
+                      m.lines && m.lines.length > 0 ? m.lines : [m]
+                    )
+                    .filter(
+                      (m) =>
+                        (m.availableWeight ?? 0) > 0 &&
+                        (!normCodeStrict(materialForStartProcess.productCode) ||
+                          m.productCode === materialForStartProcess.productCode)
+                    );
+                  const sum = lines.reduce((s, m) => s + (m.availableWeight || 0), 0);
+                  return sum > 0
+                    ? Math.round(sum * 10) / 10
+                    : groupTotalWeight ?? materialForStartProcess.availableWeight;
+                })(),
                 color: materialForStartProcess.color,
                 receiptNo: materialForStartProcess.receiptNo,
                 vendor: materialForStartProcess.vendor,
@@ -3910,19 +4035,19 @@ export function ProcessingModule() {
                 pricePerKg: materialForStartProcess.pricePerKg,
                 materialOptions: (() => {
                   const code = normCodeStrict(materialForStartProcess.productCode);
-                  const sourceLines =
-                    materialForStartProcess.lines && materialForStartProcess.lines.length > 0
-                      ? materialForStartProcess.lines
-                      : groupMaterials && groupMaterials.length > 0
-                        ? groupMaterials.flatMap((m) =>
-                            m.lines && m.lines.length > 0 ? m.lines : [m]
-                          )
-                        : [materialForStartProcess];
+                  const sourceLines = (groupMaterials || [materialForStartProcess]).flatMap(
+                    (m) => (m.lines && m.lines.length > 0 ? m.lines : [m])
+                  );
                   return sourceLines
                     .filter(
                       (m) =>
                         (m.availableWeight ?? 0) > 0 &&
                         (!code || m.productCode === code)
+                    )
+                    .sort(
+                      (a, b) =>
+                        new Date(a.purchaseDate || 0).getTime() -
+                        new Date(b.purchaseDate || 0).getTime()
                     )
                     .map((m) => {
                       const ow = m.originalWeight || m.availableWeight || 0;
