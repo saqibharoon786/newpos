@@ -2,7 +2,7 @@ const Vendor = require('../models/vendor.model');
 const Purchase = require('../models/pop.model');
 const Sale = require('../models/pos.model');
 const { ProductionData, ProcessingMaterial } = require('../models/process.model');
-const { restorePopWeight } = require('./popMaterialConsumption');
+const { restorePopWeight, restorePopWeightFromAllocations } = require('./popMaterialConsumption');
 const {
   deleteSaleRecord,
   reverseSaleFinance,
@@ -35,13 +35,22 @@ async function cascadeDeleteProduction(productionId) {
   }
 
   const used = parseFloat(production.weightUsedFromPOP) || 0;
-  if (used > 0 && production.purchaseId && production.productCode) {
-    const restore = await restorePopWeight(production.purchaseId, {
-      productCode: production.productCode,
-      weight: used,
-      materialLineIndex: production.materialLineIndex,
-    });
-    if (restore.ok) summary.popWeightRestoredKg = used;
+  if (used > 0 && production.productCode) {
+    const allocations = production.popConsumptions || [];
+    if (allocations.length > 0) {
+      const restore = await restorePopWeightFromAllocations(
+        allocations,
+        production.productCode
+      );
+      if (restore.ok) summary.popWeightRestoredKg = restore.restored || used;
+    } else if (production.purchaseId) {
+      const restore = await restorePopWeight(production.purchaseId, {
+        productCode: production.productCode,
+        weight: used,
+        materialLineIndex: production.materialLineIndex,
+      });
+      if (restore.ok) summary.popWeightRestoredKg = used;
+    }
   }
 
   await ProcessingMaterial.deleteMany({ batchNo: production.batchNo });

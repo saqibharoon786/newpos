@@ -183,6 +183,10 @@ interface ProcessingMaterial {
   productCode?: string;
   /** POP materials[] index — deduction only on this line */
   materialLineIndex?: number;
+  /** Aggregated by product code across all POP invoices */
+  consumeByCode?: boolean;
+  receiptCount?: number;
+  lines?: ProcessingMaterial[];
   status: 'pending' | 'in_progress' | 'processed' | 'on_hold';
   batchNo?: string;
 }
@@ -790,21 +794,20 @@ const ProcessingQueue = ({
                     </div>
                     <div className="text-sm text-muted-foreground mt-0.5">
                       Quality: {quality} • {colorName} color
-                      {items.length > 1 ? ` • ${items.length} receipts` : items[0]?.vendor ? ` • ${items[0].vendor}` : ""}
+                      {items[0]?.vendor && items[0].vendor !== "Multiple"
+                        ? ` • ${items[0].vendor}`
+                        : ""}
                     </div>
                     {codeLabel && displayCode && (
-                      <p className="text-xs text-muted-foreground mt-0.5">Click Start Process to see material details</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Overall Code {displayCode} stock — Start Process par sirf bags/kg add karen
+                      </p>
                     )}
                     <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Scale className="w-3.5 h-3.5" />
                         <span className="font-semibold text-primary">Total weight: {totalWeightKg} kg</span>
                       </span>
-                      {items.length > 1 && (
-                        <span className="text-amber-700 dark:text-amber-400">
-                          ({items.length} receipts — har receipt apni rate se, FIFO)
-                        </span>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -875,11 +878,16 @@ const ProcessingQueue = ({
                 </h2>
                 <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-muted-foreground">
                   <StatusBadge status={selectedMaterial.status} />
-                  {detailsGroupItems.length === 1 ? (
-                    <span>Receipt #: {selectedMaterial.receiptNo}</span>
-                  ) : (
-                    <span>{detailsGroupItems.length} receipts grouped by code</span>
-                  )}
+                  <span>
+                    Total available:{" "}
+                    <strong className="text-foreground">
+                      {(detailsGroupItems.length > 0 ? detailsGroupItems : [selectedMaterial]).reduce(
+                        (s, m) => s + (m.availableWeight || 0),
+                        0
+                      )}{" "}
+                      kg
+                    </strong>
+                  </span>
                 </div>
               </div>
               
@@ -887,13 +895,16 @@ const ProcessingQueue = ({
                 <div>
                   <h3 className="text-sm font-medium text-foreground mb-3">Material Information</h3>
                   <div className="space-y-3">
-                    {detailsGroupItems.length > 1 && (
+                    {detailsGroupItems.length > 0 && (
                       <div>
-                        <div className="text-xs text-muted-foreground">Materials in this code</div>
+                        <div className="text-xs text-muted-foreground">Materials (overall by code)</div>
                         <ul className="text-sm text-foreground list-disc list-inside">
-                          {detailsGroupItems.map((m) => (
+                          {(detailsGroupItems[0]?.lines?.length
+                            ? detailsGroupItems[0].lines
+                            : detailsGroupItems
+                          ).map((m) => (
                             <li key={m._id}>
-                              {m.receiptNo}: {m.availableWeight} kg
+                              {m.materialName}: {m.availableWeight} kg
                               {m.pricePerKg != null && m.pricePerKg > 0
                                 ? ` @ Rs. ${m.pricePerKg}/kg`
                                 : ""}
@@ -1516,6 +1527,9 @@ const StartProcessFormModal = ({
     purchaseWeight?: number;
     productCode?: string;
     materialLineIndex?: number;
+    /** Code-wise process: total stock across all POP invoices */
+    consumeByCode?: boolean;
+    pricePerKg?: number;
     materialOptions?: {
       materialName: string;
       purchaseId: string;
@@ -1556,67 +1570,75 @@ const StartProcessFormModal = ({
   /** User manually edited POP kg — bags change par dubara formula se bharega */
   const popWeightManualRef = useRef(false);
 
-  const receiptOptions = useMemo(() => {
-    const onlyAvailable = <T extends { availableWeight?: number }>(opts: T[]) =>
-      opts.filter((o) => (o.availableWeight ?? 0) > 0);
+  const consumeByCode =
+    initialMaterial?.consumeByCode === true ||
+    (initialMaterial?.materialOptions?.length ?? 0) > 0 ||
+    !!(initialMaterial?.productCode && (initialMaterial?.popAvailableWeight ?? 0) > 0);
 
-    const opts = initialMaterial?.materialOptions;
-    if (opts && opts.length > 0) {
-      return onlyAvailable([...opts]).sort(
-        (a, b) =>
-          new Date(a.purchaseDate || 0).getTime() - new Date(b.purchaseDate || 0).getTime()
-      );
+  const groupAvailableWeight = useMemo(() => {
+    if (initialMaterial?.popAvailableWeight != null && initialMaterial.popAvailableWeight > 0) {
+      return initialMaterial.popAvailableWeight;
     }
-    if (purchaseId) {
-      const single = {
-        purchaseId,
-        receiptNo: initialMaterial?.receiptNo,
-        materialName: initialMaterial?.materialName || "",
-        productCode: initialMaterial?.productCode,
-        materialLineIndex: initialMaterial?.materialLineIndex,
-        availableWeight: initialMaterial?.popAvailableWeight,
-        pricePerKg:
-          initialMaterial?.purchaseWeight && initialMaterial.purchaseWeight > 0
-            ? (initialMaterial.purchasePrice || 0) / initialMaterial.purchaseWeight
-            : undefined,
-        purchaseDate: undefined as string | undefined,
-      };
-      return onlyAvailable([single]);
-    }
-    return [];
-  }, [initialMaterial, purchaseId]);
-
-  const activeReceipt = receiptOptions.find((o) => o.purchaseId === selectedReceiptId) ?? receiptOptions[0];
-
-  const activePopLine = useMemo(() => {
-    if (popAvailableLines.length === 0) return null;
-    const code = normCodeStrict(productCode);
-    const byIndex = popAvailableLines.find(
-      (l) => l.lineIndex === selectedLineIndex && l.productCode === code
-    );
-    if (byIndex) return byIndex;
-    const byCode = popAvailableLines.find((l) => l.productCode === code);
-    if (byCode) return byCode;
-    return popAvailableLines[0];
-  }, [popAvailableLines, selectedLineIndex, productCode]);
-
-  const groupAvailableWeight = initialMaterial?.materialOptions
-    ? initialMaterial.materialOptions.reduce(
+    if (initialMaterial?.materialOptions?.length) {
+      return initialMaterial.materialOptions.reduce(
         (sum, line) => sum + (line.availableWeight ?? 0),
         0
-      )
-    : 0;
-  const isGroupProcess = (initialMaterial?.materialOptions?.length ?? 0) > 1;
+      );
+    }
+    return 0;
+  }, [initialMaterial]);
 
-  const popAvailableWeight = isGroupProcess
+  /** Weighted avg pricing across all available stock for this code (FIFO pool) */
+  const codePoolPricing = useMemo(() => {
+    const opts = initialMaterial?.materialOptions || [];
+    if (opts.length > 0) {
+      let value = 0;
+      let weight = 0;
+      for (const o of opts) {
+        const w = o.availableWeight ?? 0;
+        const rate = o.pricePerKg ?? 0;
+        if (w > 0 && rate > 0) {
+          value += w * rate;
+          weight += w;
+        }
+      }
+      if (weight > 0) {
+        return { price: value, weight };
+      }
+    }
+    if (
+      initialMaterial?.purchasePrice != null &&
+      initialMaterial.purchasePrice > 0 &&
+      (initialMaterial.purchaseWeight || groupAvailableWeight) > 0
+    ) {
+      return {
+        price: initialMaterial.purchasePrice,
+        weight: initialMaterial.purchaseWeight || groupAvailableWeight,
+      };
+    }
+    if (initialMaterial?.pricePerKg && groupAvailableWeight > 0) {
+      return {
+        price: initialMaterial.pricePerKg * groupAvailableWeight,
+        weight: groupAvailableWeight,
+      };
+    }
+    return null;
+  }, [initialMaterial, groupAvailableWeight]);
+
+  const popAvailableWeight = consumeByCode
     ? groupAvailableWeight
-    : activePopLine?.availableKg ??
-      activeReceipt?.availableWeight ??
+    : popAvailableLines.find((l) => l.productCode === normCodeStrict(productCode))?.availableKg ??
       initialMaterial?.popAvailableWeight ??
       0;
-  const isFromQueue = !!(selectedReceiptId && popAvailableWeight > 0);
+  const isFromQueue = !!(consumeByCode
+    ? productCode && popAvailableWeight > 0
+    : selectedReceiptId && popAvailableWeight > 0);
 
   const productCodeOptions = useMemo(() => {
+    if (consumeByCode && initialMaterial?.productCode) {
+      const c = normCodeStrict(initialMaterial.productCode);
+      return c ? PRODUCT_CODES.filter((p) => p.code === c) : PRODUCT_CODES;
+    }
     if (popAvailableLines.length > 0) {
       const codes = new Set(popAvailableLines.map((l) => l.productCode));
       return PRODUCT_CODES.filter((p) => codes.has(p.code));
@@ -1626,9 +1648,14 @@ const StartProcessFormModal = ({
       return c ? PRODUCT_CODES.filter((p) => p.code === c) : PRODUCT_CODES;
     }
     return PRODUCT_CODES;
-  }, [popAvailableLines, isFromQueue, initialMaterial?.productCode]);
-  const purchasePrice = popPricing?.price ?? initialMaterial?.purchasePrice ?? 0;
-  const purchaseWeight = popPricing?.weight ?? initialMaterial?.purchaseWeight ?? 0;
+  }, [popAvailableLines, isFromQueue, initialMaterial?.productCode, consumeByCode]);
+
+  const purchasePrice = consumeByCode
+    ? codePoolPricing?.price ?? popPricing?.price ?? initialMaterial?.purchasePrice ?? 0
+    : popPricing?.price ?? initialMaterial?.purchasePrice ?? 0;
+  const purchaseWeight = consumeByCode
+    ? codePoolPricing?.weight ?? popPricing?.weight ?? initialMaterial?.purchaseWeight ?? 0
+    : popPricing?.weight ?? initialMaterial?.purchaseWeight ?? 0;
 
   /** Machine output = weight put in machine − waste (e.g. 50 used − 5 waste = 45 output) */
   const calcMachineOutputKg = (usedKg: number, wasteKg: number) =>
@@ -1637,9 +1664,14 @@ const StartProcessFormModal = ({
   const pricePerKg = getPricePerKgFromPop(purchasePrice, purchaseWeight);
 
   useEffect(() => {
-    if (!open || !selectedReceiptId) {
-      setPopPricing(null);
-      setPopAvailableLines([]);
+    if (!open || consumeByCode || !selectedReceiptId) {
+      if (consumeByCode) {
+        setPopPricing(codePoolPricing);
+        setPopAvailableLines([]);
+      } else if (!selectedReceiptId) {
+        setPopPricing(null);
+        setPopAvailableLines([]);
+      }
       return;
     }
     let cancelled = false;
@@ -1667,10 +1699,18 @@ const StartProcessFormModal = ({
     return () => {
       cancelled = true;
     };
-  }, [open, selectedReceiptId, productCode, selectedLineIndex, initialMaterial?.materialName]);
+  }, [
+    open,
+    selectedReceiptId,
+    productCode,
+    selectedLineIndex,
+    initialMaterial?.materialName,
+    consumeByCode,
+    codePoolPricing,
+  ]);
 
   useEffect(() => {
-    if (!open || popAvailableLines.length === 0) return;
+    if (!open || consumeByCode || popAvailableLines.length === 0) return;
     const currentCode = normCodeStrict(productCode);
     const valid =
       popAvailableLines.find(
@@ -1681,7 +1721,7 @@ const StartProcessFormModal = ({
     setProductCode(first.productCode);
     setSelectedLineIndex(first.lineIndex);
     setMaterialName(first.materialName);
-  }, [open, popAvailableLines, productCode, selectedLineIndex]);
+  }, [open, popAvailableLines, productCode, selectedLineIndex, consumeByCode]);
 
   useEffect(() => {
     if (!open || !isFromQueue) return;
@@ -1753,7 +1793,7 @@ const StartProcessFormModal = ({
       setWeightUsedFromPOP(String(popAvailableWeight));
       toast({
         title: "POP limit",
-        description: `Maximum ${popAvailableWeight} kg available is receipt se.`,
+        description: `Maximum ${popAvailableWeight} kg available (Code ${productCode} total).`,
         variant: "destructive",
       });
       return;
@@ -1990,11 +2030,16 @@ const StartProcessFormModal = ({
         laborCostPerKg: parseFloat(String(laborCostPerKg).trim().replace(",", ".")) || 0,
       };
       const effectivePurchaseId = selectedReceiptId || purchaseId;
-      if (effectivePurchaseId) payload.purchaseId = effectivePurchaseId;
-      if (selectedLineIndex != null && !isNaN(selectedLineIndex)) {
-        payload.materialLineIndex = selectedLineIndex;
-      } else if (initialMaterial?.materialLineIndex != null) {
-        payload.materialLineIndex = initialMaterial.materialLineIndex;
+      if (consumeByCode) {
+        payload.consumeByCode = true;
+        // Backend FIFO across all POP invoices for this code — no single receipt pick
+      } else if (effectivePurchaseId) {
+        payload.purchaseId = effectivePurchaseId;
+        if (selectedLineIndex != null && !isNaN(selectedLineIndex)) {
+          payload.materialLineIndex = selectedLineIndex;
+        } else if (initialMaterial?.materialLineIndex != null) {
+          payload.materialLineIndex = initialMaterial.materialLineIndex;
+        }
       }
       if (isFromQueue && !isNaN(usedFromPOP)) {
         payload.weightUsedFromPOP = usedFromPOP;
@@ -2010,7 +2055,7 @@ const StartProcessFormModal = ({
           title: "Success",
           description:
             response.data.message ||
-            "Production saved. Sirf selected code ki POP line se weight minus hua.",
+            "Production saved. Code ke overall POP stock se weight minus hua.",
         });
         onSaved();
         onClose();
@@ -2054,18 +2099,20 @@ const StartProcessFormModal = ({
                 <p className="text-xl font-bold text-foreground mt-1">{materialName}</p>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                   <span>Quality: <strong className="text-foreground">{quality}</strong></span>
-                  {initialMaterial?.vendor && (
+                  {initialMaterial?.vendor && initialMaterial.vendor !== "Multiple" && (
                     <span>Vendor: <strong className="text-foreground">{initialMaterial.vendor}</strong></span>
                   )}
-                  {initialMaterial?.receiptNo && initialMaterial?.materialOptions?.length <= 1 && (
-                    <span>Receipt: <strong className="text-foreground">{initialMaterial.receiptNo}</strong></span>
-                  )}
-                  <span>POP available: <strong className="text-foreground">{popAvailableWeight} kg</strong></span>
-                  {initialMaterial?.materialOptions?.length > 1 && (
-                    <span>{initialMaterial.materialOptions.length} receipts grouped by code</span>
-                  )}
+                  <span>
+                    POP available (Code {productCode}):{" "}
+                    <strong className="text-foreground">{popAvailableWeight} kg</strong>
+                  </span>
                   {purchasePrice > 0 && purchaseWeight > 0 && (
-                    <span>POP cost: <strong className="text-foreground">Rs. {purchasePrice.toLocaleString()}</strong> ({purchaseWeight} kg)</span>
+                    <span>
+                      Avg POP rate:{" "}
+                      <strong className="text-foreground">
+                        Rs. {getPricePerKgFromPop(purchasePrice, purchaseWeight).toLocaleString()}/kg
+                      </strong>
+                    </span>
                   )}
                 </div>
               </div>
@@ -2106,51 +2153,6 @@ const StartProcessFormModal = ({
             <div>
               <h3 className="text-base font-semibold text-foreground mb-4">Material Information</h3>
               <div className="space-y-4">
-                {receiptOptions.length > 1 && (
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground mb-1.5">
-                      Total available for Code {productCode}: {groupAvailableWeight} kg across {receiptOptions.length} receipts
-                    </p>
-                    <label className="block text-xs text-muted-foreground mb-1.5">
-                      POP receipt (har receipt ki apni costing)
-                    </label>
-                    <select
-                      value={selectedReceiptId || ""}
-                      onChange={(e) => {
-                        const pid = e.target.value;
-                        setSelectedReceiptId(pid);
-                        const opt = receiptOptions.find((o) => o.purchaseId === pid);
-                        if (opt) {
-                          setMaterialName(opt.materialName || materialName);
-                          if (opt.productCode && opt.productCode !== "—") {
-                            setProductCode(opt.productCode);
-                          }
-                          setSelectedLineIndex(opt.materialLineIndex);
-                          setTotalBags("");
-                          setWeightUsedFromPOP("");
-                        }
-                      }}
-                      className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    >
-                      {receiptOptions.map((opt) => (
-                        <option key={opt.purchaseId} value={opt.purchaseId}>
-                          {opt.receiptNo || "Receipt"} — {opt.availableWeight ?? "?"} kg
-                          {opt.pricePerKg != null && opt.pricePerKg > 0
-                            ? ` @ Rs. ${opt.pricePerKg}/kg`
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                      Pehle purani receipt (FIFO) process karen — nayi receipt alag rate se.
-                    </p>
-                  </div>
-                )}
-                {activeReceipt?.pricePerKg != null && activeReceipt.pricePerKg > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Is receipt ka rate: Rs. {activeReceipt.pricePerKg}/kg (sirf is stock par costing)
-                  </p>
-                )}
                 <div className="bg-cms-card-hover rounded-lg p-4 border border-border">
                   <div className="flex items-center justify-between">
                     <div>
@@ -2171,7 +2173,7 @@ const StartProcessFormModal = ({
                     />
                   </div>
                 </div>
-                {popAvailableLines.length > 1 && (
+                {!consumeByCode && popAvailableLines.length > 1 && (
                   <div>
                     <label className="block text-xs text-muted-foreground mb-1.5">
                       Available material (POP line)
@@ -2203,9 +2205,6 @@ const StartProcessFormModal = ({
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Sirf available lines — jo process ho chuki hain yahan nahi aati.
-                    </p>
                   </div>
                 )}
                 <div>
@@ -2234,14 +2233,9 @@ const StartProcessFormModal = ({
                       <option key={p.code} value={p.code}>{p.label} — {p.bagSize} kg/bag</option>
                     ))}
                   </select>
-                  {productCodeOptions.length <= 1 && isFromQueue && (
+                  {isFromQueue && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      Sirf available product code — processed material yahan nahi dikhega.
-                    </p>
-                  )}
-                  {initialMaterial?.productCode && initialMaterial.productCode !== '—' && productCodeOptions.length > 1 && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Sirf Code {initialMaterial.productCode} ka POP use hoga — doosre code se nahi.
+                      Code {productCode} ka overall stock use hoga — invoice select karne ki zaroorat nahi.
                     </p>
                   )}
                 </div>
@@ -3907,43 +3901,53 @@ export function ProcessingModule() {
                 receiptNo: materialForStartProcess.receiptNo,
                 vendor: materialForStartProcess.vendor,
                 purchasePrice: materialForStartProcess.purchasePrice,
-                purchaseWeight: materialForStartProcess.originalWeight,
+                purchaseWeight:
+                  materialForStartProcess.availableWeight ||
+                  materialForStartProcess.originalWeight,
                 productCode: materialForStartProcess.productCode,
                 materialLineIndex: materialForStartProcess.materialLineIndex,
-                materialOptions: groupMaterials && groupMaterials.length > 0
-                  ? (() => {
-                      const code = normCodeStrict(materialForStartProcess.productCode);
-                      return groupMaterials
-                        .filter(
-                          (m) =>
-                            (m.availableWeight ?? 0) > 0 &&
-                            (!code || m.productCode === code)
-                        )
-                        .map((m) => {
-                          const ow = m.originalWeight || 0;
-                          const pp = m.purchasePrice || 0;
-                          return {
-                            materialName: m.materialName || "Unknown",
-                            purchaseId: m.purchaseId,
-                            receiptNo: m.receiptNo,
-                            productCode: m.productCode,
-                            materialLineIndex: m.materialLineIndex,
-                            availableWeight: m.availableWeight,
-                            pricePerKg:
-                              m.pricePerKg != null && m.pricePerKg > 0
-                                ? m.pricePerKg
-                                : ow > 0 && pp > 0
-                                  ? Math.round((pp / ow) * 100) / 100
-                                  : undefined,
-                            purchaseDate: m.purchaseDate,
-                          };
-                        });
-                    })()
-                  : undefined,
+                consumeByCode: true,
+                pricePerKg: materialForStartProcess.pricePerKg,
+                materialOptions: (() => {
+                  const code = normCodeStrict(materialForStartProcess.productCode);
+                  const sourceLines =
+                    materialForStartProcess.lines && materialForStartProcess.lines.length > 0
+                      ? materialForStartProcess.lines
+                      : groupMaterials && groupMaterials.length > 0
+                        ? groupMaterials.flatMap((m) =>
+                            m.lines && m.lines.length > 0 ? m.lines : [m]
+                          )
+                        : [materialForStartProcess];
+                  return sourceLines
+                    .filter(
+                      (m) =>
+                        (m.availableWeight ?? 0) > 0 &&
+                        (!code || m.productCode === code)
+                    )
+                    .map((m) => {
+                      const ow = m.originalWeight || m.availableWeight || 0;
+                      const pp = m.purchasePrice || 0;
+                      return {
+                        materialName: m.materialName || "Unknown",
+                        purchaseId: m.purchaseId,
+                        receiptNo: m.receiptNo,
+                        productCode: m.productCode,
+                        materialLineIndex: m.materialLineIndex,
+                        availableWeight: m.availableWeight,
+                        pricePerKg:
+                          m.pricePerKg != null && m.pricePerKg > 0
+                            ? m.pricePerKg
+                            : ow > 0 && pp > 0
+                              ? Math.round((pp / ow) * 100) / 100
+                              : undefined,
+                        purchaseDate: m.purchaseDate,
+                      };
+                    });
+                })(),
               }
             : null
         }
-        purchaseId={materialForStartProcess?.purchaseId ?? null}
+        purchaseId={null}
       />
       {/* Start Processing Modal (legacy: from queue material) */}
       <StartProcessingModal
