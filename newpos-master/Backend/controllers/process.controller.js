@@ -5,10 +5,13 @@ const Employee = require("../models/employee.model.js");
 const { computeProductionCosts } = require("../utils/productionCost");
 const {
   deductPopWeight,
+  deductPopWeightFifo,
   restorePopWeight,
+  restorePopWeightFromAllocations,
   getPopLinePricing,
-  buildProcessingQueueItems,
+  buildProcessingQueueByCode,
   getAvailableKgForLine,
+  getTotalAvailableKgForCode,
   resolveMaterialLineIndex,
 } = require("../utils/popMaterialConsumption");
 const { cascadeDeleteProduction } = require("../utils/productionCascadeDelete");
@@ -51,11 +54,11 @@ function formatProcessError(error) {
   return error.message || "Failed to process";
 }
 
-/** Processing queue — server calculates per-code weight (100/105/110 alag) */
+/** Processing queue — overall by product code (100/105/110), total kg across all POP invoices */
 const getProcessingQueue = async (req, res) => {
   try {
     const purchases = await Purchase.find().sort({ createdAt: -1 }).lean();
-    const items = buildProcessingQueueItems(purchases);
+    const items = buildProcessingQueueByCode(purchases);
     res.status(200).json({
       success: true,
       count: items.length,
@@ -246,6 +249,14 @@ const createProductionRecord = async (req, res) => {
     const purchaseId = productionData.purchaseId;
     const productCode = normCodeForFilter(productionData.productCode);
     const weightUsedFromPOP = productionData.weightUsedFromPOP != null ? parseFloat(productionData.weightUsedFromPOP) : null;
+    /** Prefer code-wise FIFO when from queue (multi-invoice) or consumeByCode flag */
+    const consumeByCode =
+      productionData.consumeByCode === true ||
+      productionData.consumeByCode === "true" ||
+      (!purchaseId && !!productCode);
+
+    let popConsumptions = [];
+    let fifoDeductResult = null;
 
     if (weightUsedFromPOP != null && !isNaN(weightUsedFromPOP) && weightUsedFromPOP > 0) {
       if (!productCode) {
@@ -254,65 +265,102 @@ const createProductionRecord = async (req, res) => {
           message: "Product code (100/105/110) required — sirf us code ki line se weight cut hoga",
         });
       }
-      if (!purchaseId) {
-        return res.status(400).json({
-          success: false,
-          message: "POP purchase required for queue production",
-        });
-      }
-      const lineIdx =
-        productionData.materialLineIndex != null
-          ? parseInt(productionData.materialLineIndex, 10)
-          : undefined;
-
-      const pop = await Purchase.findById(purchaseId).lean();
-      if (!pop) {
-        return res.status(404).json({ success: false, message: "POP not found" });
-      }
-
-      let availableKg = 0;
-      const mats = pop.materials || [];
-      if (mats.length > 0) {
-        const idx = resolveMaterialLineIndex(pop, productCode, lineIdx);
-        if (idx >= 0) {
-          const line = mats[idx];
-          const w = parseFloat(line.weight) || 0;
-          const c = parseFloat(line.productionConsumedWeight) || 0;
-          availableKg = Math.max(0, w - c);
-        }
-      } else {
-        availableKg = getAvailableKgForLine(pop, productCode);
-      }
 
       const bagSize = getBagSizeForCode(productCode);
-      if (bagSize > 0 && totalBags > 0) {
-        const maxBags = getMaxBagsFromAvailableKg(productCode, availableKg);
-        if (totalBags > maxBags + 0.0001) {
-          return res.status(400).json({
-            success: false,
-            message: `Maximum ${maxBags} bags allowed (${availableKg} kg available ÷ ${bagSize} kg/bag). Is se zyada bags process nahi ho sakte.`,
-          });
+
+      if (consumeByCode || !purchaseId) {
+        const allPurchases = await Purchase.find().lean();
+        const availableKg = getTotalAvailableKgForCode(allPurchases, productCode);
+
+        if (bagSize > 0 && totalBags > 0) {
+          const maxBags = getMaxBagsFromAvailableKg(productCode, availableKg);
+          if (totalBags > maxBags + 0.0001) {
+            return res.status(400).json({
+              success: false,
+              message: `Maximum ${maxBags} bags allowed (${Math.round(availableKg * 10) / 10} kg available ÷ ${bagSize} kg/bag). Is se zyada bags process nahi ho sakte.`,
+            });
+          }
         }
         if (weightUsedFromPOP > availableKg + 0.01) {
           return res.status(400).json({
             success: false,
-            message: `POP par sirf ${availableKg} kg available hai — ${weightUsedFromPOP} kg use nahi ho sakta`,
+            message: `Code ${productCode}: sirf ${Math.round(availableKg * 10) / 10} kg available hai (sab POP invoices milakar)`,
           });
         }
-      } else if (weightUsedFromPOP > availableKg + 0.01) {
-        return res.status(400).json({
-          success: false,
-          message: `POP par sirf ${availableKg} kg available hai`,
-        });
-      }
 
-      const result = await deductPopWeight(purchaseId, {
-        productCode,
-        weight: weightUsedFromPOP,
-        materialLineIndex: lineIdx,
-      });
-      if (!result.ok) {
-        return res.status(400).json({ success: false, message: result.message });
+        fifoDeductResult = await deductPopWeightFifo(productCode, weightUsedFromPOP);
+        if (!fifoDeductResult.ok) {
+          return res.status(400).json({ success: false, message: fifoDeductResult.message });
+        }
+        popConsumptions = fifoDeductResult.allocations || [];
+      } else {
+        const lineIdx =
+          productionData.materialLineIndex != null
+            ? parseInt(productionData.materialLineIndex, 10)
+            : undefined;
+
+        const pop = await Purchase.findById(purchaseId).lean();
+        if (!pop) {
+          return res.status(404).json({ success: false, message: "POP not found" });
+        }
+
+        let availableKg = 0;
+        const mats = pop.materials || [];
+        if (mats.length > 0) {
+          const idx = resolveMaterialLineIndex(pop, productCode, lineIdx);
+          if (idx >= 0) {
+            const line = mats[idx];
+            const w = parseFloat(line.weight) || 0;
+            const c = parseFloat(line.productionConsumedWeight) || 0;
+            availableKg = Math.max(0, w - c);
+          }
+        } else {
+          availableKg = getAvailableKgForLine(pop, productCode);
+        }
+
+        if (bagSize > 0 && totalBags > 0) {
+          const maxBags = getMaxBagsFromAvailableKg(productCode, availableKg);
+          if (totalBags > maxBags + 0.0001) {
+            return res.status(400).json({
+              success: false,
+              message: `Maximum ${maxBags} bags allowed (${availableKg} kg available ÷ ${bagSize} kg/bag). Is se zyada bags process nahi ho sakte.`,
+            });
+          }
+          if (weightUsedFromPOP > availableKg + 0.01) {
+            return res.status(400).json({
+              success: false,
+              message: `POP par sirf ${availableKg} kg available hai — ${weightUsedFromPOP} kg use nahi ho sakta`,
+            });
+          }
+        } else if (weightUsedFromPOP > availableKg + 0.01) {
+          return res.status(400).json({
+            success: false,
+            message: `POP par sirf ${availableKg} kg available hai`,
+          });
+        }
+
+        const result = await deductPopWeight(purchaseId, {
+          productCode,
+          weight: weightUsedFromPOP,
+          materialLineIndex: lineIdx,
+        });
+        if (!result.ok) {
+          return res.status(400).json({ success: false, message: result.message });
+        }
+        const pricing = getPopLinePricing(pop, productCode, lineIdx);
+        const pricePerKg =
+          pricing.purchaseWeight > 0 && pricing.purchasePrice > 0
+            ? pricing.purchasePrice / pricing.purchaseWeight
+            : 0;
+        popConsumptions = [
+          {
+            purchaseId,
+            materialLineIndex: !isNaN(lineIdx) ? lineIdx : result.lineIndex,
+            weight: weightUsedFromPOP,
+            receiptNo: pop.receiptNo || pop.invoiceNo || "",
+            pricePerKg: Math.round(pricePerKg * 100) / 100,
+          },
+        ];
       }
     }
 
@@ -340,7 +388,13 @@ const createProductionRecord = async (req, res) => {
       productionData.materialLineIndex != null
         ? parseInt(productionData.materialLineIndex, 10)
         : undefined;
-    if (purchaseId) {
+
+    if (fifoDeductResult?.ok) {
+      purchasePrice = fifoDeductResult.purchasePrice || 0;
+      purchaseWeight = fifoDeductResult.purchaseWeight || 0;
+      popCostPerKg = fifoDeductResult.pricePerKg || 0;
+      receiptNo = fifoDeductResult.receiptNo || "";
+    } else if (purchaseId) {
       const pop = await Purchase.findById(purchaseId).lean();
       if (pop) {
         const pricing = getPopLinePricing(pop, productCode, lineIdx);
@@ -353,6 +407,7 @@ const createProductionRecord = async (req, res) => {
         receiptNo = pop.receiptNo || pop.invoiceNo || "";
       }
     }
+
     const costs = computeProductionCosts({
       purchasePrice,
       purchaseWeight,
@@ -365,14 +420,20 @@ const createProductionRecord = async (req, res) => {
     });
     const { materialCost, wasteCost, totalProductionCost } = costs;
 
+    const primaryPurchaseId =
+      fifoDeductResult?.primaryPurchaseId || purchaseId || undefined;
+
     const record = new ProductionData({
       ...productionData,
       batchNo,
       productionDate: productionDateValue,
       availableWeight: productionData.availableWeight ?? totalWeight,
       weightUsedFromPOP: weightUsedFromPOP || 0,
-      purchaseId: purchaseId || undefined,
-      materialLineIndex: !isNaN(lineIdx) ? lineIdx : productionData.materialLineIndex,
+      purchaseId: primaryPurchaseId,
+      materialLineIndex: !isNaN(lineIdx)
+        ? lineIdx
+        : popConsumptions[0]?.materialLineIndex ?? productionData.materialLineIndex,
+      popConsumptions,
       popCostPerKg,
       popLinePurchasePrice: purchasePrice,
       popLinePurchaseWeight: purchaseWeight,
@@ -392,11 +453,16 @@ const createProductionRecord = async (req, res) => {
       "name employeeId department"
     );
 
+    const receiptHint =
+      popConsumptions.length > 1
+        ? ` (${popConsumptions.length} POP receipts se FIFO)`
+        : "";
+
     res.status(201).json({
       success: true,
       message:
         weightUsedFromPOP > 0 && productCode
-          ? `Code ${productCode}: ${weightUsedFromPOP} kg sirf isi code ki POP line se minus hua`
+          ? `Code ${productCode}: ${weightUsedFromPOP} kg POP se minus hua${receiptHint}`
           : undefined,
       data: populatedRecord,
     });
@@ -622,6 +688,8 @@ const getProductionData = async (req, res) => {
         popCostPerKg: doc.popCostPerKg || 0,
         vendor: pop?.vendor,
         receiptNo: doc.receiptNo || pop?.receiptNo || pop?.invoiceNo,
+        popConsumptions: doc.popConsumptions || [],
+        productCode: doc.productCode,
         efficiency: doc.totalWeight
           ? Math.round(((doc.totalWeight - (doc.wasteWeight || 0)) / doc.totalWeight) * 100)
           : 0,

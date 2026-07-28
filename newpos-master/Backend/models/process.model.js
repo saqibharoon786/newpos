@@ -106,6 +106,20 @@ const productionDataSchema = new mongoose.Schema(
       ref: "Purchase",
       required: false,
     },
+    /** FIFO slices when one production uses multiple POP invoices for same code */
+    popConsumptions: [
+      {
+        purchaseId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Purchase",
+        },
+        materialLineIndex: { type: Number },
+        weight: { type: Number, min: 0 },
+        receiptNo: { type: String },
+        pricePerKg: { type: Number, min: 0 },
+        materialName: { type: String },
+      },
+    ],
     employees: [
       {
         employeeId: {

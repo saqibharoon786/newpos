@@ -139,7 +139,7 @@ async function recalcPurchaseTotals(purchaseId) {
   for (const m of mats) {
     const code = normCode(m.productCode);
     const lineC = getLineConsumedOnMaterial(m);
-    if (code) cc[code] = lineC;
+    if (code) cc[code] = (cc[code] || 0) + lineC;
     totalConsumed += lineC;
     remainingSum += Math.max(0, getLineWeight(m) - lineC);
   }
@@ -327,6 +327,22 @@ function getPurchaseDisplayWeights(purchase) {
   return { productionConsumedWeight, remainingWeight };
 }
 
+function parsePurchaseSortDate(purchase) {
+  const d = purchase.purchaseDate || purchase.createdAt;
+  if (!d) return 0;
+  if (d instanceof Date && !Number.isNaN(d.getTime())) return d.getTime();
+  if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}/.test(d)) {
+    const [y, m, day] = d.split(/[-T]/).map(Number);
+    return new Date(y, m - 1, day).getTime();
+  }
+  if (typeof d === "string" && /^\d{1,2}\/\d{1,2}\/\d{4}/.test(d)) {
+    const [dd, mm, yyyy] = d.split("/").map(Number);
+    return new Date(yyyy, mm - 1, dd).getTime();
+  }
+  const parsed = new Date(d);
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
+
 /** Build processing queue rows — har line ka apna weight, doosre code se link nahi */
 function buildProcessingQueueItems(purchases) {
   const items = [];
@@ -381,7 +397,7 @@ function buildProcessingQueueItems(purchases) {
       const originalWeight = parseFloat(purchase.weight) || 0;
       const consumed = parseFloat(purchase.productionConsumedWeight) || 0;
       const available = originalWeight - consumed;
-      if (available <= 0) return;
+      if (available <= 0) continue;
 
       const cc = purchase.codeConsumption || {};
       let code = null;
@@ -407,15 +423,303 @@ function buildProcessingQueueItems(purchases) {
   return items;
 }
 
+/**
+ * Queue for Process UI — overall by product code (100/105/110).
+ * Total available kg across all POP invoices; production can FIFO-consume multiple receipts.
+ */
+function buildProcessingQueueByCode(purchases) {
+  const lineItems = buildProcessingQueueItems(purchases);
+  const byCode = new Map();
+
+  for (const item of lineItems) {
+    const code = normCode(item.productCode);
+    if (!isValidCode(code)) continue;
+
+    if (!byCode.has(code)) {
+      byCode.set(code, {
+        _id: `code-${code}`,
+        productCode: code,
+        materialNames: new Set(),
+        qualities: new Set(),
+        colors: new Set(),
+        vendors: new Set(),
+        availableWeight: 0,
+        originalWeight: 0,
+        purchaseValue: 0,
+        valueWeight: 0,
+        receiptCount: 0,
+        oldestPurchaseDate: item.purchaseDate,
+        oldestPurchaseId: item.purchaseId,
+        oldestReceiptNo: item.receiptNo,
+        lines: [],
+        status: "pending",
+      });
+    }
+
+    const g = byCode.get(code);
+    g.materialNames.add(item.materialName || "Unknown");
+    if (item.quality) g.qualities.add(item.quality);
+    if (item.color) g.colors.add(item.color);
+    if (item.vendor) g.vendors.add(item.vendor);
+    g.availableWeight += item.availableWeight || 0;
+    g.originalWeight += item.originalWeight || 0;
+    g.receiptCount += 1;
+    g.lines.push(item);
+
+    const ppk = parseFloat(item.pricePerKg) || 0;
+    const avail = parseFloat(item.availableWeight) || 0;
+    if (ppk > 0 && avail > 0) {
+      g.purchaseValue += ppk * avail;
+      g.valueWeight += avail;
+    }
+
+    const itemTs = parsePurchaseSortDate({
+      purchaseDate: item.purchaseDate,
+      createdAt: item.purchaseDate,
+    });
+    const oldestTs = parsePurchaseSortDate({
+      purchaseDate: g.oldestPurchaseDate,
+      createdAt: g.oldestPurchaseDate,
+    });
+    if (itemTs > 0 && (oldestTs === 0 || itemTs < oldestTs)) {
+      g.oldestPurchaseDate = item.purchaseDate;
+      g.oldestPurchaseId = item.purchaseId;
+      g.oldestReceiptNo = item.receiptNo;
+    }
+  }
+
+  return Array.from(byCode.values())
+    .map((g) => {
+      const availableWeight = Math.round(g.availableWeight * 10) / 10;
+      const pricePerKg =
+        g.valueWeight > 0
+          ? Math.round((g.purchaseValue / g.valueWeight) * 100) / 100
+          : 0;
+      const materialName = Array.from(g.materialNames).join(" · ") || "Unknown";
+      const quality = Array.from(g.qualities)[0] || "Unknown";
+      const color = Array.from(g.colors)[0] || "#FFFFFF";
+      const vendorList = Array.from(g.vendors);
+      return {
+        _id: g._id,
+        productCode: g.productCode,
+        materialName,
+        quality,
+        color,
+        vendor: vendorList.length === 1 ? vendorList[0] : "Multiple",
+        purchaseDate: g.oldestPurchaseDate,
+        purchaseId: g.oldestPurchaseId,
+        receiptNo:
+          g.receiptCount > 1 ? `${g.receiptCount} receipts` : g.oldestReceiptNo || "N/A",
+        receiptCount: g.receiptCount,
+        originalWeight: Math.round(g.originalWeight * 10) / 10,
+        availableWeight,
+        purchasePrice: Math.round(g.purchaseValue * 100) / 100,
+        pricePerKg,
+        status: "pending",
+        consumeByCode: true,
+        lines: g.lines,
+      };
+    })
+    .filter((g) => g.availableWeight > 0)
+    .sort((a, b) => String(a.productCode).localeCompare(String(b.productCode)));
+}
+
+/** All available POP lines for a product code, oldest purchase first (FIFO). */
+function listAvailableLinesForCode(purchases, productCode) {
+  const code = normCode(productCode);
+  if (!isValidCode(code)) return [];
+
+  const lines = [];
+  const sorted = [...(purchases || [])].sort(
+    (a, b) => parsePurchaseSortDate(a) - parsePurchaseSortDate(b)
+  );
+
+  for (const purchase of sorted) {
+    const mats = purchase.materials || [];
+    if (mats.length > 0) {
+      mats.forEach((m, idx) => {
+        if (normCode(m.productCode) !== code) return;
+        const available = getLineAvailableKg(m, code);
+        if (available <= 0) return;
+        const pricing = getPopLinePricing(purchase, code, idx);
+        const pricePerKg =
+          pricing.purchaseWeight > 0 && pricing.purchasePrice > 0
+            ? pricing.purchasePrice / pricing.purchaseWeight
+            : parseFloat(m.pricePerKg) || 0;
+        lines.push({
+          purchaseId: String(purchase._id),
+          materialLineIndex: idx,
+          productCode: code,
+          availableKg: available,
+          receiptNo: purchase.receiptNo || purchase.invoiceNo || "N/A",
+          materialName: (m.name || "").trim() || purchase.materialName || "Unknown",
+          pricePerKg,
+          purchasePrice: pricing.purchasePrice,
+          purchaseWeight: pricing.purchaseWeight,
+          purchaseDate: purchase.purchaseDate || purchase.createdAt,
+        });
+      });
+    } else {
+      const available = getAvailableKgForLine(purchase, code);
+      if (available <= 0) continue;
+      const purchasePrice = parseFloat(purchase.price) || 0;
+      const purchaseWeight = parseFloat(purchase.weight) || 0;
+      const pricePerKg =
+        purchaseWeight > 0 && purchasePrice > 0 ? purchasePrice / purchaseWeight : 0;
+      lines.push({
+        purchaseId: String(purchase._id),
+        materialLineIndex: 0,
+        productCode: code,
+        availableKg: available,
+        receiptNo: purchase.receiptNo || purchase.invoiceNo || "N/A",
+        materialName: purchase.materialName || "Unknown",
+        pricePerKg,
+        purchasePrice,
+        purchaseWeight,
+        purchaseDate: purchase.purchaseDate || purchase.createdAt,
+      });
+    }
+  }
+
+  return lines;
+}
+
+function getTotalAvailableKgForCode(purchases, productCode) {
+  return listAvailableLinesForCode(purchases, productCode).reduce(
+    (sum, line) => sum + (line.availableKg || 0),
+    0
+  );
+}
+
+/**
+ * Deduct weight for a product code across multiple POP invoices (FIFO).
+ * One production can use 2–3 receipts when needed.
+ */
+async function deductPopWeightFifo(productCode, weight) {
+  const amt = parseFloat(weight) || 0;
+  const code = normCode(productCode);
+  if (amt <= 0) return { ok: true, deducted: 0, allocations: [] };
+  if (!isValidCode(code)) {
+    return { ok: false, message: "Product code 100, 105 ya 110 hona chahiye" };
+  }
+
+  const purchases = await Purchase.find().lean();
+  const lines = listAvailableLinesForCode(purchases, code);
+  const totalAvailable = lines.reduce((s, l) => s + l.availableKg, 0);
+
+  if (amt > totalAvailable + 0.01) {
+    return {
+      ok: false,
+      message: `Code ${code}: sirf ${Math.round(totalAvailable * 10) / 10} kg available (sab POP invoices milakar)`,
+    };
+  }
+
+  let remaining = amt;
+  const allocations = [];
+
+  for (const line of lines) {
+    if (remaining <= 0.001) break;
+    const take = Math.min(remaining, line.availableKg);
+    if (take <= 0) continue;
+
+    const result = await deductPopWeight(line.purchaseId, {
+      productCode: code,
+      weight: take,
+      materialLineIndex: line.materialLineIndex,
+    });
+    if (!result.ok) {
+      // Best-effort rollback already deducted slices
+      for (const done of allocations) {
+        await restorePopWeight(done.purchaseId, {
+          productCode: code,
+          weight: done.weight,
+          materialLineIndex: done.materialLineIndex,
+        });
+      }
+      return result;
+    }
+
+    allocations.push({
+      purchaseId: line.purchaseId,
+      materialLineIndex: line.materialLineIndex,
+      weight: Math.round(take * 1000) / 1000,
+      receiptNo: line.receiptNo,
+      pricePerKg: Math.round((line.pricePerKg || 0) * 100) / 100,
+      materialName: line.materialName,
+    });
+    remaining -= take;
+  }
+
+  if (remaining > 0.01) {
+    for (const done of allocations) {
+      await restorePopWeight(done.purchaseId, {
+        productCode: code,
+        weight: done.weight,
+        materialLineIndex: done.materialLineIndex,
+      });
+    }
+    return {
+      ok: false,
+      message: `Code ${code}: stock deduct incomplete — ${Math.round(remaining * 10) / 10} kg short`,
+    };
+  }
+
+  let totalCost = 0;
+  let totalW = 0;
+  for (const a of allocations) {
+    totalCost += (a.weight || 0) * (a.pricePerKg || 0);
+    totalW += a.weight || 0;
+  }
+
+  return {
+    ok: true,
+    deducted: amt,
+    productCode: code,
+    allocations,
+    purchasePrice: Math.round(totalCost * 100) / 100,
+    purchaseWeight: Math.round(totalW * 100) / 100,
+    pricePerKg: totalW > 0 ? Math.round((totalCost / totalW) * 100) / 100 : 0,
+    receiptNo:
+      allocations.length > 1
+        ? `${allocations.length} receipts`
+        : allocations[0]?.receiptNo || "",
+    primaryPurchaseId: allocations[0]?.purchaseId || null,
+  };
+}
+
+async function restorePopWeightFromAllocations(allocations, productCode) {
+  const code = normCode(productCode);
+  const list = Array.isArray(allocations) ? allocations : [];
+  if (!list.length || !isValidCode(code)) return { ok: true, restored: 0 };
+
+  let restored = 0;
+  for (const a of list) {
+    const w = parseFloat(a.weight) || 0;
+    if (w <= 0 || !a.purchaseId) continue;
+    const result = await restorePopWeight(a.purchaseId, {
+      productCode: code,
+      weight: w,
+      materialLineIndex: a.materialLineIndex,
+    });
+    if (result.ok) restored += w;
+  }
+  return { ok: true, restored };
+}
+
 module.exports = {
   VALID_CODES,
   isValidCode,
   getAvailableKgForLine,
   deductPopWeight,
+  deductPopWeightFifo,
   restorePopWeight,
+  restorePopWeightFromAllocations,
   getPopLinePricing,
   getPurchaseDisplayWeights,
   buildProcessingQueueItems,
+  buildProcessingQueueByCode,
+  listAvailableLinesForCode,
+  getTotalAvailableKgForCode,
   findLineIndexByCodeOnly,
   resolveMaterialLineIndex,
   mergeMaterialsWithConsumption,
