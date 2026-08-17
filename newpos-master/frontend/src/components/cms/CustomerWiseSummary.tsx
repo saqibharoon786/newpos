@@ -6,7 +6,7 @@ import {
   getColorNameFromHex,
   type SaleForSummary,
 } from "@/lib/customerSummary";
-import { exportAsExcelTable, exportAsPdf, toYmd } from "@/lib/exportUtils";
+import { exportAsExcelTable, exportAsPdf, toYmd, toExportNumber } from "@/lib/exportUtils";
 
 function formatCurrency(value: number): string {
   return Number(value || 0).toLocaleString();
@@ -49,13 +49,13 @@ export function CustomerWiseSummary({
     const headers = [
       "Customer",
       "Sales",
-      "Total Amount",
-      "Payment Received",
-      "Remaining",
+      "Total Amount (Rs)",
+      "Payment Received (Rs)",
+      "Remaining (Rs)",
       "Total Weight (kg)",
       "Total Units",
-      "By Type (Paid)",
-      "By Type (Weight)",
+      "By Type — Paid (Rs)",
+      "By Type — Weight (kg)",
     ];
 
     const rows = customerSummary.map((row) => {
@@ -63,26 +63,26 @@ export function CustomerWiseSummary({
         ? Object.entries(row.qualityPaid)
             .filter(([, amt]) => (amt || 0) > 0)
             .sort((a, b) => (b[1] || 0) - (a[1] || 0))
-            .map(([k, v]) => `${k}: Rs. ${formatCurrency(Number(v) || 0)}`)
+            .map(([k, v]) => `${k}: ${toExportNumber(Number(v) || 0)}`)
             .join(" | ")
         : "";
       const typeWeight = row.qualityWeight
         ? Object.entries(row.qualityWeight)
             .filter(([, w]) => (w || 0) > 0)
             .sort((a, b) => (b[1] || 0) - (a[1] || 0))
-            .map(([k, v]) => `${k}: ${Number(v).toLocaleString()} kg`)
+            .map(([k, v]) => `${k}: ${toExportNumber(Number(v) || 0)}`)
             .join(" | ")
         : "";
       return {
         Customer: row.customerName,
         Sales: row.sales,
-        "Total Amount": row.totalAmount,
-        "Payment Received": row.amountPaid,
-        Remaining: row.remainingAmount,
-        "Total Weight (kg)": row.weight,
-        "Total Units": row.units,
-        "By Type (Paid)": typePaid,
-        "By Type (Weight)": typeWeight,
+        "Total Amount (Rs)": toExportNumber(row.totalAmount),
+        "Payment Received (Rs)": toExportNumber(row.amountPaid),
+        "Remaining (Rs)": toExportNumber(row.remainingAmount),
+        "Total Weight (kg)": toExportNumber(row.weight),
+        "Total Units": toExportNumber(row.units),
+        "By Type — Paid (Rs)": typePaid,
+        "By Type — Weight (kg)": typeWeight,
       };
     });
 

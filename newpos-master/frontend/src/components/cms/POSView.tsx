@@ -4,7 +4,7 @@ import { AddSaleDialog } from "./AddSaleDialog"; // CHANGED: Import AddSaleDialo
 import { SaleDetailsView } from "./SaleDetailsView";
 import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
-import { exportAsCsv, exportAsExcelTable, exportAsWordTable, exportAsPdf, inDateRange, toYmd } from "@/lib/exportUtils";
+import { exportAsCsv, exportAsExcelTable, exportAsWordTable, exportAsPdf, inDateRange, toYmd, toExportNumber } from "@/lib/exportUtils";
 
 const SALES_API_URL = "/api/sales";
 const PURCHASES_API_URL = "/api/purchases";
@@ -1503,9 +1503,9 @@ export function POSView() {
       "Customer",
       "Weight (kg)",
       "Units",
-      "Total Amount",
-      "Payment Received",
-      "Receivable (Baqi)",
+      "Total Amount (Rs)",
+      "Payment Received (Rs)",
+      "Receivable (Rs)",
       "Payment Status",
     ];
     const rows = exportRows.map((sale) => ({
@@ -1514,11 +1514,11 @@ export function POSView() {
       "Bill No": sale.billNo || "N/A",
       "Material": sale.materialName || "N/A",
       "Customer": sale.buyerName || "N/A",
-      "Weight (kg)": sale.weight || "0",
-      "Units": sale.unit || "0",
-      "Total Amount": parseFloat(sale.finalAmount || sale.sellingPrice) || 0,
-      "Payment Received": sale.amountPaid || 0,
-      "Receivable (Baqi)": sale.remainingAmount || 0,
+      "Weight (kg)": toExportNumber(sale.weight),
+      "Units": toExportNumber(sale.unit),
+      "Total Amount (Rs)": toExportNumber(parseFloat(sale.finalAmount || sale.sellingPrice) || 0),
+      "Payment Received (Rs)": toExportNumber(sale.amountPaid),
+      "Receivable (Rs)": toExportNumber(sale.remainingAmount),
       "Payment Status": sale.paymentStatus || "none",
     }));
     const rangeText =
@@ -1561,13 +1561,13 @@ const handleExportCustomerSummary = (format: "excel" | "word" | "pdf") => {
     const headers = [
       "Customer",
       "Sales",
-      "Total Amount",
-      "Payment Received",
-      "Remaining",
+      "Total Amount (Rs)",
+      "Payment Received (Rs)",
+      "Remaining (Rs)",
       "Total Weight (kg)",
       "Total Units",
-      "By Type (Paid)",
-      "By Type (Weight)",
+      "By Type — Paid (Rs)",
+      "By Type — Weight (kg)",
     ];
 
     const rows = customerSummary.map((row) => {
@@ -1575,7 +1575,7 @@ const handleExportCustomerSummary = (format: "excel" | "word" | "pdf") => {
         ? Object.entries(row.qualityPaid)
             .filter(([, amt]) => (amt || 0) > 0)
             .sort((a, b) => (b[1] || 0) - (a[1] || 0))
-            .map(([k, v]) => `${k}: ${formatCurrency(Number(v) || 0)}`)
+            .map(([k, v]) => `${k}: ${toExportNumber(Number(v) || 0)}`)
             .join(" | ")
         : "";
 
@@ -1583,20 +1583,20 @@ const handleExportCustomerSummary = (format: "excel" | "word" | "pdf") => {
         ? Object.entries(row.qualityWeight)
             .filter(([, w]) => (w || 0) > 0)
             .sort((a, b) => (b[1] || 0) - (a[1] || 0))
-            .map(([k, v]) => `${k}: ${Number(v).toLocaleString()} kg`)
+            .map(([k, v]) => `${k}: ${toExportNumber(Number(v) || 0)}`)
             .join(" | ")
         : "";
 
       return {
         "Customer": row.customerName,
         "Sales": row.sales,
-        "Total Amount": row.totalAmount,
-        "Payment Received": row.amountPaid,
-        "Remaining": row.remainingAmount,
-        "Total Weight (kg)": row.weight,
-        "Total Units": row.units,
-        "By Type (Paid)": typePaid,
-        "By Type (Weight)": typeWeight,
+        "Total Amount (Rs)": toExportNumber(row.totalAmount),
+        "Payment Received (Rs)": toExportNumber(row.amountPaid),
+        "Remaining (Rs)": toExportNumber(row.remainingAmount),
+        "Total Weight (kg)": toExportNumber(row.weight),
+        "Total Units": toExportNumber(row.units),
+        "By Type — Paid (Rs)": typePaid,
+        "By Type — Weight (kg)": typeWeight,
       };
     });
 

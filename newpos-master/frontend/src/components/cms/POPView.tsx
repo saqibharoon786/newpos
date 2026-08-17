@@ -5,7 +5,7 @@ import { toast } from "@/hooks/use-toast";
 import api, { API_BASE_URL } from "@/lib/api";
 import { canApprove, getCurrentUser } from "@/lib/auth";
 import { PRODUCT_CODES, getMaterialNameForCode, getProductByCode } from "@/lib/productCodes";
-import { exportAsCsv, exportAsExcelTable, exportAsWordTable, exportAsPdf, inDateRange, toYmd } from "@/lib/exportUtils";
+import { exportAsCsv, exportAsExcelTable, exportAsWordTable, exportAsPdf, inDateRange, toYmd, toExportNumber } from "@/lib/exportUtils";
 import { getPurchaseTotalPaid, getPurchaseRemainingAmount, getPurchasePaidStatus, getPurchasePrice } from "@/lib/purchasePayment";
 import { fetchCompanySettings, getLogoUrl } from "@/lib/companySettings";
 
@@ -445,30 +445,30 @@ const VendorSummary = ({
     const headers = [
       "Vendor",
       "Total Purchases",
-      "Total Price",
-      "Amount Paid",
-      "Remaining Amount",
+      "Total Price (Rs)",
+      "Amount Paid (Rs)",
+      "Remaining Amount (Rs)",
       "Total Weight (kg)",
       "Used Weight (kg)",
       "Remaining Weight (kg)",
       "Payment Status Count",
       "Stock Status Count",
-      "Materials",
+      "Materials (name: weight kg)",
     ];
     const rows = Object.entries(vendorSummary)
       .sort((a, b) => (b[1].totalRemainingAmount || 0) - (a[1].totalRemainingAmount || 0))
       .map(([vendorName, data]) => ({
         "Vendor": vendorName,
         "Total Purchases": data.totalPurchases,
-        "Total Price": data.totalPrice,
-        "Amount Paid": data.totalAmountPaid,
-        "Remaining Amount": data.totalRemainingAmount,
-        "Total Weight (kg)": Math.round((data.totalWeight || 0) * 100) / 100,
-        "Used Weight (kg)": Math.round((data.totalProcessWeight || 0) * 100) / 100,
-        "Remaining Weight (kg)": Math.round((data.totalRemainingWeight || 0) * 100) / 100,
+        "Total Price (Rs)": toExportNumber(data.totalPrice),
+        "Amount Paid (Rs)": toExportNumber(data.totalAmountPaid),
+        "Remaining Amount (Rs)": toExportNumber(data.totalRemainingAmount),
+        "Total Weight (kg)": toExportNumber(data.totalWeight || 0),
+        "Used Weight (kg)": toExportNumber(data.totalProcessWeight || 0),
+        "Remaining Weight (kg)": toExportNumber(data.totalRemainingWeight || 0),
         "Payment Status Count": `paid: ${data.paymentStatus.paid} | partial: ${data.paymentStatus.partial} | none: ${data.paymentStatus.none}`,
         "Stock Status Count": `available: ${data.stockStatus.available} | partial: ${data.stockStatus.partially_sold} | sold: ${data.stockStatus.sold_out}`,
-        "Materials": (data.materials || []).map((m) => `${m.name} (${Math.round((m.weight || 0) * 100) / 100} kg)`).join(" | "),
+        "Materials (name: weight kg)": (data.materials || []).map((m) => `${m.name} (${toExportNumber(m.weight || 0)})`).join(" | "),
       }));
 
     if (rows.length === 0) {
@@ -5040,9 +5040,9 @@ export function POPView() {
       "Total Weight (kg)",
       "Used Weight (kg)",
       "Remaining Weight (kg)",
-      "Price",
-      "Amount Paid",
-      "Remaining Amount",
+      "Price (Rs)",
+      "Amount Paid (Rs)",
+      "Remaining Amount (Rs)",
       "Payment Status",
     ];
     const rows = exportRows.map((p) => ({
@@ -5052,12 +5052,12 @@ export function POPView() {
       "Material Name": p.materialName || "N/A",
       "Quality": p.quality || "N/A",
       "Vendor": p.vendor || "N/A",
-      "Total Weight (kg)": p.weight || 0,
-      "Used Weight (kg)": p.productionConsumedWeight || 0,
-      "Remaining Weight (kg)": p.remainingWeight || 0,
-      "Price": p.price || 0,
-      "Amount Paid": getPurchaseTotalPaid(p),
-      "Remaining Amount": getPurchaseRemainingAmount(p),
+      "Total Weight (kg)": toExportNumber(p.weight),
+      "Used Weight (kg)": toExportNumber(p.productionConsumedWeight),
+      "Remaining Weight (kg)": toExportNumber(p.remainingWeight),
+      "Price (Rs)": toExportNumber(p.price),
+      "Amount Paid (Rs)": toExportNumber(getPurchaseTotalPaid(p)),
+      "Remaining Amount (Rs)": toExportNumber(getPurchaseRemainingAmount(p)),
       "Payment Status": getPurchasePaidStatus(p),
     }));
     const rangeText =
@@ -5066,7 +5066,7 @@ export function POPView() {
         : toYmd(new Date());
 
     if (format === "excel") {
-      exportAsCsv(`POP_Report_${rangeText}.csv`, headers, rows);
+      exportAsExcelTable(`POP_Report_${rangeText}.xls`, "POP Report", headers, rows);
     } else if (format === "pdf") {
       const body = `<table border="1" cellpadding="4"><thead><tr>${headers
         .map((h) => `<th>${h}</th>`)

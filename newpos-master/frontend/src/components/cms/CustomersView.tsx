@@ -5,7 +5,7 @@ import { AddCustomerQuickDialog } from "./AddCustomerQuickDialog";
 import { CustomerWiseSummary } from "./CustomerWiseSummary";
 import { toast } from "sonner";
 import api from "@/lib/api";
-import { exportAsCsv, exportAsExcelTable, exportAsPdf } from "@/lib/exportUtils";
+import { exportAsCsv, exportAsExcelTable, exportAsPdf, toExportNumber } from "@/lib/exportUtils";
 
 interface Customer {
   _id: string;
@@ -333,11 +333,11 @@ export default function CustomersView() {
       "Email",
       "City",
       "Province",
-      "Total Amount (PKR)",
-      "Paid (PKR)",
-      "Pending (PKR)",
+      "Total Amount (Rs)",
+      "Paid (Rs)",
+      "Pending (Rs)",
       "Payment Status",
-      "Finance Advance (PKR)",
+      "Finance Advance (Rs)",
       "Registration Date",
     ];
 
@@ -350,11 +350,11 @@ export default function CustomersView() {
         Email: c.email || "",
         City: c.city || "",
         Province: c.province || "",
-        "Total Amount (PKR)": c.amount,
-        "Paid (PKR)": c.amountPaid,
-        "Pending (PKR)": pending,
+        "Total Amount (Rs)": toExportNumber(c.amount),
+        "Paid (Rs)": toExportNumber(c.amountPaid),
+        "Pending (Rs)": toExportNumber(pending),
         "Payment Status": getPaymentStatusText(c.paidAmount),
-        "Finance Advance (PKR)": c.financeAdvanceBalance ?? 0,
+        "Finance Advance (Rs)": toExportNumber(c.financeAdvanceBalance ?? 0),
         "Registration Date": formatDateWithMonthName(c.registrationDate),
       };
     });

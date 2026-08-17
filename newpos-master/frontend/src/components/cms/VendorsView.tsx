@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
-import { exportAsCsv, exportAsExcelTable, exportAsPdf } from "@/lib/exportUtils";
+import { exportAsCsv, exportAsExcelTable, exportAsPdf, toExportNumber } from "@/lib/exportUtils";
 import { PRODUCT_CODES, getMaterialNameForCode, getProductByCode } from "@/lib/productCodes";
 
 interface VendorMaterial {
@@ -242,16 +242,16 @@ export default function VendorsView() {
       "Name",
       "Phone",
       "Address",
-      "Closing Balance",
-      "Advance Balance",
+      "Closing Balance (Rs)",
+      "Advance Balance (Rs)",
     ];
     const rows = filteredVendors.map((v) => ({
       "Vendor ID": v.vendorId || v._id,
       Name: v.name,
       Phone: v.phone || "",
       Address: v.address || "",
-      "Closing Balance": v.ledgerClosingBalance ?? v.payableBalance ?? 0,
-      "Advance Balance": v.ledgerAdvanceBalance ?? v.advanceBalance ?? 0,
+      "Closing Balance (Rs)": toExportNumber(v.ledgerClosingBalance ?? v.payableBalance ?? 0),
+      "Advance Balance (Rs)": toExportNumber(v.ledgerAdvanceBalance ?? v.advanceBalance ?? 0),
     }));
     const name = `Vendors_${Date.now()}`;
     if (format === "csv") exportAsCsv(`${name}.csv`, headers, rows);

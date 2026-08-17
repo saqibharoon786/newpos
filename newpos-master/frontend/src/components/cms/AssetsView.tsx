@@ -5,7 +5,7 @@ import { AssetDetailsView } from "./AssetDetailsView";
 import { toast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import api from "@/lib/api";
-import { exportAsCsv, exportAsExcelTable, exportAsPdf } from "@/lib/exportUtils";
+import { exportAsCsv, exportAsExcelTable, exportAsPdf, toExportNumber } from "@/lib/exportUtils";
 
 const ASSETS_API = "/api/assets";
 
@@ -213,11 +213,11 @@ export function AssetsView() {
   }, []);
 
   const exportAssets = (format: "csv" | "excel" | "pdf") => {
-    const headers = ["Name", "Category", "Price", "Department", "Purchase Date", "Invoice"];
+    const headers = ["Name", "Category", "Price (Rs)", "Department", "Purchase Date", "Invoice"];
     const rows = filteredData.map((a) => ({
       Name: a.assetName,
       Category: a.category,
-      Price: a.purchasePrice ?? 0,
+      "Price (Rs)": toExportNumber(a.purchasePrice ?? 0),
       Department: a.department,
       "Purchase Date": formatDateWithMonthName(a.purchaseDate),
       Invoice: a.invoiceNo || "",

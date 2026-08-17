@@ -5,6 +5,8 @@ const { ProductionData } = require('../models/process.model');
 const Customer = require('../models/customer.model');
 const { calculateNetProfit } = require('../utils/profitCalculator');
 const { calculateProductionBasisProfit, parseSalePrices } = require('../utils/productionBasisProfit');
+const { computeProductionCosts } = require('../utils/productionCost');
+const { getPopLinePricing } = require('../utils/popMaterialConsumption');
 
 function parseYmd(dateStr) {
   if (!dateStr) return null;
@@ -131,12 +133,56 @@ function mapPurchaseRow(p) {
   };
 }
 
-function mapProductionRow(p) {
+function resolveProductionCosts(p, pop) {
+  const inputKg = parseFloat(p.weightUsedFromPOP) || 0;
+  const outputKg = parseFloat(p.totalWeight) || 0;
+  const wasteKg = parseFloat(p.wasteWeight) || 0;
+  const laborCostPerKg = parseFloat(p.laborCostPerKg) || 0;
+  let materialCostRs = parseFloat(p.materialCost) || 0;
+  let wasteCostRs = parseFloat(p.wasteCost) || 0;
+  let totalProductionCostRs = parseFloat(p.totalProductionCost) || 0;
+
+  if (totalProductionCostRs > 0) {
+    return {
+      materialCostRs: Math.round(materialCostRs * 100) / 100,
+      wasteCostRs: Math.round(wasteCostRs * 100) / 100,
+      totalProductionCostRs: Math.round(totalProductionCostRs * 100) / 100,
+    };
+  }
+
+  let purchasePrice = parseFloat(p.popLinePurchasePrice) || 0;
+  let purchaseWeight = parseFloat(p.popLinePurchaseWeight) || 0;
+  if ((!purchasePrice || !purchaseWeight) && pop) {
+    const pricing = getPopLinePricing(pop, p.productCode, p.materialLineIndex);
+    purchasePrice = pricing.purchasePrice;
+    purchaseWeight = pricing.purchaseWeight;
+  }
+
+  const computed = computeProductionCosts({
+    purchasePrice,
+    purchaseWeight,
+    weightUsedFromPOP: inputKg,
+    outputWeight: outputKg,
+    wasteWeight: wasteKg,
+    laborCostPerKg,
+    materialCost: materialCostRs || undefined,
+    wasteCost: wasteCostRs || undefined,
+  });
+
+  return {
+    materialCostRs: computed.materialCost,
+    wasteCostRs: computed.wasteCost,
+    totalProductionCostRs: computed.totalProductionCost,
+  };
+}
+
+function mapProductionRow(p, pop) {
   const inputKg = parseFloat(p.weightUsedFromPOP) || 0;
   const outputKg = parseFloat(p.totalWeight) || 0;
   const wasteKg = parseFloat(p.wasteWeight) || 0;
   const prodDate = p.productionDate instanceof Date ? p.productionDate : new Date(p.productionDate);
   const dateStr = `${prodDate.getFullYear()}-${String(prodDate.getMonth() + 1).padStart(2, '0')}-${String(prodDate.getDate()).padStart(2, '0')}`;
+  const costs = resolveProductionCosts(p, pop);
 
   return {
     _id: p._id,
@@ -152,9 +198,9 @@ function mapProductionRow(p) {
     bags: p.totalBags || 0,
     machine: p.machine,
     shift: p.shift,
-    materialCostRs: parseFloat(p.materialCost) || 0,
-    wasteCostRs: parseFloat(p.wasteCost) || 0,
-    totalProductionCostRs: parseFloat(p.totalProductionCost) || 0,
+    materialCostRs: costs.materialCostRs,
+    wasteCostRs: costs.wasteCostRs,
+    totalProductionCostRs: costs.totalProductionCostRs,
   };
 }
 
@@ -403,7 +449,10 @@ exports.getBusinessPipelineReport = async (req, res) => {
       .filter((p) => isInYmdRange(p.purchaseDate, range.startDate, range.endDate))
       .map(mapPurchaseRow);
 
-    const productionRows = productions.map(mapProductionRow);
+    const purchaseById = Object.fromEntries(allPurchases.map((p) => [String(p._id), p]));
+    const productionRows = productions.map((p) =>
+      mapProductionRow(p, p.purchaseId ? purchaseById[String(p.purchaseId)] : null)
+    );
 
     const sales = allSales
       .filter((s) => isInYmdRange(s.purchaseDate, range.startDate, range.endDate))

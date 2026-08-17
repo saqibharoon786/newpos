@@ -3,7 +3,7 @@ import api from '@/lib/api';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Calculator, FileSpreadsheet, Loader2 } from 'lucide-react';
-import { exportAsCsv, exportAsExcelTable, exportAsPdf } from '@/lib/exportUtils';
+import { exportAsCsv, exportAsExcelTable, exportAsPdf, toExportNumber } from '@/lib/exportUtils';
 import { toast } from '@/hooks/use-toast';
 import { PRODUCT_CODES } from '@/lib/productCodes';
 import {
@@ -122,19 +122,19 @@ export default function ProfitCalculationSection({
     const label = data?.label || 'profit-calculation';
     const exportRows = computed.rows.map((r) => ({
       Product: r.code,
-      'Production in Kg': r.productionKg,
-      'Avg. Cost per Kg': r.avgCostPerKg,
-      'Sale price per Kg': r.salePricePerKg ?? '',
-      'Gross profit per Kg': r.grossProfitPerKg ?? '',
-      'Total gross profit': r.totalGrossProfit ?? '',
+      'Production (kg)': toExportNumber(r.productionKg),
+      'Avg. Cost per kg (Rs)': toExportNumber(r.avgCostPerKg),
+      'Sale price per kg (Rs)': r.salePricePerKg != null ? toExportNumber(r.salePricePerKg) : '',
+      'Gross profit per kg (Rs)': r.grossProfitPerKg != null ? toExportNumber(r.grossProfitPerKg) : '',
+      'Total gross profit (Rs)': r.totalGrossProfit != null ? toExportNumber(r.totalGrossProfit) : '',
     }));
     const headers = [
       'Product',
-      'Production in Kg',
-      'Avg. Cost per Kg',
-      'Sale price per Kg',
-      'Gross profit per Kg',
-      'Total gross profit',
+      'Production (kg)',
+      'Avg. Cost per kg (Rs)',
+      'Sale price per kg (Rs)',
+      'Gross profit per kg (Rs)',
+      'Total gross profit (Rs)',
     ];
 
     const summaryHtml = `

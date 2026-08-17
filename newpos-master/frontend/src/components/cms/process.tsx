@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
-import { exportAsCsv, exportAsWordTable, exportAsExcelTable, exportAsPdf, inDateRange, toYmd } from "@/lib/exportUtils";
+import { exportAsCsv, exportAsExcelTable, exportAsPdf, inDateRange, toYmd, toExportNumber } from "@/lib/exportUtils";
 import {
   PRODUCT_CODES,
   getProductCodeLabel,
@@ -2906,12 +2906,25 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
       "Remaining (kg)",
       "Total Bags",
       "Efficiency (%)",
+      "Total Cost (Rs)",
       "Status",
     ];
     const rows = exportData.map((prod) => {
-      const total = prod.outputWeight ?? 0;
-      const remaining = prod.availableWeight ?? total;
+      const total = toExportNumber(prod.outputWeight ?? 0) as number;
+      const remaining = toExportNumber(prod.availableWeight ?? total) as number;
       const sold = Math.round((total - remaining) * 100) / 100;
+      const totalCost = getProductionDisplayCost({
+        totalProductionCost: prod.totalProductionCost,
+        materialCost: prod.materialCost,
+        wasteCost: prod.wasteCost,
+        laborCost: prod.laborCost,
+        laborCostPerKg: prod.laborCostPerKg,
+        outputWeight: prod.outputWeight,
+        weightUsedFromPOP: prod.weightUsedFromPOP,
+        wasteWeight: prod.wasteWeight,
+        purchasePrice: prod.purchasePrice,
+        purchaseWeight: prod.purchaseWeight,
+      });
       return {
         "Date": new Date(prod.productionDate).toLocaleDateString(),
         "Batch No": prod.batchNo,
@@ -2922,8 +2935,9 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
         "Total Output (kg)": total,
         "Sold (kg)": sold,
         "Remaining (kg)": remaining,
-        "Total Bags": prod.totalBags || 0,
-        "Efficiency (%)": prod.efficiency || 0,
+        "Total Bags": toExportNumber(prod.totalBags || 0),
+        "Efficiency (%)": toExportNumber(prod.efficiency || 0),
+        "Total Cost (Rs)": totalCost > 0 ? toExportNumber(totalCost) : "",
         "Status": prod.status,
       };
     });
@@ -3046,12 +3060,12 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
     .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
     .map(([colorName, data]) => ({
       "Color": colorName,
-      "Total Produced (kg)": Math.round((data.totalWeight || 0) * 100) / 100,
-      "Sold (kg)": Math.round((data.soldWeight || 0) * 100) / 100,
-      "Remaining (kg)": Math.round((data.remainingWeight || 0) * 100) / 100,
+      "Total Produced (kg)": toExportNumber(data.totalWeight || 0),
+      "Sold (kg)": toExportNumber(data.soldWeight || 0),
+      "Remaining (kg)": toExportNumber(data.remainingWeight || 0),
       "By Quality": Object.entries(data.qualities || {})
         .sort((a, b) => (b[1].totalWeight || 0) - (a[1].totalWeight || 0))
-        .map(([q, qd]) => `${q}: ${Math.round((qd.remainingWeight || 0) * 100) / 100} / ${Math.round((qd.totalWeight || 0) * 100) / 100} kg`)
+        .map(([q, qd]) => `${q}: ${toExportNumber(qd.remainingWeight || 0)} / ${toExportNumber(qd.totalWeight || 0)}`)
         .join(" | "),
     }));
 
@@ -3059,16 +3073,16 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
     .sort((a, b) => b[1].totalWeight - a[1].totalWeight)
     .map(([materialName, data]) => ({
       "Material": materialName,
-      "Total Produced (kg)": Math.round((data.totalWeight || 0) * 100) / 100,
-      "Sold (kg)": Math.round((data.soldWeight || 0) * 100) / 100,
-      "Remaining (kg)": Math.round((data.remainingWeight || 0) * 100) / 100,
+      "Total Produced (kg)": toExportNumber(data.totalWeight || 0),
+      "Sold (kg)": toExportNumber(data.soldWeight || 0),
+      "Remaining (kg)": toExportNumber(data.remainingWeight || 0),
       "By Color": Object.entries(data.colors || {})
         .sort((a, b) => (b[1].totalWeight || 0) - (a[1].totalWeight || 0))
-        .map(([c, cd]) => `${c}: ${Math.round((cd.remainingWeight || 0) * 100) / 100} / ${Math.round((cd.totalWeight || 0) * 100) / 100} kg`)
+        .map(([c, cd]) => `${c}: ${toExportNumber(cd.remainingWeight || 0)} / ${toExportNumber(cd.totalWeight || 0)}`)
         .join(" | "),
       "By Quality": Object.entries(data.qualities || {})
         .sort((a, b) => (b[1].totalWeight || 0) - (a[1].totalWeight || 0))
-        .map(([q, qd]) => `${q}: ${Math.round((qd.remainingWeight || 0) * 100) / 100} / ${Math.round((qd.totalWeight || 0) * 100) / 100} kg`)
+        .map(([q, qd]) => `${q}: ${toExportNumber(qd.remainingWeight || 0)} / ${toExportNumber(qd.totalWeight || 0)}`)
         .join(" | "),
     }));
 
@@ -3080,7 +3094,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
     const headers = ["Color", "Total Produced (kg)", "Sold (kg)", "Remaining (kg)", "By Quality"];
     const suffix = exportStartDate || exportEndDate ? `${exportStartDate || "start"}_to_${exportEndDate || "today"}` : toYmd(new Date());
     if (format === "excel") {
-      exportAsCsv(`Process_Color_Summary_${suffix}.csv`, headers, exportColorSummaryRows);
+      exportAsExcelTable(`Process_Color_Summary_${suffix}.xls`, "Process Color-wise Summary", headers, exportColorSummaryRows);
     } else {
       exportAsWordTable(`Process_Color_Summary_${suffix}.doc`, "Process Color-wise Summary", headers, exportColorSummaryRows);
     }
@@ -3095,7 +3109,7 @@ const ProductionHistory = ({ productionData, onRefresh }: { productionData: Prod
     const headers = ["Material", "Total Produced (kg)", "Sold (kg)", "Remaining (kg)", "By Color", "By Quality"];
     const suffix = exportStartDate || exportEndDate ? `${exportStartDate || "start"}_to_${exportEndDate || "today"}` : toYmd(new Date());
     if (format === "excel") {
-      exportAsCsv(`Process_Weight_Summary_${suffix}.csv`, headers, exportWeightSummaryRows);
+      exportAsExcelTable(`Process_Weight_Summary_${suffix}.xls`, "Process Weight-wise Summary", headers, exportWeightSummaryRows);
     } else {
       exportAsWordTable(`Process_Weight_Summary_${suffix}.doc`, "Process Weight-wise Summary", headers, exportWeightSummaryRows);
     }
