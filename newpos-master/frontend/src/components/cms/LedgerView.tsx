@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { exportAsCsv, exportAsExcelTable, exportAsPdf } from '@/lib/exportUtils';
+import { exportAsCsv, exportAsExcelTable, exportAsPdf, toExportNumber } from '@/lib/exportUtils';
 import {
   BookOpen,
   Loader2,
@@ -227,60 +227,60 @@ export default function LedgerView() {
     const ledgerRows = (data.lines ?? data.rows ?? []) as Record<string, unknown>[];
 
     if (activeTab === 'rm-detail' && data.lines) {
-      headers = ['Date', 'Invoice #', 'Vendor', 'Description', 'Purch Qty', 'Rate', 'Amount', 'Production', 'Closing'];
+      headers = ['Date', 'Invoice #', 'Vendor', 'Description', 'Purch Qty (kg)', 'Rate (Rs)', 'Amount (Rs)', 'Production (kg)', 'Closing (kg)'];
       rows = (data.lines as Record<string, unknown>[]).map((l) => ({
         Date: String(l.date ?? ''),
         'Invoice #': String(l.invoiceNo ?? '—'),
         Vendor: String(l.vendor ?? '—'),
         Description: String(l.description ?? ''),
-        'Purch Qty': l.purchasedQty ? fmtKg(l.purchasedQty as number) : '—',
-        Rate: l.purchasedRate ? fmtRs(l.purchasedRate as number) : '—',
-        Amount: l.purchasedAmount ? fmtRs(l.purchasedAmount as number) : '—',
-        Production: l.issuedQty ? fmtKg(l.issuedQty as number) : '—',
-        Closing: fmtKg(l.closingQty as number),
+        'Purch Qty (kg)': toExportNumber(l.purchasedQty as number),
+        'Rate (Rs)': toExportNumber(l.purchasedRate as number),
+        'Amount (Rs)': toExportNumber(l.purchasedAmount as number),
+        'Production (kg)': toExportNumber(l.issuedQty as number),
+        'Closing (kg)': toExportNumber(l.closingQty as number),
       }));
     } else if (activeTab === 'fp-detail' && data.lines) {
-      headers = ['Date', 'Description', 'From Process', 'Rate', 'Amount', 'Sale Qty', 'Sale Rate', 'Closing'];
+      headers = ['Date', 'Description', 'From Process (kg)', 'Rate (Rs)', 'Amount (Rs)', 'Sale Qty (kg)', 'Sale Rate (Rs)', 'Closing (kg)'];
       rows = (data.lines as Record<string, unknown>[]).map((l) => ({
         Date: String(l.date ?? ''),
         Description: String(l.description ?? ''),
-        'From Process': l.receivedQty ? fmtKg(l.receivedQty as number) : '—',
-        Rate: l.receivedRate ? fmtRs(l.receivedRate as number) : '—',
-        Amount: l.receivedAmount ? fmtRs(l.receivedAmount as number) : '—',
-        'Sale Qty': l.saleQty ? fmtKg(l.saleQty as number) : '—',
-        'Sale Rate': l.saleRate ? fmtRs(l.saleRate as number) : '—',
-        Closing: fmtKg(l.closingQty as number),
+        'From Process (kg)': toExportNumber(l.receivedQty as number),
+        'Rate (Rs)': toExportNumber(l.receivedRate as number),
+        'Amount (Rs)': toExportNumber(l.receivedAmount as number),
+        'Sale Qty (kg)': toExportNumber(l.saleQty as number),
+        'Sale Rate (Rs)': toExportNumber(l.saleRate as number),
+        'Closing (kg)': toExportNumber(l.closingQty as number),
       }));
     } else if (activeTab === 'vendor') {
-      headers = ['Date', 'Invoice #', 'Bill #', 'Description', 'Debit', 'Credit', 'Balance'];
+      headers = ['Date', 'Invoice #', 'Bill #', 'Description', 'Debit (Rs)', 'Credit (Rs)', 'Balance (Rs)'];
       rows = ledgerRows.map((l) => ({
         Date: String(l.date ?? ''),
         'Invoice #': String(l.invoiceNo ?? '—'),
         'Bill #': String(l.billNo ?? '—'),
         Description: String(l.description ?? ''),
-        Debit: l.debit ? fmtRs(l.debit as number) : '—',
-        Credit: l.credit ? fmtRs(l.credit as number) : '—',
-        Balance: fmtRs(l.balance as number),
+        'Debit (Rs)': toExportNumber(l.debit as number),
+        'Credit (Rs)': toExportNumber(l.credit as number),
+        'Balance (Rs)': toExportNumber(l.balance as number),
       }));
     } else if (activeTab === 'customer') {
-      headers = ['Date', 'Invoice #', 'Description', 'Debit (Sale)', 'Credit (Payment / Advance)', 'Balance'];
+      headers = ['Date', 'Invoice #', 'Description', 'Debit (Rs)', 'Credit (Rs)', 'Balance (Rs)'];
       rows = ledgerRows.map((l) => ({
         Date: String(l.date ?? ''),
         'Invoice #': String(l.invoiceNo ?? '—'),
         Description: String(l.description ?? ''),
-        'Debit (Sale)': l.credit ? fmtRs(l.credit as number) : '—',
-        'Credit (Payment / Advance)': l.debit ? fmtRs(l.debit as number) : '—',
-        Balance: fmtRs(l.balance as number),
+        'Debit (Rs)': toExportNumber(l.credit as number),
+        'Credit (Rs)': toExportNumber(l.debit as number),
+        'Balance (Rs)': toExportNumber(l.balance as number),
       }));
     } else if (activeTab === 'owner' || activeTab === 'employee') {
-      headers = ['Date', 'Voucher', 'Description', 'Debit', 'Credit', 'Balance'];
+      headers = ['Date', 'Voucher', 'Description', 'Debit (Rs)', 'Credit (Rs)', 'Balance (Rs)'];
       rows = ledgerRows.map((l) => ({
         Date: String(l.date ?? ''),
         Voucher: String(l.voucherNo ?? ''),
         Description: String(l.description ?? ''),
-        Debit: l.debit ? fmtRs(l.debit as number) : '—',
-        Credit: l.credit ? fmtRs(l.credit as number) : '—',
-        Balance: fmtRs(l.balance as number),
+        'Debit (Rs)': toExportNumber(l.debit as number),
+        'Credit (Rs)': toExportNumber(l.credit as number),
+        'Balance (Rs)': toExportNumber(l.balance as number),
       }));
     } else if (activeTab === 'purchases' || activeTab === 'sales') {
       const isPurchase = activeTab === 'purchases';
@@ -301,9 +301,9 @@ export default function LedgerView() {
           'Bill #': String(r.billNo ?? '—'),
           Particulars: String(r.description ?? ''),
           Vendor: String(r.vendor ?? ''),
-          'Debit (Rs)': r.debit ? fmtRs(r.debit as number) : r.amount ? fmtRs(r.amount as number) : '—',
-          'Credit (Rs)': r.credit ? fmtRs(r.credit as number) : '—',
-          'Balance (Rs)': fmtRs((r.balance ?? r.closing) as number),
+          'Debit (Rs)': toExportNumber((r.debit ?? r.amount) as number),
+          'Credit (Rs)': toExportNumber(r.credit as number),
+          'Balance (Rs)': toExportNumber((r.balance ?? r.closing) as number),
         }));
       } else {
         headers = [
@@ -320,28 +320,22 @@ export default function LedgerView() {
           'Invoice #': String(r.invoiceNo ?? '—'),
           Particulars: String(r.description ?? ''),
           Customer: String(r.customer ?? ''),
-          'Debit (Rs)': r.debit ? fmtRs(r.debit as number) : '—',
-          'Credit (Rs)': r.credit
-            ? fmtRs(r.credit as number)
-            : r.amount
-            ? fmtRs(r.amount as number)
-            : r.paid
-            ? fmtRs(r.paid as number)
-            : '—',
-          'Balance (Rs)': fmtRs((r.balance ?? r.closing) as number),
+          'Debit (Rs)': toExportNumber(r.debit as number),
+          'Credit (Rs)': toExportNumber((r.credit ?? r.amount ?? r.paid) as number),
+          'Balance (Rs)': toExportNumber((r.balance ?? r.closing) as number),
         }));
       }
     } else if (data.rows) {
-      headers = ['Code', 'Item', 'Opening', 'Movement', 'Balance'];
+      headers = ['Code', 'Item', 'Opening (kg)', 'Purchase (kg)', 'Issue (kg)', 'Production (kg)', 'Sale (kg)', 'Balance (kg)'];
       rows = (data.rows as Record<string, number>[]).map((r) => ({
         Code: r.code,
         Item: r.itemName,
-        Opening: fmtKg(r.openingQty),
-        Movement:
-          activeTab === 'rm-summary'
-            ? `P:${fmtKg(r.purchase)} I:${fmtKg(r.issue)}`
-            : `Prod:${fmtKg(r.production)} Sale:${fmtKg(r.sale)}`,
-        Balance: fmtKg(r.balance),
+        'Opening (kg)': toExportNumber(r.openingQty),
+        'Purchase (kg)': activeTab === 'rm-summary' ? toExportNumber(r.purchase) : '',
+        'Issue (kg)': activeTab === 'rm-summary' ? toExportNumber(r.issue) : '',
+        'Production (kg)': activeTab === 'fp-summary' ? toExportNumber(r.production) : '',
+        'Sale (kg)': activeTab === 'fp-summary' ? toExportNumber(r.sale) : '',
+        'Balance (kg)': toExportNumber(r.balance),
       }));
     }
 

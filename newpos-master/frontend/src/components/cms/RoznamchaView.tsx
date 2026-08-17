@@ -4,7 +4,7 @@ import { AddExpenseDialog } from "./AddExpenseDialog";
 import { ExpenseCategoriesPanel } from "./ExpenseCategoriesPanel";
 import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
-import { exportAsCsv, exportAsWordTable, toYmd } from "@/lib/exportUtils";
+import { exportAsCsv, exportAsWordTable, toYmd, toExportNumber } from "@/lib/exportUtils";
 
 const EXPENSES_API = "/api/expenses";
 
@@ -1498,14 +1498,14 @@ export function RoznamchaView() {
         return;
       }
 
-      const headers = ["Date", "Time", "Subject", "Purpose", "Usage", "Price", "Responsible", "Description"];
+      const headers = ["Date", "Time", "Subject", "Purpose", "Usage", "Price (Rs)", "Responsible", "Description"];
       const rows = allRows.map((e) => ({
         "Date": formatDateWithMonthName(e.date),
         "Time": e.time || "",
         "Subject": e.subject || "",
         "Purpose": e.purpose || "",
         "Usage": e.usage || "",
-        "Price": e.price || 0,
+        "Price (Rs)": toExportNumber(e.price),
         "Responsible": e.personResponsible || "",
         "Description": e.description || "",
       }));

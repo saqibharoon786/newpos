@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from "sonner";
 import api from '@/lib/api';
-import { exportAsCsv, exportAsExcelTable, exportAsPdf, exportAsWordTable } from '@/lib/exportUtils';
+import { exportAsCsv, exportAsExcelTable, exportAsPdf, exportAsWordTable, toExportNumber } from '@/lib/exportUtils';
 import { ProfitLossReportTables } from '@/components/cms/ProfitLossTables';
 
 const FINANCE_API = '/api/finance';
@@ -1494,12 +1494,12 @@ export default function FinanceModule() {
       Date: t.date,
       Type: t.type,
       Method: t.fromTo || getMethodLabel(t.method),
-      Amount: t.amount,
-      Balance: t.runningBalance ?? 0,
+      'Amount (Rs)': toExportNumber(t.amount),
+      'Balance (Rs)': toExportNumber(t.runningBalance ?? 0),
       Description: t.description || '',
       Reference: t.reference || '',
     }));
-    const headers = ['Date', 'Type', 'Method', 'Amount', 'Balance', 'Description', 'Reference'];
+    const headers = ['Date', 'Type', 'Method', 'Amount (Rs)', 'Balance (Rs)', 'Description', 'Reference'];
     const name = `Finance_${startDate && endDate ? `${startDate}_to_${endDate}` : 'all'}_${Date.now()}`;
     if (format === 'csv') exportAsCsv(`${name}.csv`, headers, rows);
     else if (format === 'excel') exportAsExcelTable(`${name}.xls`, 'Finance Transactions', headers, rows);

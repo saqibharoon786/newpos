@@ -1,4 +1,4 @@
-import { downloadFile, exportAsPdf } from './exportUtils';
+import { downloadFile, exportAsPdf, exportExcelWorkbook, toExportNumber } from './exportUtils';
 
 export type PlExportLine = {
   label: string;
@@ -38,6 +38,40 @@ type BusinessReportExport = {
   };
   expenses?: ReportExpenseItem[];
   expenseCategories?: ReportExpenseCategory[];
+  purchases?: Array<{
+    _id?: string;
+    date?: string;
+    receiptNo?: string;
+    vendor?: string;
+    materialName?: string;
+    weightKg?: number;
+    pricePerKg?: number;
+    priceRs?: number;
+    remainingKg?: number;
+  }>;
+  production?: Array<{
+    _id?: string;
+    date?: string;
+    batchNo?: string;
+    materialName?: string;
+    inputKg?: number;
+    outputKg?: number;
+    wasteKg?: number;
+    yieldPercent?: number;
+    totalProductionCostRs?: number;
+  }>;
+  sales?: Array<{
+    _id?: string;
+    date?: string;
+    invoiceNo?: string;
+    buyerName?: string;
+    materialName?: string;
+    weightKg?: number;
+    revenueRs?: number;
+    deliveryChargesRs?: number;
+    costRs?: number;
+    profitRs?: number;
+  }>;
 };
 
 function groupExpensesByType(
@@ -163,18 +197,23 @@ function linesToRows(lines: PlExportLine[]) {
   }));
 }
 
-function buildPlTableHtml(lines: PlExportLine[], note?: string): string {
+function buildPlTableHtml(lines: PlExportLine[], note?: string, numericAmounts = false): string {
   const rows = lines
     .map((line) => {
       const label = line.indent ? `&nbsp;&nbsp;${escapeHtml(line.label)}` : escapeHtml(line.label);
       const style = line.bold ? 'font-weight:700;' : '';
-      const amount =
-        line.amount != null
-          ? escapeHtml(fmtAmount(line.amount))
-          : line.isHeader
-            ? ''
-            : '';
-      return `<tr><td style="${style}">${label}</td><td style="text-align:right;${style}">${amount}</td></tr>`;
+      let amount = '';
+      if (line.amount != null) {
+        amount = numericAmounts
+          ? escapeHtml(String(line.amount))
+          : escapeHtml(fmtAmount(line.amount));
+      } else if (!line.isHeader) {
+        amount = '';
+      }
+      const amountStyle = numericAmounts && line.amount != null
+        ? 'text-align:right;mso-number-format:0.00;'
+        : 'text-align:right;';
+      return `<tr><td style="${style}">${label}</td><td style="${amountStyle}${style}">${amount}</td></tr>`;
     })
     .join('');
   const noteHtml = note
@@ -193,6 +232,80 @@ function periodLabel(meta: { label: string; startDate?: string; endDate?: string
   return meta.label;
 }
 
+function buildPipelineExcelSections(report: BusinessReportExport) {
+  const sections: { title: string; headers: string[]; rows: Record<string, string | number>[] }[] = [];
+
+  if (report.purchases?.length) {
+    sections.push({
+      title: '1. Mall / POP (Purchase)',
+      headers: ['Date', 'Receipt', 'Vendor', 'Material', 'Weight (kg)', 'Price/kg (Rs)', 'Total (Rs)', 'Remaining (kg)'],
+      rows: report.purchases.map((p) => ({
+        Date: p.date ?? '',
+        Receipt: p.receiptNo ?? '',
+        Vendor: p.vendor ?? '',
+        Material: p.materialName ?? '',
+        'Weight (kg)': toExportNumber(p.weightKg),
+        'Price/kg (Rs)': toExportNumber(p.pricePerKg),
+        'Total (Rs)': toExportNumber(p.priceRs),
+        'Remaining (kg)': toExportNumber(p.remainingKg),
+      })),
+    });
+  }
+
+  if (report.production?.length) {
+    sections.push({
+      title: '2. Process (Production)',
+      headers: ['Date', 'Batch', 'Material', 'Input (kg)', 'Output (kg)', 'Waste (kg)', 'Yield (%)', 'Cost (Rs)'],
+      rows: report.production.map((p) => ({
+        Date: p.date ?? '',
+        Batch: p.batchNo ?? '',
+        Material: p.materialName ?? '',
+        'Input (kg)': toExportNumber(p.inputKg),
+        'Output (kg)': toExportNumber(p.outputKg),
+        'Waste (kg)': toExportNumber(p.wasteKg),
+        'Yield (%)': toExportNumber(p.yieldPercent),
+        'Cost (Rs)': toExportNumber(p.totalProductionCostRs),
+      })),
+    });
+  }
+
+  if (report.sales?.length) {
+    sections.push({
+      title: '3. Sales (POS)',
+      headers: ['Date', 'Invoice', 'Customer', 'Material', 'Weight (kg)', 'Sale (Rs)', 'Delivery (Rs)', 'Cost (Rs)', 'Profit (Rs)'],
+      rows: report.sales.map((s) => ({
+        Date: s.date ?? '',
+        Invoice: s.invoiceNo ?? '',
+        Customer: s.buyerName ?? '',
+        Material: s.materialName ?? '',
+        'Weight (kg)': toExportNumber(s.weightKg),
+        'Sale (Rs)': toExportNumber(s.revenueRs),
+        'Delivery (Rs)': toExportNumber(s.deliveryChargesRs),
+        'Cost (Rs)': toExportNumber(s.costRs),
+        'Profit (Rs)': toExportNumber(s.profitRs),
+      })),
+    });
+  }
+
+  if (report.expenses?.length) {
+    sections.push({
+      title: '4. Kharcha (Expenses)',
+      headers: ['Date', 'Category', 'Subject', 'Purpose', 'Usage', 'Amount (Rs)', 'Responsible'],
+      rows: report.expenses.map((e) => ({
+        Date: e.date ?? '',
+        Category: e.category ?? '',
+        Subject: e.subject ?? '',
+        Purpose: e.purpose ?? '',
+        Usage: e.usage ?? '',
+        'Amount (Rs)': toExportNumber(e.priceRs),
+        Responsible: e.personResponsible ?? '',
+      })),
+    });
+  }
+
+  return sections;
+}
+
 export function exportBusinessProfitLossReport(
   format: 'csv' | 'excel' | 'pdf',
   report: BusinessReportExport
@@ -204,23 +317,29 @@ export function exportBusinessProfitLossReport(
   if (format === 'csv') {
     const summaryRows = linesToRows(data.summaryLines);
     const detailRows = linesToRows(data.detailLines);
+    const pipelineSections = buildPipelineExcelSections(report);
     const blocks: string[] = [
-      `Profit & Loss Report — ${period}`,
+      `Business Report — ${period}`,
       '',
-      'SUMMARY',
+      'PROFIT & LOSS — SUMMARY',
       'Description,Amount (Rs)',
       ...summaryRows.map((r) => `${r.Description},${r['Amount (Rs)']}`),
       '',
-      escapeCsvNote(data.costOfSaleNote),
-      '',
-      'DETAIL FORMAT',
+      'PROFIT & LOSS — DETAIL',
       'Description,Amount (Rs)',
       ...detailRows.map((r) => `${r.Description},${r['Amount (Rs)']}`),
-      '',
-      escapeCsvNote(data.expensesNote),
     ];
+    for (const section of pipelineSections) {
+      blocks.push('', section.title.toUpperCase(), section.headers.join(','));
+      blocks.push(
+        ...section.rows.map((row) =>
+          section.headers.map((h) => escapeCsvNote(String(row[h] ?? ''))).join(',')
+        )
+      );
+    }
+    blocks.push('', escapeCsvNote(data.costOfSaleNote), '', escapeCsvNote(data.expensesNote));
     downloadFile(
-      `profit-loss-report-${label}.csv`,
+      `business-report-${label}.csv`,
       'text/csv;charset=utf-8;',
       blocks.join('\n')
     );
@@ -228,33 +347,26 @@ export function exportBusinessProfitLossReport(
   }
 
   if (format === 'excel') {
-    const summaryTable = buildPlTableHtml(data.summaryLines, data.costOfSaleNote);
-    const detailTable = buildPlTableHtml(data.detailLines, data.expensesNote);
-    const html = `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Profit &amp; Loss Report</title>
-  <style>
-    body { font-family: Arial, sans-serif; font-size: 12px; }
-    h2 { margin: 18px 0 6px 0; font-size: 14px; }
-    h1 { margin: 0 0 4px 0; font-size: 16px; }
-    .meta { color: #555; margin-bottom: 12px; }
-  </style>
-</head>
-<body>
-  <h1>Profit &amp; Loss Report</h1>
-  <div class="meta">Period: ${escapeHtml(period)}</div>
-  <h2>Summary</h2>
-  ${summaryTable}
-  <h2>Detail Format</h2>
-  ${detailTable}
-</body>
-</html>`;
-    downloadFile(
-      `profit-loss-report-${label}.xls`,
-      'application/vnd.ms-excel;charset=utf-8;',
-      html
+    const summaryRows = linesToRows(data.summaryLines);
+    const detailRows = linesToRows(data.detailLines);
+    const pipelineSections = buildPipelineExcelSections(report);
+    exportExcelWorkbook(
+      `business-report-${label}.xls`,
+      'Business Report',
+      [
+        {
+          title: 'Profit & Loss — Summary',
+          headers: ['Description', 'Amount (Rs)'],
+          rows: summaryRows,
+        },
+        {
+          title: 'Profit & Loss — Detail',
+          headers: ['Description', 'Amount (Rs)'],
+          rows: detailRows,
+        },
+        ...pipelineSections,
+      ],
+      `Period: ${period}`
     );
     return;
   }
