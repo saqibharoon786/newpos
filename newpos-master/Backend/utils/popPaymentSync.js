@@ -1,4 +1,5 @@
 const Transaction = require('../models/transaction.model');
+const { normalizeFinancePaymentMethod } = require('./purchasePayment');
 
 function num(v) {
   const n = parseFloat(v);
@@ -9,11 +10,8 @@ function round2(v) {
   return Math.round(num(v) * 100) / 100;
 }
 
-function normalizePopPaymentMethod(method) {
-  const raw = String(method || 'drawer').toLowerCase();
-  if (raw === 'cash') return 'drawer';
-  if (['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(raw)) return raw;
-  return 'drawer';
+function escapeRegex(str) {
+  return String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function parsePopPaymentDate(input) {
@@ -49,44 +47,94 @@ function parsePopPaymentDate(input) {
   return new Date();
 }
 
-function isPopPaymentTransaction(tx) {
-  if (!tx) return false;
-  return (
-    tx.type === 'withdraw' &&
-    String(tx.description || '').trim().toLowerCase().startsWith('pop payment')
-  );
+function collectPurchaseRefs({ invoiceNo, billNo, receiptNo }) {
+  return [...new Set([invoiceNo, billNo, receiptNo]
+    .filter(Boolean)
+    .map((r) => String(r).trim())
+    .filter(Boolean))];
 }
 
-async function findPopPaymentTransactions(invoiceNo) {
-  if (!invoiceNo) return [];
-  const ref = String(invoiceNo).trim();
-  const txs = await Transaction.find({
-    reference: ref,
+function isPurchaseFinanceWithdraw(tx, refs) {
+  if (!tx || tx.type !== 'withdraw') return false;
+
+  const reference = String(tx.reference || '').trim();
+  const desc = String(tx.description || '').trim().toLowerCase();
+
+  if (refs.some((r) => reference === r)) return true;
+
+  const purchaseDescPatterns = [
+    /^pop payment\b/,
+    /\bpayment for purchase\b/,
+    /\bfull payment for purchase\b/,
+    /\bpop payment -/,
+  ];
+  if (purchaseDescPatterns.some((re) => re.test(desc))) {
+    return refs.length === 0 || refs.some((r) => desc.includes(r.toLowerCase()));
+  }
+
+  return refs.some((r) => desc.includes(r.toLowerCase()));
+}
+
+/**
+ * Find every Finance withdraw linked to a POP bill (POP payment, legacy payment rows, orphans).
+ */
+async function findPurchaseFinanceTransactions({ invoiceNo, billNo, receiptNo } = {}) {
+  const refs = collectPurchaseRefs({ invoiceNo, billNo, receiptNo });
+  if (refs.length === 0) return [];
+
+  const orConditions = [];
+  for (const r of refs) {
+    orConditions.push({ reference: r });
+    orConditions.push({ description: { $regex: escapeRegex(r), $options: 'i' } });
+  }
+  orConditions.push({ description: { $regex: /^pop payment/i } });
+  orConditions.push({ description: { $regex: /payment for purchase/i } });
+  orConditions.push({ description: { $regex: /full payment for purchase/i } });
+
+  const candidates = await Transaction.find({
     type: 'withdraw',
+    $or: orConditions,
   })
     .sort({ createdAt: 1 })
     .lean();
 
-  const popTxs = txs.filter(isPopPaymentTransaction);
-  return popTxs.length > 0 ? popTxs : txs;
+  return candidates.filter((tx) => isPurchaseFinanceWithdraw(tx, refs));
+}
+
+/** @deprecated use findPurchaseFinanceTransactions */
+async function findPopPaymentTransactions(invoiceNo) {
+  return findPurchaseFinanceTransactions({ invoiceNo });
+}
+
+function needsFinanceResync(existingTxs, targetPaid, paymentMethod) {
+  const method = normalizeFinancePaymentMethod(paymentMethod);
+  const existingTotal = round2(existingTxs.reduce((sum, tx) => sum + num(tx.amount), 0));
+
+  if (existingTxs.length === 0 && targetPaid <= 0) return false;
+  if (existingTxs.length > 1) return true;
+  if (Math.abs(existingTotal - targetPaid) >= 0.01) return true;
+  if (targetPaid <= 0 && existingTxs.length > 0) return true;
+  if (existingTxs.length === 1 && existingTxs[0].method !== method) return true;
+
+  return false;
 }
 
 /**
- * Keep Finance in sync when POP amountPaid changes on edit.
- * Deletes old POP withdraw entries and recreates one for the new amount (if any).
+ * Keep Finance in sync when POP amountPaid changes (create, edit, record payment, remove payment).
  */
 async function syncPopFinancePaymentOnUpdate({
   invoiceNo,
+  billNo,
+  receiptNo,
   vendor,
   purchaseDate,
   newAmountPaid,
   paymentMethod,
 }) {
   const targetPaid = round2(newAmountPaid);
-  const existingTxs = await findPopPaymentTransactions(invoiceNo);
-  const existingTotal = round2(existingTxs.reduce((sum, tx) => sum + num(tx.amount), 0));
+  const existingTxs = await findPurchaseFinanceTransactions({ invoiceNo, billNo, receiptNo });
 
-  if (Math.abs(existingTotal - targetPaid) < 0.01) {
+  if (!needsFinanceResync(existingTxs, targetPaid, paymentMethod)) {
     return { ok: true, synced: false };
   }
 
@@ -104,7 +152,7 @@ async function syncPopFinancePaymentOnUpdate({
     };
   }
 
-  const method = normalizePopPaymentMethod(paymentMethod);
+  const method = normalizeFinancePaymentMethod(paymentMethod);
   const balances = await Transaction.getBalances();
   if ((balances[method] || 0) < targetPaid) {
     return {
@@ -113,13 +161,15 @@ async function syncPopFinancePaymentOnUpdate({
     };
   }
 
+  const ref = String(invoiceNo || billNo || receiptNo || '').trim() || `POP-${Date.now()}`;
+
   await Transaction.create({
     type: 'withdraw',
     method,
     amount: targetPaid,
     net: targetPaid,
-    description: `POP payment ${invoiceNo} - ${vendor || 'Vendor'}`,
-    reference: invoiceNo,
+    description: `POP payment ${ref} - ${vendor || 'Vendor'}`,
+    reference: ref,
     status: 'completed',
     date: parsePopPaymentDate(purchaseDate),
   });
@@ -129,11 +179,17 @@ async function syncPopFinancePaymentOnUpdate({
     synced: true,
     action: existingTxs.length > 0 ? 'updated' : 'created',
     amount: targetPaid,
+    removedCount: existingTxs.length,
   };
+}
+
+function isPopPaymentTransaction(tx) {
+  return isPurchaseFinanceWithdraw(tx, []);
 }
 
 module.exports = {
   findPopPaymentTransactions,
+  findPurchaseFinanceTransactions,
   syncPopFinancePaymentOnUpdate,
   isPopPaymentTransaction,
 };

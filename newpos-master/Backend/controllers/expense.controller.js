@@ -1,7 +1,10 @@
 const Expense = require("../models/expense.model");
 const Transaction = require("../models/transaction.model");
 const mongoose = require("mongoose");
-const { reverseExpenseFinanceTransaction } = require("../utils/expenseFinanceDelete");
+const {
+  reverseExpenseFinanceTransaction,
+  findFinanceTransactionForExpense,
+} = require("../utils/expenseFinanceDelete");
 
 // Normalize date to YYYY-MM-DD so date range filters (Daily/Weekly/Monthly) work
 function toNormalizedDate(dateStr) {
@@ -18,6 +21,37 @@ function toNormalizedDate(dateStr) {
     return `${y}-${month}-${day}`;
   }
   return dateStr;
+}
+
+/** Expense form date + time → Finance Transaction.date (not today's createdAt). */
+function parseExpenseFinanceDate(dateStr, timeStr) {
+  const normalized = toNormalizedDate(dateStr);
+  if (!normalized || !/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return new Date();
+  }
+  const [y, m, d] = normalized.split("-").map(Number);
+  let hours = 12;
+  let minutes = 0;
+  if (timeStr) {
+    const match = String(timeStr).trim().match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+    if (match) {
+      hours = parseInt(match[1], 10);
+      minutes = parseInt(match[2], 10);
+      const ampm = (match[3] || "").toUpperCase();
+      if (ampm === "PM" && hours < 12) hours += 12;
+      if (ampm === "AM" && hours === 12) hours = 0;
+    }
+  }
+  return new Date(y, m - 1, d, hours, minutes, 0, 0);
+}
+
+async function syncExpenseFinanceTransactionDate(expense) {
+  if (!expense) return;
+  const tx = await findFinanceTransactionForExpense(expense);
+  if (!tx) return;
+  const nextDate = parseExpenseFinanceDate(expense.date, expense.time);
+  if (tx.date && new Date(tx.date).getTime() === nextDate.getTime()) return;
+  await Transaction.findByIdAndUpdate(tx._id, { date: nextDate });
 }
 
 function resolveExpenseSubject({ subject, purpose, description, category }) {
@@ -295,6 +329,8 @@ exports.createExpense = async (req, res) => {
     const priceNum = parseFloat(String(price).replace(/[^\d.]/g, '')) || 0;
     const method = paymentMethod === 'cash' ? 'drawer' : (paymentMethod || 'drawer');
 
+    const financeDate = parseExpenseFinanceDate(date, time);
+
     let walletNote = null;
     let financeTransaction = null;
     if (priceNum > 0 && ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(method)) {
@@ -309,6 +345,7 @@ exports.createExpense = async (req, res) => {
             description: `Expense: ${resolvedSubject}`,
             reference: `EXP-PENDING-${Date.now()}`,
             status: 'completed',
+            date: financeDate,
           });
         } else {
           walletNote = `Kharcha save ho gaya (wallet mein balance kam tha: ${method})`;
@@ -396,6 +433,14 @@ exports.updateExpense = async (req, res) => {
         success: false,
         message: "Expense not found",
       });
+    }
+
+    if (updateData.date || updateData.time) {
+      try {
+        await syncExpenseFinanceTransactionDate(expense);
+      } catch (syncErr) {
+        console.warn("Expense finance date sync skipped:", syncErr.message);
+      }
     }
 
     res.json({

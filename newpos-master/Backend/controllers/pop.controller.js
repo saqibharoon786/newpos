@@ -5,6 +5,7 @@ const {
   computePurchasePayment,
   withComputedPayment,
   validatePurchasePaymentLimits,
+  normalizeFinancePaymentMethod,
 } = require("../utils/purchasePayment");
 const { generatePurchaseInvoiceNo } = require("../utils/invoiceGenerator");
 const vendorController = require("./vendor.controller");
@@ -22,20 +23,6 @@ const Vendor = require("../models/vendor.model");
 
 function round2(n) {
   return Math.round(n * 100) / 100;
-}
-
-function normalizeVendorPaymentMethod(method) {
-  const raw = String(method || "cash").toLowerCase();
-  if (raw === "cash") return "drawer";
-  if (["drawer", "easypaisa", "jazzcash", "bank"].includes(raw)) return raw;
-  return "drawer";
-}
-
-function normalizePopPaymentMethod(method) {
-  const raw = String(method || "cash").toLowerCase();
-  if (raw === "cash") return "drawer";
-  if (["drawer", "easypaisa", "jazzcash", "bank"].includes(raw)) return raw;
-  return "drawer";
 }
 
 async function syncVendorPurchaseLedgerForUpdate(existing, updatedFields) {
@@ -73,7 +60,7 @@ async function syncVendorPurchaseLedgerForUpdate(existing, updatedFields) {
       description: `Payment on ${updatedFields.invoiceNo || existing.invoiceNo}`,
       debit: amountPaidNum,
       credit: 0,
-      paymentMethod: normalizeVendorPaymentMethod(updatedFields.paymentMethod),
+      paymentMethod: normalizeFinancePaymentMethod(updatedFields.paymentMethod),
     });
   }
 
@@ -130,7 +117,7 @@ async function syncVendorPurchasePaymentLedger({
       description: `Payment on ${invoiceNo}`,
       debit: amountPaidNum,
       credit: 0,
-      paymentMethod: normalizeVendorPaymentMethod(paymentMethod),
+      paymentMethod: normalizeFinancePaymentMethod(paymentMethod),
     });
   }
 
@@ -358,7 +345,7 @@ const addPurchase = async (req, res) => {
           description: `Payment on ${invoiceNo}`,
           debit: amountPaidNum,
           credit: 0,
-          paymentMethod: normalizeVendorPaymentMethod(req.body.paymentMethod),
+          paymentMethod: normalizeFinancePaymentMethod(req.body.paymentMethod),
         });
       }
       if (advancePaymentNum > 0) {
@@ -373,26 +360,26 @@ const addPurchase = async (req, res) => {
       }
     }
 
-    const payMethod = normalizePopPaymentMethod(req.body.paymentMethod || 'drawer');
-    const cashPaid = amountPaidNum;
-    if (cashPaid > 0 && ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(payMethod)) {
-      const balances = await Transaction.getBalances();
-      if ((balances[payMethod] || 0) < cashPaid) {
+    if (amountPaidNum > 0) {
+      const financeSync = await syncPopFinancePaymentOnUpdate({
+        invoiceNo,
+        billNo,
+        receiptNo: billNo,
+        vendor,
+        purchaseDate: purchase.purchaseDate,
+        newAmountPaid: amountPaidNum,
+        paymentMethod: req.body.paymentMethod,
+      });
+      if (!financeSync.ok) {
         await Purchase.findByIdAndDelete(purchase._id);
+        if (vendorDoc) {
+          await removeVendorLedgerForPurchase(vendor, purchase._id);
+        }
         return res.status(400).json({
           success: false,
-          message: `Insufficient balance in ${payMethod}. Available: Rs. ${balances[payMethod] || 0}`,
+          message: financeSync.message,
         });
       }
-      await Transaction.create({
-        type: 'withdraw',
-        method: payMethod,
-        amount: cashPaid,
-        net: cashPaid,
-        description: `POP payment ${invoiceNo} - ${vendor}`,
-        reference: invoiceNo,
-        status: 'completed',
-      });
     }
 
     await notificationController.createNotification({
@@ -662,6 +649,8 @@ const updatePurchase = async (req, res) => {
 
     const financeSync = await syncPopFinancePaymentOnUpdate({
       invoiceNo: existing.invoiceNo,
+      billNo: updatedFields.billNo,
+      receiptNo: updatedFields.receiptNo,
       vendor: updatedFields.vendor,
       purchaseDate: updatedFields.purchaseDate,
       newAmountPaid: amountPaidNum,

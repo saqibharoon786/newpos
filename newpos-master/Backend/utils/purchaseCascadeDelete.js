@@ -3,7 +3,7 @@ const path = require('path');
 const Purchase = require('../models/pop.model');
 const Sale = require('../models/pos.model');
 const Transaction = require('../models/transaction.model');
-const { findPopPaymentTransactions } = require('./popPaymentSync');
+const { findPurchaseFinanceTransactions } = require('./popPaymentSync');
 const Vendor = require('../models/vendor.model');
 const { ProductionData, ProcessingMaterial } = require('../models/process.model');
 
@@ -98,8 +98,11 @@ async function reverseFinanceTransaction({ type, method, amount, description, re
 }
 
 async function reversePopPaymentTransactions(purchase) {
-  const invoiceNo = purchase.invoiceNo || purchase.receiptNo || '';
-  const txs = await findPopPaymentTransactions(invoiceNo);
+  const txs = await findPurchaseFinanceTransactions({
+    invoiceNo: purchase.invoiceNo,
+    billNo: purchase.billNo,
+    receiptNo: purchase.receiptNo,
+  });
   let deleted = 0;
 
   for (const tx of txs) {
