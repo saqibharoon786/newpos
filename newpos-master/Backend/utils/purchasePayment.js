@@ -83,8 +83,18 @@ function validatePurchasePaymentLimits(purchase) {
   return { ok: true, payment };
 }
 
+/** Map POP / vendor payment UI values to Finance bucket (drawer, bank, easypaisa, jazzcash). */
+function normalizeFinancePaymentMethod(method) {
+  const raw = String(method || "cash").toLowerCase().trim();
+  if (raw === "cash") return "drawer";
+  if (["drawer", "easypaisa", "jazzcash", "bank"].includes(raw)) return raw;
+  if (["bank_transfer", "cheque", "online", "bankaccount"].includes(raw)) return "bank";
+  return "drawer";
+}
+
 module.exports = {
   computePurchasePayment,
   withComputedPayment,
   validatePurchasePaymentLimits,
+  normalizeFinancePaymentMethod,
 };

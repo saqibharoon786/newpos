@@ -98,6 +98,22 @@ const financeApi = {
   }
 };
 
+/** Map POP payment UI values to Finance bucket for balance checks and API sync. */
+function mapPaymentMethodToFinance(paymentMethod: string): string {
+  const methodMap: Record<string, string> = {
+    cash: 'drawer',
+    drawer: 'drawer',
+    bank: 'bank',
+    bank_transfer: 'bank',
+    cheque: 'bank',
+    easypaisa: 'easypaisa',
+    jazzcash: 'jazzcash',
+    online: 'bank',
+    other: 'drawer',
+  };
+  return methodMap[String(paymentMethod || '').toLowerCase()] || 'drawer';
+}
+
 const CALENDAR_POPOVER_WIDTH = 320;
 
 function getCalendarPopoverPosition(anchor: HTMLElement | null) {
@@ -1166,20 +1182,6 @@ const PaymentModal = ({
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-  // Map payment methods to finance methods
-  const getFinanceMethod = (paymentMethod: string): string => {
-    const methodMap: Record<string, string> = {
-      'cash': 'drawer',
-      'bank_transfer': 'bank',
-      'cheque': 'bank',
-      'easypaisa': 'easypaisa',
-      'jazzcash': 'jazzcash',
-      'online': 'bank',
-      'other': 'drawer'
-    };
-    return methodMap[paymentMethod] || 'drawer';
-  };
-
   // Format date to YYYY-MM-DD
   const formatDateToYMD = (date: Date): string => {
     const year = date.getFullYear();
@@ -1432,7 +1434,7 @@ const PaymentModal = ({
   );
 
   const getCurrentBalance = () => {
-    const financeMethod = getFinanceMethod(paymentMethod);
+    const financeMethod = mapPaymentMethodToFinance(paymentMethod);
     return balances[financeMethod as keyof typeof balances] || 0;
   };
 
@@ -1460,7 +1462,7 @@ const PaymentModal = ({
       return;
     }
 
-    const financeMethod = getFinanceMethod(paymentMethod);
+    const financeMethod = mapPaymentMethodToFinance(paymentMethod);
     const currentBalance = getCurrentBalance();
     
     const shouldCheckBalance = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
@@ -1505,29 +1507,8 @@ const PaymentModal = ({
         paidAmount: newPaidStatus,
         remainingAmount: newRemainingAmount,
         totalPaid: newTotalPaid,
+        paymentMethod,
       };
-
-      if (shouldCheckBalance) {
-        try {
-          await financeApi.updateBalance(
-            financeMethod,
-            amount,
-            `Payment for Purchase ${purchase.invoiceNo || purchase.receiptNo || ''} - ${purchase.materialName}`
-          );
-          paymentRecord.financeUpdated = true;
-          toast({
-            title: "Finance Updated",
-            description: `Rs. ${amount.toLocaleString()} deducted from ${financeApi.getMethodLabel(financeMethod)}`,
-          });
-        } catch (financeError: any) {
-          console.error("Failed to update finance:", financeError);
-          toast({
-            title: "Warning",
-            description: `Payment recorded but failed to update ${financeApi.getMethodLabel(financeMethod)} balance`,
-            variant: "destructive",
-          });
-        }
-      }
 
       const response = await api.put(
         `${PURCHASES_API_URL}/${purchase._id}`,
@@ -1535,12 +1516,15 @@ const PaymentModal = ({
       );
 
       if (response.data.success) {
+        paymentRecord.financeUpdated = true;
         toast({
           title: "Success",
           description: `Payment of Rs. ${amount.toLocaleString()} recorded successfully!`,
         });
         onPaymentSuccess(paymentRecord);
         onClose();
+      } else {
+        throw new Error(response.data.message || "Failed to record payment");
       }
     } catch (error: any) {
       toast({
@@ -1557,7 +1541,7 @@ const PaymentModal = ({
 
   const totalPaid = getPurchaseTotalPaid(purchase);
   const remainingAmount = getPurchaseRemainingAmount(purchase);
-  const financeMethod = getFinanceMethod(paymentMethod);
+  const financeMethod = mapPaymentMethodToFinance(paymentMethod);
   const currentBalance = getCurrentBalance();
   const showBalanceCheck = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
 
@@ -1661,6 +1645,7 @@ const PaymentModal = ({
                 className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 <option value="cash">Cash (From Drawer)</option>
+                <option value="bank">Bank Account</option>
                 <option value="easypaisa">Easypaisa</option>
                 <option value="jazzcash">JazzCash</option>
                 <option value="bank_transfer">Bank Transfer</option>
@@ -1789,21 +1774,8 @@ const PayTotalVendorModal = ({
     }
   };
 
-  const getFinanceMethod = (paymentMethod: string): string => {
-    const methodMap: Record<string, string> = {
-      'cash': 'drawer',
-      'bank_transfer': 'bank',
-      'cheque': 'bank',
-      'easypaisa': 'easypaisa',
-      'jazzcash': 'jazzcash',
-      'online': 'bank',
-      'other': 'drawer'
-    };
-    return methodMap[paymentMethod] || 'drawer';
-  };
-
   const getCurrentBalance = () => {
-    const financeMethod = getFinanceMethod(paymentMethod);
+    const financeMethod = mapPaymentMethodToFinance(paymentMethod);
     return balances[financeMethod as keyof typeof balances] || 0;
   };
 
@@ -1822,7 +1794,7 @@ const PayTotalVendorModal = ({
       return;
     }
 
-    const financeMethod = getFinanceMethod(paymentMethod);
+    const financeMethod = mapPaymentMethodToFinance(paymentMethod);
     const currentBalance = getCurrentBalance();
     const shouldCheckBalance = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
 
@@ -1839,29 +1811,6 @@ const PayTotalVendorModal = ({
     const records: PaymentHistory[] = [];
     let left = amount;
     try {
-      // Update finance balance first
-      if (shouldCheckBalance) {
-        try {
-          await financeApi.updateBalance(
-            financeMethod,
-            amount,
-            `POP Payment - ${vendorName} - Multiple purchases`
-          );
-          toast({
-            title: "Finance Updated",
-            description: `Rs. ${amount.toLocaleString()} deducted from ${financeApi.getMethodLabel(financeMethod)}`,
-          });
-        } catch (financeError: any) {
-          console.error("Failed to update finance:", financeError);
-          toast({
-            title: "Error",
-            description: `Failed to update ${financeApi.getMethodLabel(financeMethod)} balance`,
-            variant: "destructive",
-          });
-          return;
-        }
-      }
-
       for (const purchase of purchases) {
         if (left <= 0) break;
         const purchaseRemaining = getPurchaseRemainingAmount(purchase);
@@ -1897,6 +1846,7 @@ const PayTotalVendorModal = ({
           paidAmount: newPaidAmount,
           remainingAmount: newRemainingAmount,
           totalPaid: newTotalPaid,
+          paymentMethod,
         });
 
         records.push(paymentRecord);
@@ -1922,7 +1872,7 @@ const PayTotalVendorModal = ({
 
   if (!open || purchases.length === 0) return null;
 
-  const financeMethod = getFinanceMethod(paymentMethod);
+  const financeMethod = mapPaymentMethodToFinance(paymentMethod);
   const currentBalance = getCurrentBalance();
   const showBalanceCheck = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
 
@@ -2066,21 +2016,8 @@ const MarkAsPaidModal = ({
     }
   };
 
-  const getFinanceMethod = (paymentMethod: string): string => {
-    const methodMap: Record<string, string> = {
-      'cash': 'drawer',
-      'bank_transfer': 'bank',
-      'cheque': 'bank',
-      'easypaisa': 'easypaisa',
-      'jazzcash': 'jazzcash',
-      'online': 'bank',
-      'other': 'drawer'
-    };
-    return methodMap[paymentMethod] || 'drawer';
-  };
-
   const getCurrentBalance = () => {
-    const financeMethod = getFinanceMethod(paymentMethod);
+    const financeMethod = mapPaymentMethodToFinance(paymentMethod);
     return balances[financeMethod as keyof typeof balances] || 0;
   };
 
@@ -2088,7 +2025,7 @@ const MarkAsPaidModal = ({
     if (!purchase) return;
 
     const remainingAmount = getPurchaseRemainingAmount(purchase);
-    const financeMethod = getFinanceMethod(paymentMethod);
+    const financeMethod = mapPaymentMethodToFinance(paymentMethod);
     const currentBalance = getCurrentBalance();
     
     const shouldCheckBalance = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
@@ -2124,29 +2061,8 @@ const MarkAsPaidModal = ({
         paidAmount: 'paid',
         remainingAmount: 0,
         totalPaid: purchasePrice,
+        paymentMethod,
       };
-
-      if (shouldCheckBalance) {
-        try {
-          await financeApi.updateBalance(
-            financeMethod,
-            remainingAmount,
-            `Full payment for Purchase ${purchase.invoiceNo || purchase.receiptNo || ''} - ${purchase.materialName}`
-          );
-          paymentRecord.financeUpdated = true;
-          toast({
-            title: "Finance Updated",
-            description: `Rs. ${remainingAmount.toLocaleString()} deducted from ${financeApi.getMethodLabel(financeMethod)}`,
-          });
-        } catch (financeError: any) {
-          console.error("Failed to update finance:", financeError);
-          toast({
-            title: "Warning",
-            description: `Payment recorded but failed to update ${financeApi.getMethodLabel(financeMethod)} balance`,
-            variant: "destructive",
-          });
-        }
-      }
 
       const response = await api.put(
         `${PURCHASES_API_URL}/${purchase._id}`,
@@ -2154,12 +2070,15 @@ const MarkAsPaidModal = ({
       );
 
       if (response.data.success) {
+        paymentRecord.financeUpdated = true;
         toast({
           title: "Success",
           description: `Purchase marked as fully paid!`,
         });
         onPaymentSuccess(paymentRecord);
         onClose();
+      } else {
+        throw new Error(response.data.message || "Failed to mark as paid");
       }
     } catch (error: any) {
       toast({
@@ -2176,7 +2095,7 @@ const MarkAsPaidModal = ({
 
   const totalPaid = getPurchaseTotalPaid(purchase);
   const remainingAmount = getPurchaseRemainingAmount(purchase);
-  const financeMethod = getFinanceMethod(paymentMethod);
+  const financeMethod = mapPaymentMethodToFinance(paymentMethod);
   const currentBalance = getCurrentBalance();
   const showBalanceCheck = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
 
@@ -2239,6 +2158,7 @@ const MarkAsPaidModal = ({
               className="w-full bg-cms-card border border-border rounded-md px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="cash">Cash (From Drawer)</option>
+              <option value="bank">Bank Account</option>
               <option value="easypaisa">Easypaisa</option>
               <option value="jazzcash">JazzCash</option>
               <option value="bank_transfer">Bank Transfer</option>
@@ -2900,19 +2820,6 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
     return `${API_BASE_URL}/${cleanPath}`;
   };
 
-  const getFinanceMethod = (paymentMethod: string): string => {
-    const methodMap: Record<string, string> = {
-      'cash': 'drawer',
-      'bank_transfer': 'bank',
-      'cheque': 'bank',
-      'easypaisa': 'easypaisa',
-      'jazzcash': 'jazzcash',
-      'online': 'bank',
-      'other': 'drawer'
-    };
-    return methodMap[paymentMethod] || 'drawer';
-  };
-
   useEffect(() => {
     if (open) {
       const now = new Date();
@@ -3411,7 +3318,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
   };
 
   const getCurrentBalance = () => {
-    const financeMethod = getFinanceMethod(formData.paymentMethod);
+    const financeMethod = mapPaymentMethodToFinance(formData.paymentMethod);
     return balances[financeMethod as keyof typeof balances] || 0;
   };
 
@@ -3475,7 +3382,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
         return;
       }
 
-      const financeMethod = getFinanceMethod(formData.paymentMethod);
+      const financeMethod = mapPaymentMethodToFinance(formData.paymentMethod);
       const shouldCheckBalance = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
       const previousAmountPaid = isEdit ? Number(editData?.amountPaid) || 0 : 0;
       const extraPayment = Math.max(0, amountPaidNum - previousAmountPaid);
@@ -3930,7 +3837,7 @@ function PurchaseDialog({ open, onOpenChange, onSave, isEdit = false, editData =
 
   if (!open) return null;
 
-  const financeMethod = getFinanceMethod(formData.paymentMethod);
+  const financeMethod = mapPaymentMethodToFinance(formData.paymentMethod);
   const currentBalance = getCurrentBalance();
   const showBalanceCheck = ['drawer', 'easypaisa', 'jazzcash', 'bank'].includes(financeMethod);
   const totalAmount = (parseFloat(formData.advancePayment || '0') + parseFloat(formData.amountPaid || '0'));
