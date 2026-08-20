@@ -1508,6 +1508,7 @@ const PaymentModal = ({
         remainingAmount: newRemainingAmount,
         totalPaid: newTotalPaid,
         paymentMethod,
+        paymentDate,
       };
 
       const response = await api.put(
@@ -1847,6 +1848,7 @@ const PayTotalVendorModal = ({
           remainingAmount: newRemainingAmount,
           totalPaid: newTotalPaid,
           paymentMethod,
+          paymentDate,
         });
 
         records.push(paymentRecord);
@@ -2041,11 +2043,12 @@ const MarkAsPaidModal = ({
 
     setIsSubmitting(true);
     try {
+      const paymentDateToday = new Date().toISOString().split('T')[0];
       const paymentRecord: PaymentHistory = {
         _id: `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         purchaseId: purchase._id,
         amount: remainingAmount,
-        paymentDate: new Date().toISOString().split('T')[0],
+        paymentDate: paymentDateToday,
         paymentMethod: paymentMethod,
         notes: 'Marked as fully paid',
         receiptNo: purchase.receiptNo,
@@ -2062,6 +2065,7 @@ const MarkAsPaidModal = ({
         remainingAmount: 0,
         totalPaid: purchasePrice,
         paymentMethod,
+        paymentDate: paymentDateToday,
       };
 
       const response = await api.put(

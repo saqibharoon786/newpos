@@ -653,6 +653,7 @@ const updatePurchase = async (req, res) => {
       receiptNo: updatedFields.receiptNo,
       vendor: updatedFields.vendor,
       purchaseDate: updatedFields.purchaseDate,
+      paymentDate: req.body.paymentDate,
       newAmountPaid: amountPaidNum,
       paymentMethod: updatedFields.paymentMethod,
     });

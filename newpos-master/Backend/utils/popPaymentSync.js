@@ -16,8 +16,6 @@ function escapeRegex(str) {
 
 function parsePopPaymentDate(input) {
   if (!input) return new Date();
-  const direct = new Date(input);
-  if (!Number.isNaN(direct.getTime())) return direct;
 
   const ymd = String(input).trim();
   const isoDate = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -32,6 +30,9 @@ function parsePopPaymentDate(input) {
     );
   }
 
+  const direct = new Date(input);
+  if (!Number.isNaN(direct.getTime())) return direct;
+
   const dmy = ymd.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (dmy) {
     return new Date(
@@ -45,6 +46,15 @@ function parsePopPaymentDate(input) {
   }
 
   return new Date();
+}
+
+function toFinanceDateYmd(input) {
+  const parsed = parsePopPaymentDate(input);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, '0');
+  const d = String(parsed.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function collectPurchaseRefs({ invoiceNo, billNo, receiptNo }) {
@@ -106,15 +116,23 @@ async function findPopPaymentTransactions(invoiceNo) {
   return findPurchaseFinanceTransactions({ invoiceNo });
 }
 
-function needsFinanceResync(existingTxs, targetPaid, paymentMethod) {
+function needsFinanceResync(existingTxs, targetPaid, paymentMethod, paymentDate, purchaseDate) {
   const method = normalizeFinancePaymentMethod(paymentMethod);
   const existingTotal = round2(existingTxs.reduce((sum, tx) => sum + num(tx.amount), 0));
+  const financeDateYmd = toFinanceDateYmd(paymentDate || purchaseDate);
 
   if (existingTxs.length === 0 && targetPaid <= 0) return false;
   if (existingTxs.length > 1) return true;
   if (Math.abs(existingTotal - targetPaid) >= 0.01) return true;
   if (targetPaid <= 0 && existingTxs.length > 0) return true;
   if (existingTxs.length === 1 && existingTxs[0].method !== method) return true;
+  if (
+    existingTxs.length === 1 &&
+    financeDateYmd &&
+    toFinanceDateYmd(existingTxs[0].date) !== financeDateYmd
+  ) {
+    return true;
+  }
 
   return false;
 }
@@ -128,13 +146,15 @@ async function syncPopFinancePaymentOnUpdate({
   receiptNo,
   vendor,
   purchaseDate,
+  paymentDate,
   newAmountPaid,
   paymentMethod,
 }) {
   const targetPaid = round2(newAmountPaid);
   const existingTxs = await findPurchaseFinanceTransactions({ invoiceNo, billNo, receiptNo });
+  const financeDateInput = paymentDate || purchaseDate;
 
-  if (!needsFinanceResync(existingTxs, targetPaid, paymentMethod)) {
+  if (!needsFinanceResync(existingTxs, targetPaid, paymentMethod, paymentDate, purchaseDate)) {
     return { ok: true, synced: false };
   }
 
@@ -171,7 +191,7 @@ async function syncPopFinancePaymentOnUpdate({
     description: `POP payment ${ref} - ${vendor || 'Vendor'}`,
     reference: ref,
     status: 'completed',
-    date: parsePopPaymentDate(purchaseDate),
+    date: parsePopPaymentDate(financeDateInput),
   });
 
   return {
